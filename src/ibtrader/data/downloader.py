@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from typing import Dict
 
 import pandas as pd
+import requests
 import yfinance as yf
 
 from ..config import DataConfig, EngineConfig, UniverseConfig
@@ -45,6 +47,39 @@ def normalize_yf(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def stooq_symbol(symbol: str) -> str:
+    base = symbol.lstrip("^").lower()
+    return f"{base}.us"
+
+
+def download_symbol_history_stooq(symbol: str) -> pd.DataFrame:
+    tkr = stooq_symbol(symbol)
+    url = f"https://stooq.com/q/d/l/?s={tkr}&i=d"
+    resp = requests.get(url, timeout=20)
+    if (
+        resp.status_code != 200
+        or not resp.text
+        or "Date,Open,High,Low,Close,Volume" not in resp.text
+    ):
+        raise RuntimeError(f"Stooq no disponible para {symbol}")
+    df = pd.read_csv(StringIO(resp.text))
+    if df.empty:
+        raise RuntimeError(f"Stooq vacío para {symbol}")
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.set_index("Date").sort_index()
+    out = df.rename(
+        columns={
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close",
+            "Volume": "volume",
+        }
+    )
+    out.index.name = "date"
+    return out
+
+
 def download_symbol_history(
     symbol: str, engine: EngineConfig, data_cfg: DataConfig, use_cache: bool = True
 ) -> pd.DataFrame:
@@ -61,19 +96,24 @@ def download_symbol_history(
         str(start_dt.date()),
         interval,
     )
-    df = yf.download(
-        symbol,
-        start=start_dt.date(),
-        end=end_dt.date(),
-        interval=interval,
-        auto_adjust=False,
-        progress=False,
-        actions=False,
-        threads=False,
-    )
-    if df is None or df.empty:
-        raise RuntimeError(f"Sin datos de yfinance para {symbol}")
-    out = normalize_yf(df)
+    out: pd.DataFrame
+    try:
+        df = yf.download(
+            symbol,
+            start=start_dt.date(),
+            end=end_dt.date(),
+            interval=interval,
+            auto_adjust=False,
+            progress=False,
+            actions=False,
+            threads=False,
+        )
+        if df is None or df.empty:
+            raise RuntimeError("yfinance vacío")
+        out = normalize_yf(df)
+    except Exception:
+        log.info("fallback_stooq symbol=%s", symbol)
+        out = download_symbol_history_stooq(symbol)
     save_to_cache(data_cfg.cache_dir, symbol, engine.bar_size, out)
     log.info("download_history_done symbol=%s rows=%s", symbol, len(out))
     return out

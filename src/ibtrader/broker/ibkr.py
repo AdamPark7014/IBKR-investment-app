@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 from typing import Any, Dict
 
-from ib_insync import IB, Contract, Stock
-from ib_insync import Order as IBOrder
+from ib_async import IB, LimitOrder, MarketOrder, Stock
+from ib_async.contract import Contract
 
 from ..config import AppSettings
 from ..logging import setup_logging
@@ -76,13 +76,16 @@ class IBKRBroker(Broker):
         if self.settings.mode.upper() == "LIVE":
             self._ensure_live_safety()
         contract = self._ib_contract(order.symbol)
-        ib_order = IBOrder()
-        ib_order.action = "BUY" if order.side.upper() == "BUY" else "SELL"
-        ib_order.totalQuantity = order.quantity
-        ib_order.orderType = "MKT" if order.order_type == "MKT" else "LMT"
-        if order.order_type == "LMT":
-            ib_order.lmtPrice = float(order.limit_price or 0.0)
-        ib_order.tif = order.time_in_force
+        action = "BUY" if order.side.upper() == "BUY" else "SELL"
+        if order.order_type == "MKT":
+            ib_order: Any = MarketOrder(action, order.quantity)
+        else:
+            ib_order = LimitOrder(action, order.quantity, float(order.limit_price or 0.0))
+        # Set time in force when available
+        try:
+            ib_order.tif = order.time_in_force
+        except Exception:
+            pass
         trade = self.ib.placeOrder(contract, ib_order)
         self.ib.sleep(0.1)
         return str(trade.order.orderId)
