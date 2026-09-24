@@ -40,6 +40,7 @@ def backtest(
     slippage_cfg: SlippageConfig,
     initial_equity: float = 100_000.0,
     position_size_pct: float = 100.0,
+    rebalance_band_pct: float = 0.0,
 ) -> BacktestResult:
     # Prepare signals
     signals = strategy.generate_signals(data)
@@ -50,10 +51,17 @@ def backtest(
     }
     cash = initial_equity
     holdings: Dict[str, int] = {sym: 0 for sym in data}
+    avg_price: Dict[str, float] = {sym: 0.0 for sym in data}
     trades: List[Tuple[str, str, int, float]] = []
     equity_curve = []
     returns = []
     prev_equity = initial_equity
+    total_commission = 0.0
+    turnover_notional = 0.0
+    realized_pnl = 0.0
+    realized_wins = 0.0
+    realized_losses = 0.0
+    realized_trades = 0
     for dt in all_dates:
         # Price snapshot
         prices = {
@@ -96,11 +104,50 @@ def backtest(
             delta = target - pos
             if delta == 0:
                 continue
+            # No-trade band to avoid micro rebalances
+            if pos != 0 and rebalance_band_pct > 0:
+                rel_change = abs(delta) / max(1, abs(pos))
+                if rel_change < rebalance_band_pct:
+                    continue
             side = 1 if delta > 0 else -1
             fill_price = _slip(slippage_cfg, price, side)
             commission = _commission(commission_cfg, delta, fill_price)
             cash -= delta * fill_price + commission
             holdings[sym] = pos + delta
+            turnover_notional += abs(delta) * fill_price
+            total_commission += commission
+            # Realized P&L tracking with simple average price inventory
+            if pos == 0 or (pos > 0 and delta > 0) or (pos < 0 and delta < 0):
+                # Increasing existing position or opening new: update average
+                new_qty = pos + delta
+                if new_qty != 0:
+                    avg_price[sym] = (
+                        (avg_price[sym] * pos + fill_price * delta) / new_qty
+                        if pos != 0
+                        else fill_price
+                    )
+            else:
+                # Reducing or flipping position: realize on overlapped shares
+                reduce_qty = min(abs(delta), abs(pos))
+                if pos > 0 and delta < 0:
+                    pnl = reduce_qty * (fill_price - avg_price[sym]) - commission
+                elif pos < 0 and delta > 0:
+                    pnl = reduce_qty * (avg_price[sym] - fill_price) - commission
+                else:
+                    pnl = 0.0
+                realized_pnl += pnl
+                if pnl > 0:
+                    realized_wins += pnl
+                elif pnl < 0:
+                    realized_losses += -pnl
+                realized_trades += 1
+                # Update average if position flips
+                new_pos = pos + delta
+                if new_pos == 0:
+                    avg_price[sym] = 0.0
+                elif (pos > 0 and new_pos < 0) or (pos < 0 and new_pos > 0):
+                    # flipped: new average at current fill
+                    avg_price[sym] = fill_price
             trades.append((str(dt), sym, int(delta), float(fill_price)))
         # Mark-to-market
         equity = cash + sum(qty * prices.get(sym, 0.0) for sym, qty in holdings.items())
@@ -117,6 +164,18 @@ def backtest(
     equity_series = pd.Series({dt: eq for dt, eq in equity_curve}).sort_index()
     returns_series = pd.Series({dt: r for dt, r in returns}).sort_index()
     stats = compute_stats(equity_series, returns_series)
+    # Extend stats with trade-level metrics
+    trade_count = len(trades)
+    total_abs = realized_wins + realized_losses
+    win_rate_trades = (realized_wins / total_abs) if total_abs > 0 else 0.0
+    profit_factor = (realized_wins / realized_losses) if realized_losses > 0 else 0.0
+    expectancy = (realized_pnl / realized_trades) if realized_trades > 0 else 0.0
+    stats.trade_count = trade_count
+    stats.total_commission = float(total_commission)
+    stats.turnover = float(turnover_notional / initial_equity if initial_equity else 0.0)
+    stats.win_rate_trades = float(win_rate_trades)
+    stats.profit_factor = float(profit_factor)
+    stats.expectancy = float(expectancy)
     return BacktestResult(
         equity_curve=equity_series,
         returns=returns_series,

@@ -24,7 +24,7 @@ def compute_breadth(universe_data: Dict[str, pd.DataFrame], long_ma: int = 200) 
                 if close > ma:
                     above += 1
         breadth.loc[dt] = (above / count) if count else np.nan
-    return breadth.fillna(method="ffill").fillna(0.0)
+    return breadth.ffill().fillna(0.0)
 
 
 def vix_risk_on_off(vix_df: pd.DataFrame) -> pd.Series:
@@ -52,7 +52,7 @@ def detect_regime(
     # VIX (si está disponible en universe_data). Si no, fallback sin red.
     if "^VIX" in universe_data:
         vix = universe_data["^VIX"]
-        risk_on = vix_risk_on_off(vix).reindex(breadth.index).fillna(method="ffill").fillna(0)
+        risk_on = vix_risk_on_off(vix).reindex(breadth.index).ffill().fillna(0)
     else:
         risk_on = pd.Series(1, index=breadth.index, dtype=int)  # fallback conservador
     # Trend proxy: when rolling std of returns is rising and price above 100d MA => trend
@@ -62,7 +62,7 @@ def detect_regime(
         # Fallback: usa el primer símbolo disponible para derivar un proxy de tendencia
         any_sym = next(iter(universe_data.keys()))
         bench_df = universe_data[any_sym]
-    close = bench_df["close"].astype(float).reindex(breadth.index).fillna(method="ffill")
+    close = bench_df["close"].astype(float).reindex(breadth.index).ffill()
     rets = close.pct_change()
     vol = rets.rolling(20).std(ddof=0)
     vol_slope = vol.diff(5)

@@ -12,10 +12,16 @@ class PerformanceStats:
     sharpe: float
     sortino: float
     max_drawdown: float
-    win_rate: float
+    win_rate: float  # daily win rate
     exposure: float
     total_return: float
     volatility: float
+    trade_count: int = 0
+    total_commission: float = 0
+    turnover: float = 0.0
+    win_rate_trades: float = 0.0
+    profit_factor: float = 0.0
+    expectancy: float = 0.0
 
 
 def compute_stats(

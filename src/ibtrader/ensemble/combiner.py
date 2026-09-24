@@ -49,12 +49,7 @@ def apply_regime_filter(
     Example: only allow long when risk_on=1, suppress signals when risk_off.
     """
     filtered: Dict[str, pd.Series] = {}
-    regime = (
-        regime_df["risk_on"]
-        .reindex(next(iter(scores.values())).index)
-        .fillna(method="ffill")
-        .fillna(0)
-    )
+    regime = regime_df["risk_on"].reindex(next(iter(scores.values())).index).ffill().fillna(0)
     for sym, sc in scores.items():
         s = sc.copy()
         s = s.where(~((regime == 0) & (s > 0)), 0.0)  # zero out long scores during risk-off

@@ -28,7 +28,8 @@ dependencies = [
   "rich==13.7.1",
   "structlog==24.2.0",
   "SQLAlchemy==2.0.34",
-  "yfinance==0.2.43",
+  # Use yfinance 1.x; handle MultiIndex flatten in code
+  "yfinance>=1.7.0,<2.0.0",
   "pyarrow==17.0.0",
   "matplotlib==3.9.0",
   "plotly==5.23.0",

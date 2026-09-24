@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Column, DateTime, Float, Integer, MetaData, String, Table, create_engine
@@ -55,7 +55,7 @@ def record_trade(
 ) -> None:
     with engine.begin() as conn:
         stmt = insert(trades_table).values(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             symbol=symbol,
             side=side,
             quantity=quantity,
@@ -79,7 +79,7 @@ def record_decision(
 ) -> None:
     with engine.begin() as conn:
         stmt = insert(decisions_table).values(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             symbol=symbol,
             action=action,
             score=score,

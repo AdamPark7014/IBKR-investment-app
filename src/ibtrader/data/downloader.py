@@ -33,6 +33,13 @@ def yf_interval(bar_size: str) -> str:
 
 
 def normalize_yf(df: pd.DataFrame) -> pd.DataFrame:
+    # yfinance 1.x may return MultiIndex columns (field, ticker)
+    if isinstance(df.columns, pd.MultiIndex):
+        try:
+            df = df.copy()
+            df.columns = df.columns.get_level_values(0)
+        except Exception:
+            pass
     out = df.rename(
         columns={
             "Open": "open",
@@ -54,15 +61,32 @@ def stooq_symbol(symbol: str) -> str:
 
 def download_symbol_history_stooq(symbol: str) -> pd.DataFrame:
     tkr = stooq_symbol(symbol)
-    url = f"https://stooq.com/q/d/l/?s={tkr}&i=d"
-    resp = requests.get(url, timeout=20)
-    if (
-        resp.status_code != 200
-        or not resp.text
-        or "Date,Open,High,Low,Close,Volume" not in resp.text
-    ):
+    urls = [
+        f"https://stooq.com/q/d/l/?s={tkr}&i=d",
+        f"https://stooq.pl/q/d/l/?s={tkr}&i=d",
+    ]
+    headers = {
+        "User-Agent": "curl/8.4.0",
+        "Accept": "text/csv, */*;q=0.1",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+    }
+    resp_text = None
+    for url in urls:
+        try:
+            resp = requests.get(url, timeout=20, headers=headers, allow_redirects=True)
+            if (
+                resp.status_code == 200
+                and resp.text
+                and "Date,Open,High,Low,Close,Volume" in resp.text
+            ):
+                resp_text = resp.text
+                break
+        except Exception:
+            continue
+    if not resp_text:
         raise RuntimeError(f"Stooq no disponible para {symbol}")
-    df = pd.read_csv(StringIO(resp.text))
+    df = pd.read_csv(StringIO(resp_text))
     if df.empty:
         raise RuntimeError(f"Stooq vacío para {symbol}")
     df["Date"] = pd.to_datetime(df["Date"])
@@ -103,6 +127,7 @@ def download_symbol_history(
             start=start_dt.date(),
             end=end_dt.date(),
             interval=interval,
+            group_by="column",
             auto_adjust=False,
             progress=False,
             actions=False,
