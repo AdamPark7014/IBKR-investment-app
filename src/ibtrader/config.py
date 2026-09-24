@@ -61,6 +61,8 @@ class TradingConfig(BaseModel):
     allow_short: bool = False
     rebalance_band_pct: float = 0.0
     direction: Literal["long_only", "short_only", "long_short"] = "long_only"
+    benefit_bps: float = 0.0
+    risk_cost_bps: float = 0.0
 
 
 class StrategyConfig(BaseModel):

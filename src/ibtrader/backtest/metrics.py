@@ -26,6 +26,8 @@ class PerformanceStats:
     recovery_factor: float = 0.0
     var_95: float = 0.0
     cvar_95: float = 0.0
+    current_underwater_days: int = 0
+    max_underwater_days: int = 0
 
 
 def compute_stats(
@@ -50,6 +52,18 @@ def compute_stats(
     roll_max = equity_curve.cummax()
     dd = equity_curve / roll_max - 1.0
     max_drawdown = float(dd.min())
+    # underwater durations
+    underwater = dd < 0
+    max_underwater_days = 0
+    cur = 0
+    for is_uw in underwater:
+        if is_uw:
+            cur += 1
+            if cur > max_underwater_days:
+                max_underwater_days = cur
+        else:
+            cur = 0
+    current_underwater_days = cur
     # win rate
     wins = (returns > 0).sum()
     win_rate = float(wins) / float(len(returns)) if len(returns) else 0.0
@@ -75,5 +89,7 @@ def compute_stats(
         recovery_factor=recovery_factor,
         var_95=var_95,
         cvar_95=cvar_95,
+        current_underwater_days=int(current_underwater_days),
+        max_underwater_days=int(max_underwater_days),
     )
 

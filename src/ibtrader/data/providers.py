@@ -8,6 +8,7 @@ from typing import Optional
 import pandas as pd
 import requests
 import yfinance as yf
+from ib_async import IB, Stock
 
 from .lineage import DataFrameWithMeta, DataLineage
 from .validators import validate_timeseries_strict
@@ -71,6 +72,62 @@ class YahooProvider(MarketDataProvider):
             license="Yahoo TOS (research use)",
         )
         return DataFrameWithMeta(out, lin)
+
+
+class IBKRProvider(MarketDataProvider):
+    def __init__(self, host: str = "127.0.0.1", port: int = 4001, client_id: int = 123) -> None:
+        self.host = host
+        self.port = port
+        self.client_id = client_id
+
+    def fetch_daily_ohlcv(
+        self, symbol: str, start: Optional[str] = None, end: Optional[str] = None
+    ) -> DataFrameWithMeta:
+        ib = IB()
+        try:
+            ib.connect(self.host, self.port, clientId=self.client_id, readonly=True, timeout=5)
+            contract = Stock(symbol, "SMART", "USD")
+            # 5 years daily bars as a default
+            bars = ib.reqHistoricalData(
+                contract,
+                endDateTime=end or "",
+                durationStr="5 Y",
+                barSizeSetting="1 day",
+                whatToShow="TRADES",
+                useRTH=True,
+            )
+            if not bars:
+                raise RuntimeError("IBKR vacío")
+            # Convert list of BarData-like to DataFrame
+            rows = []
+            for b in bars:
+                rows.append(
+                    {
+                        "date": pd.to_datetime(getattr(b, "date")),
+                        "open": float(getattr(b, "open")),
+                        "high": float(getattr(b, "high")),
+                        "low": float(getattr(b, "low")),
+                        "close": float(getattr(b, "close")),
+                        "volume": float(getattr(b, "volume")),
+                    }
+                )
+            df = pd.DataFrame(rows).set_index("date").sort_index()
+            ok, msg = validate_timeseries_strict(df)
+            if not ok:
+                raise RuntimeError(f"Data inválida de IBKR: {msg}")
+            lin = DataLineage(
+                source="ibkr",
+                source_url="ib_async historical",
+                methodology="IBKR TRADES daily bars",
+                parameters={"end": end, "durationStr": "5 Y"},
+                license="IBKR data (account subscriptions apply)",
+            )
+            return DataFrameWithMeta(df, lin)
+        finally:
+            try:
+                ib.disconnect()
+            except Exception:
+                pass
 
 
 class StooqProvider(MarketDataProvider):

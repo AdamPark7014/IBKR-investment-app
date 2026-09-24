@@ -41,6 +41,8 @@ def backtest(
     initial_equity: float = 100_000.0,
     position_size_pct: float = 100.0,
     rebalance_band_pct: float = 0.0,
+    benefit_bps: float = 0.0,
+    risk_cost_bps: float = 0.0,
 ) -> BacktestResult:
     # Prepare signals
     signals = strategy.generate_signals(data)
@@ -114,6 +116,21 @@ def backtest(
             side = 1 if delta > 0 else -1
             fill_price = _slip(slippage_cfg, price, side)
             commission = _commission(commission_cfg, delta, fill_price)
+            # Cost-aware hysteresis: only apply when benefit/risk modeling enabled
+            if (benefit_bps > 0.0) or (risk_cost_bps > 0.0):
+                slippage_cost = abs(delta) * price * (slippage_cfg.bps / 10000.0)
+                risk_cost = abs(delta) * price * (risk_cost_bps / 10000.0)
+                expected_benefit = abs(delta) * price * (benefit_bps / 10000.0)
+                total_cost = commission + slippage_cost + risk_cost
+                if expected_benefit <= total_cost:
+                    log.info(
+                        "no_rebalance delta=%s sym=%s exp_benefit=%.4f total_cost=%.4f",
+                        int(delta),
+                        sym,
+                        expected_benefit,
+                        total_cost,
+                    )
+                    continue
             cash -= delta * fill_price + commission
             holdings[sym] = pos + delta
             turnover_notional += abs(delta) * fill_price

@@ -9,7 +9,8 @@ from ..backtest.engine import backtest
 from ..backtest.metrics import compute_stats
 from ..backtest.report import save_equity_report
 from ..config import AppSettings
-from ..data.downloader import load_universe_data
+from ..data.downloader import load_universe_data  # legacy
+from ..data.service import load_universe_v2
 from ..engine.decision import DecisionEngine
 from ..logging import setup_logging
 from ..ops.killswitch import activate_killswitch, clear_killswitch
@@ -44,7 +45,8 @@ def download_data() -> None:
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
-    data = load_universe_data(s.universe, s.engine, s.data)
+    # Use V2 providers pipeline with quality gate
+    data = load_universe_v2(s)
     rprint({k: len(v) for k, v in data.items()})
 
 
@@ -55,7 +57,7 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
     warn_unknown_trading_env()
     if symbol:
         s.universe.symbols = [symbol]
-    data = load_universe_data(s.universe, s.engine, s.data)
+    data = load_universe_v2(s)
     strat = SMACrossover(
         fast_window=int(s.strategy.params.get("fast_window", 10)),
         slow_window=int(s.strategy.params.get("slow_window", 30)),
@@ -67,6 +69,8 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
         commission_cfg=s.commission,
         slippage_cfg=s.slippage,
         rebalance_band_pct=float(s.trading.rebalance_band_pct),
+        benefit_bps=float(s.trading.benefit_bps),
+        risk_cost_bps=float(s.trading.risk_cost_bps),
     )
     # Buy & Hold baseline on benchmark
     bench = s.universe.benchmark
@@ -84,6 +88,18 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
             "max_dd": stats_bh.max_drawdown,
             "win_rate": stats_bh.win_rate,
             "exposure": stats_bh.exposure,
+            "calmar": stats_bh.calmar,
+            "recovery_factor": stats_bh.recovery_factor,
+            "current_underwater_days": stats_bh.current_underwater_days,
+            "max_underwater_days": stats_bh.max_underwater_days,
+            "var_95": stats_bh.var_95,
+            "cvar_95": stats_bh.cvar_95,
+            "trade_count": 0,
+            "total_commission": 0.0,
+            "turnover": 0.0,
+            "win_rate_trades": 0.0,
+            "profit_factor": 0.0,
+            "expectancy": 0.0,
         }
     else:
         bh = None
@@ -145,7 +161,8 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
     warn_unknown_trading_env()
     if symbol:
         s.universe.symbols = [symbol]
-    data = load_universe_data(s.universe, s.engine, s.data)
+    # Use V2 providers pipeline with quality gate
+    data = load_universe_v2(s)
     base = SMACrossover(
         fast_window=int(s.strategy.params.get("fast_window", 10)),
         slow_window=int(s.strategy.params.get("slow_window", 30)),
@@ -161,6 +178,8 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
             commission_cfg=s.commission,
             slippage_cfg=s.slippage,
             rebalance_band_pct=float(s.trading.rebalance_band_pct),
+            benefit_bps=float(s.trading.benefit_bps),
+            risk_cost_bps=float(s.trading.risk_cost_bps),
         )
         results[m] = {
             "cagr": res.stats.cagr,
@@ -181,14 +200,26 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
         equity_bh = (units * px).rename("equity")
         returns_bh = equity_bh.pct_change().fillna(0.0)
         stats_bh = compute_stats(equity_bh, returns_bh)
+        # Full extended metric set for Buy & Hold
         bh = {
             "cagr": stats_bh.cagr,
             "sharpe": stats_bh.sharpe,
             "sortino": stats_bh.sortino,
-            "calmar": stats_bh.calmar,
             "max_dd": stats_bh.max_drawdown,
+            "win_rate": stats_bh.win_rate,
+            "exposure": stats_bh.exposure,
+            "calmar": stats_bh.calmar,
+            "recovery_factor": stats_bh.recovery_factor,
+            "current_underwater_days": stats_bh.current_underwater_days,
+            "max_underwater_days": stats_bh.max_underwater_days,
+            "var_95": stats_bh.var_95,
+            "cvar_95": stats_bh.cvar_95,
             "trade_count": 0,
-            "commission": 0.0,
+            "total_commission": 0.0,
+            "turnover": 0.0,
+            "win_rate_trades": 0.0,
+            "profit_factor": 0.0,
+            "expectancy": 0.0,
         }
     rprint(
         {

@@ -32,6 +32,8 @@ Requisitos (Windows 11, Python 3.12):
    - Estado: `ibtrader status`
    - Descargar datos (yfinance, para backtest): `ibtrader download-data`
    - Backtest de muestra (SMA crossover): `ibtrader backtest-sample`
+     - Puedes generar un ID de experimento: `ibtrader backtest-sample --exp-id p1p5_check`
+     - Comparar modos (P5): `ibtrader compare-directions --exp-id p1p5_compare`
    - Motor de decisiones (fase 1, NO_TRADE): `ibtrader paper-run`
    - Kill switch: `ibtrader kill` / limpiar: `ibtrader clear-kill`
 
@@ -43,4 +45,17 @@ Calidad:
 
 CI (GitHub Actions):
 - PRs contra `dev` ejecutan lint + mypy + tests.
+
+Datos (P2):
+- Todos los comandos (`download-data`, `backtest-sample`, `compare-directions`) usan un pipeline de proveedores con puerta de calidad:
+  - Primero Yahoo Finance (vía yfinance 1.x) y, si falla, Stooq CSV con cabeceras tipo `curl` (evita 404).
+  - Validación estricta: índice creciente sin duplicados, columnas no vacías. Si falla, se bloquea el backtest.
+  - IBKRProvider (vía `ib_async`) está implementado para históricos diarios (TRADES) y se puede enchufar; no es predeterminado en pruebas/CI.
+
+Histeresis costo-aware (P3–P4):
+- Opcional y desactivada por defecto. Variables:
+  - `TRADING__BENEFIT_BPS`: beneficio esperado por rebalanceo (bps).
+  - `TRADING__RISK_COST_BPS`: coste de riesgo por rebalanceo (bps).
+- Si cualquiera > 0: solo reequilibra si `beneficio_esperado > comisión + slippage + coste_riesgo`.
+- Razones de NO_REBALANCE se registran en logs estructurados (JSON).
 
