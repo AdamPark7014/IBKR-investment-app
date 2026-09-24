@@ -397,11 +397,10 @@ def run_with_risk(symbol: Optional[str] = None, exp_id: Optional[str] = None, ri
     # Regime model on benchmark
     bench = s.universe.benchmark if s.universe.benchmark in data else sym
     model, rep = fit_gmm_regime(data[bench]["close"], n_components=2)
-    # Identify risk-on component by higher mean return
-    mu = rep.groupby("regime")["ret_1d"].mean()
-    risk_on_label = int(mu.idxmax()) if len(mu) else 0
-    last = rep.iloc[-1]
-    p_risk_on = float(last.get(f"p_{risk_on_label}", 0.0))
+    # Risk-on probability at last point using training-based label ordering
+    feats = build_regime_features(data[bench]["close"])
+    proba = model.predict_proba(feats.tail(1))
+    p_risk_on = float(proba[0, model.risk_on_label]) if proba.shape[0] == 1 else 0.0
     # EV proxy from SMA signal
     base = SMACrossover(
         fast_window=int(s.strategy.params.get("fast_window", 10)),
@@ -410,6 +409,11 @@ def run_with_risk(symbol: Optional[str] = None, exp_id: Optional[str] = None, ri
     )
     sig = base.generate_signals({sym: data[sym]})[sym].reindex(data[sym].index).fillna(0)
     last_sig = int(sig.iloc[-1]) if len(sig) else 0
+    # Respect direction default
+    if s.trading.direction == "long_only":
+        last_sig = max(last_sig, 0)
+    elif s.trading.direction == "short_only":
+        last_sig = min(last_sig, 0)
     # Risk veto
     thr = float(risk_on_threshold) if risk_on_threshold is not None else float(s.risk.risk_on_threshold)
     veto_reason = None

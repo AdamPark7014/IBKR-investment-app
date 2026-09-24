@@ -7,6 +7,7 @@ import pandas as pd
 
 from ..config import AppSettings
 from .cache import load_from_cache, load_lineage, save_lineage, save_to_cache
+from .lineage import DataFrameWithMeta, DataLineage
 from .providers import DataQualityGate, IBKRProvider, StooqProvider, YahooProvider
 
 
@@ -44,8 +45,13 @@ def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
                 meta_ok = meta is not None and (meta.source or "").lower() in allowed_sources
                 fresh_ok = (age_days <= max(settings.data.max_cache_age_days, 1))
                 if (not has_future) and meta_ok and fresh_ok:
-                    out[sym] = cached
-                    continue
+                    try:
+                        gate.validate(DataFrameWithMeta(cached, meta))
+                        out[sym] = cached
+                        continue
+                    except Exception:
+                        # fall through to providers
+                        pass
         errors: List[str] = []
         for name, prov in provider_chain:
             try:

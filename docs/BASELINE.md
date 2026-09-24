@@ -36,3 +36,10 @@ Datos:
 Notas:
 - El modo SHORT permanece deshabilitado por defecto (evidencia negativa).
 - La comparación se ejecuta con `ibtrader compare-directions --exp-id p1p5_compare` y reporta métricas extendidas por modo y para Buy&Hold.
+
+Corrección de ejecución (v1.1):
+- El backtester ahora ejecuta señales de cierre en la apertura del siguiente día (t+1), con slippage, para evitar look-ahead. El baseline original (v1.0) se preserva tal cual; junto a él se registrará un baseline v1.1 “next-open” ejecutado en la PC del propietario.
+- Para reproducir v1.1 y la comparación de direcciones bajo la ejecución corregida:
+  - `ibtrader download-data`
+  - `ibtrader backtest-sample --exp-id baseline_v11`
+  - `ibtrader compare-directions --exp-id p1p5_v11`

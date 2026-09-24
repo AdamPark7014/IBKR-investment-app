@@ -14,6 +14,7 @@ class RegimeModel:
     scaler: StandardScaler
     gmm: GaussianMixture
     feature_names: Tuple[str, str] = ("ret_1d", "vol_20")
+    risk_on_label: int = 0
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         Z = self.scaler.transform(X[list(self.feature_names)].values)
@@ -27,7 +28,7 @@ class RegimeModel:
 def build_regime_features(benchmark_px: pd.Series) -> pd.DataFrame:
     px = benchmark_px.astype(float).dropna()
     rets = px.pct_change().fillna(0.0)
-    vol20 = rets.rolling(20).std(ddof=0).bfill().fillna(0.0)
+    vol20 = rets.rolling(20).std(ddof=0)
     feats = pd.DataFrame({"ret_1d": rets, "vol_20": vol20}).dropna()
     return feats
 
@@ -46,7 +47,14 @@ def fit_gmm_regime(benchmark_px: pd.Series, n_components: int = 2, train_slice: 
     Z = scaler.fit_transform(X_train.values)
     gmm = GaussianMixture(n_components=n_components, covariance_type="full", random_state=42)
     gmm.fit(Z)
-    model = RegimeModel(scaler=scaler, gmm=gmm)
+    # Identify risk-on by higher mean return on training data
+    probs_train = gmm.predict_proba(Z)
+    labels_train = probs_train.argmax(axis=1)
+    df_train = X_train.copy()
+    df_train["regime"] = labels_train
+    means_train = df_train.groupby("regime")["ret_1d"].mean()
+    risk_on_label = int(means_train.idxmax()) if len(means_train) else 0
+    model = RegimeModel(scaler=scaler, gmm=gmm, risk_on_label=risk_on_label)
     # Full prediction for reporting
     probs = model.predict_proba(feats)
     labels = probs.argmax(axis=1)

@@ -9,6 +9,8 @@ from ..config import CommissionConfig, SlippageConfig
 from ..logging import setup_logging
 from ..strategy.base import Strategy
 from .metrics import PerformanceStats, compute_stats
+from ..risk.sizing import volatility_target_weight
+from ..risk.manager import RiskManager
 
 log = setup_logging()
 
@@ -43,6 +45,12 @@ def backtest(
     rebalance_band_pct: float = 0.0,
     benefit_bps: float = 0.0,
     risk_cost_bps: float = 0.0,
+    # Risk integration (optional)
+    direction: str | None = None,  # long_only | short_only | long_short
+    risk_on: pd.Series | None = None,  # 0/1 series aligned to dates (dt_prev)
+    risk_on_threshold: float = 0.0,
+    target_vol_annual: float | None = None,
+    risk_manager: RiskManager | None = None,
 ) -> BacktestResult:
     # Prepare signals
     signals = strategy.generate_signals(data)
@@ -68,49 +76,76 @@ def backtest(
     cur_trade_pnl: Dict[str, float] = {sym: 0.0 for sym in data}
     win_trades = 0
     loss_trades = 0
-    for dt in all_dates:
-        # Price snapshot
-        prices = {
-            sym: float(data[sym].reindex([dt])["close"].iloc[0])
+    for i, dt in enumerate(all_dates):
+        if i == 0:
+            # No execution possible on first bar; mark-to-market at close
+            close_prices = {
+                sym: float(data[sym].reindex([dt])["close"].iloc[0]) for sym in data if dt in data[sym].index
+            }
+            equity = cash + sum(qty * close_prices.get(sym, 0.0) for sym, qty in holdings.items())
+            equity_curve.append((dt, equity))
+            returns.append((dt, 0.0))
+            prev_equity = equity
+            for sym in data.keys():
+                positions[sym].loc[dt] = holdings.get(sym, 0)
+            continue
+        dt_prev = all_dates[i - 1]
+        close_prev = {
+            sym: float(data[sym].reindex([dt_prev])["close"].iloc[0])
+            for sym in data
+            if dt_prev in data[sym].index
+        }
+        open_now = {
+            sym: float(data[sym].reindex([dt])["open"].iloc[0])
             for sym in data
             if dt in data[sym].index
         }
-        # Target generation: full allocation equally distributed among positive signals
-        longs = [
-            sym for sym, s in signals.items() if int(s.reindex([dt]).fillna(0).iloc[0]) > 0
-        ]
-        shorts = [
-            sym for sym, s in signals.items() if int(s.reindex([dt]).fillna(0).iloc[0]) < 0
-        ]
+        # Equal-weight targets based on signals at dt_prev
+        # Build raw sign per symbol from signals with direction and risk gating
+        raw_sign: Dict[str, int] = {}
+        for sym, s in signals.items():
+            sig = int(s.reindex([dt_prev]).fillna(0).iloc[0])
+            # Enforce direction
+            if direction == "long_only":
+                sig = max(sig, 0)
+            elif direction == "short_only":
+                sig = min(sig, 0)
+            # Risk-on veto
+            if risk_on is not None:
+                ro = float(risk_on.reindex([dt_prev]).fillna(1.0).iloc[0])
+                if ro < risk_on_threshold:
+                    sig = 0
+            raw_sign[sym] = sig
+        actives = [sym for sym, sign in raw_sign.items() if sign != 0]
         targets: Dict[str, int] = {sym: 0 for sym in data}
-        n_active = len(longs) + len(shorts)
-        alloc_per = (position_size_pct / 100.0) / max(n_active, 1)
-        for sym in longs:
-            if sym in prices:
-                qty = int(
-                    (cash + sum(holdings[s] * prices.get(s, 0) for s in holdings))
-                    * alloc_per
-                    / prices[sym]
-                )
-                targets[sym] = max(qty, 0)
-        for sym in shorts:
-            if sym in prices:
-                qty = int(
-                    (cash + sum(holdings[s] * prices.get(s, 0) for s in holdings))
-                    * alloc_per
-                    / prices[sym]
-                )
-                targets[sym] = -max(qty, 0)
-        # Rebalance toward targets (simple market orders at close with slippage)
+        n_active = len(actives)
+        base_alloc = (position_size_pct / 100.0) / max(n_active, 1)
+        nav_prev = cash + sum(holdings[s] * close_prev.get(s, 0.0) for s in holdings)
+        for sym in actives:
+            if sym in open_now and open_now[sym] > 0:
+                # Volatility-target sizing factor (if enabled)
+                vt = 1.0
+                if target_vol_annual is not None and target_vol_annual > 0:
+                    rets_hist = (
+                        pd.Series(close_prev.get(sym, 0.0), index=[dt_prev])
+                    )  # placeholder to satisfy typing
+                    # Use symbol history up to dt_prev for realized vol
+                    hist_series = data[sym]["close"].astype(float)
+                    hist_series = hist_series.loc[:dt_prev]
+                    rets = hist_series.pct_change().fillna(0.0)
+                    vt = volatility_target_weight(rets, target_vol_annual=target_vol_annual)
+                w = base_alloc * vt * (1 if raw_sign[sym] > 0 else -1)
+                qty = int(nav_prev * abs(w) / open_now[sym])
+                targets[sym] = qty if w >= 0 else -qty
+        # Execute at today's open
         for sym, target in targets.items():
-            price = prices.get(sym)
+            price = open_now.get(sym)
             if price is None:
                 continue
             pos = holdings.get(sym, 0)
             delta = target - pos
             if delta == 0:
                 continue
-            # No-trade band to avoid micro rebalances
             if pos != 0 and rebalance_band_pct > 0:
                 rel_change = abs(delta) / max(1, abs(pos))
                 if rel_change < rebalance_band_pct:
@@ -118,12 +153,9 @@ def backtest(
             side = 1 if delta > 0 else -1
             fill_price = _slip(slippage_cfg, price, side)
             commission = _commission(commission_cfg, delta, fill_price)
-            # Cost-aware hysteresis: only apply when enabled AND this is a micro-rebalance
-            # Never block initial entries (pos==0) or full exits (target==0) or sign flips.
             if ((benefit_bps > 0.0) or (risk_cost_bps > 0.0)) and (pos != 0) and (target != 0) and (pos * target > 0):
                 slippage_cost = abs(delta) * price * (slippage_cfg.bps / 10000.0)
                 risk_cost = abs(delta) * price * (risk_cost_bps / 10000.0)
-                # Tie expected benefit to rebalance magnitude and a per-bps expected improvement
                 expected_benefit = abs(delta) * price * (benefit_bps / 10000.0)
                 total_cost = commission + slippage_cost + risk_cost
                 if expected_benefit <= total_cost:
@@ -135,13 +167,22 @@ def backtest(
                         total_cost,
                     )
                     continue
+            # Risk manager veto (optional)
+            if risk_manager is not None:
+                eq_prev = nav_prev
+                cur_pos_val = sum(holdings[s] * close_prev.get(s, 0.0) for s in holdings)
+                ok, msg = risk_manager.approve_order(
+                    symbol=sym, equity=eq_prev, price=fill_price, quantity=int(delta), current_positions_value=float(cur_pos_val)
+                )
+                if not ok:
+                    log.info("risk_veto sym=%s reason=%s", sym, msg)
+                    continue
             cash -= delta * fill_price + commission
             holdings[sym] = pos + delta
             turnover_notional += abs(delta) * fill_price
             total_commission += commission
-            # Realized P&L tracking with simple average price inventory
             if pos == 0 or (pos > 0 and delta > 0) or (pos < 0 and delta < 0):
-                # Increasing existing position or opening new: update average
+                # Opening/increasing: update average and include entry commission in trade bucket
                 new_qty = pos + delta
                 if new_qty != 0:
                     avg_price[sym] = (
@@ -149,8 +190,8 @@ def backtest(
                         if pos != 0
                         else fill_price
                     )
+                cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) - commission
             else:
-                # Reducing or flipping position: realize on overlapped shares
                 reduce_qty = min(abs(delta), abs(pos))
                 if pos > 0 and delta < 0:
                     pnl = reduce_qty * (fill_price - avg_price[sym]) - commission
@@ -158,40 +199,38 @@ def backtest(
                     pnl = reduce_qty * (avg_price[sym] - fill_price) - commission
                 else:
                     pnl = 0.0
-                # Accumulate segment P&L into the current open trade bucket
                 cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) + pnl
-                # Determine if this action closed a round-trip (full exit or sign flip)
                 new_pos = pos + delta
                 closed_round_trip = (new_pos == 0) or (pos * new_pos < 0)
                 if closed_round_trip:
                     total_trade_pnl = cur_trade_pnl.get(sym, 0.0)
                     realized_pnl += total_trade_pnl
-                    if pnl > 0:
-                        realized_wins += max(total_trade_pnl, 0.0)
+                    if total_trade_pnl > 0:
+                        realized_wins += total_trade_pnl
                         win_trades += 1
-                    elif pnl < 0:
-                        realized_losses += max(-total_trade_pnl, 0.0)
+                    elif total_trade_pnl < 0:
+                        realized_losses += -total_trade_pnl
                         loss_trades += 1
                     realized_trades += 1
-                    # reset accumulator for the symbol
                     cur_trade_pnl[sym] = 0.0
-                # Update average if position flips
                 if new_pos == 0:
                     avg_price[sym] = 0.0
                 elif (pos > 0 and new_pos < 0) or (pos < 0 and new_pos > 0):
-                    # flipped: new average at current fill
                     avg_price[sym] = fill_price
             trades.append((str(dt), sym, int(delta), float(fill_price)))
-        # Mark-to-market
-        equity = cash + sum(qty * prices.get(sym, 0.0) for sym, qty in holdings.items())
+        # Mark-to-market at today's close
+        close_today = {
+            sym: float(data[sym].reindex([dt])["close"].iloc[0])
+            for sym in data
+            if dt in data[sym].index
+        }
+        equity = cash + sum(qty * close_today.get(sym, 0.0) for sym, qty in holdings.items())
         equity_curve.append((dt, equity))
         ret = (equity / prev_equity - 1.0) if prev_equity else 0.0
-        # If flat everywhere, set return zero to help exposure proxy
         if all(qty == 0 for qty in holdings.values()):
             ret = 0.0
         returns.append((dt, ret))
         prev_equity = equity
-        # Record positions
         for sym in data.keys():
             positions[sym].loc[dt] = holdings.get(sym, 0)
     equity_series = pd.Series({dt: eq for dt, eq in equity_curve}).sort_index()
