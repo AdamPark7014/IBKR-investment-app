@@ -50,12 +50,13 @@ Datos (P2):
 - Todos los comandos (`download-data`, `backtest-sample`, `compare-directions`) usan un pipeline de proveedores con puerta de calidad:
   - Primero Yahoo Finance (vía yfinance 1.x) y, si falla, Stooq CSV con cabeceras tipo `curl` (evita 404).
   - Validación estricta: índice creciente sin duplicados, columnas no vacías. Si falla, se bloquea el backtest.
-  - IBKRProvider (vía `ib_async`) está implementado para históricos diarios (TRADES) y se puede enchufar; no es predeterminado en pruebas/CI.
+  - Stooq es poco confiable (a veces responde con una página de verificación JS); el error ahora agrega la razón de cada proveedor probado.
+  - IBKRProvider (vía `ib_async`) está implementado para históricos diarios (TRADES). Es opcional y seleccionable vía `DATA__PROVIDERS` (por defecto `yahoo,stooq`), no se usa en pruebas/CI.
 
 Histeresis costo-aware (P3–P4):
 - Opcional y desactivada por defecto. Variables:
   - `TRADING__BENEFIT_BPS`: beneficio esperado por rebalanceo (bps).
   - `TRADING__RISK_COST_BPS`: coste de riesgo por rebalanceo (bps).
-- Si cualquiera > 0: solo reequilibra si `beneficio_esperado > comisión + slippage + coste_riesgo`.
+- Si cualquiera > 0: solo reequilibra si `beneficio_esperado > comisión + slippage + coste_riesgo`. Entradas iniciales, salidas totales y flips de signo no se bloquean por histeresis (se aplica a micro-rebalances).
 - Razones de NO_REBALANCE se registran en logs estructurados (JSON).
 

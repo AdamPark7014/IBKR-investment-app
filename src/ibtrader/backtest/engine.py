@@ -116,10 +116,12 @@ def backtest(
             side = 1 if delta > 0 else -1
             fill_price = _slip(slippage_cfg, price, side)
             commission = _commission(commission_cfg, delta, fill_price)
-            # Cost-aware hysteresis: only apply when benefit/risk modeling enabled
-            if (benefit_bps > 0.0) or (risk_cost_bps > 0.0):
+            # Cost-aware hysteresis: only apply when enabled AND this is a micro-rebalance
+            # Never block initial entries (pos==0) or full exits (target==0) or sign flips.
+            if ((benefit_bps > 0.0) or (risk_cost_bps > 0.0)) and (pos != 0) and (target != 0) and (pos * target > 0):
                 slippage_cost = abs(delta) * price * (slippage_cfg.bps / 10000.0)
                 risk_cost = abs(delta) * price * (risk_cost_bps / 10000.0)
+                # Tie expected benefit to rebalance magnitude and a per-bps expected improvement
                 expected_benefit = abs(delta) * price * (benefit_bps / 10000.0)
                 total_cost = commission + slippage_cost + risk_cost
                 if expected_benefit <= total_cost:
@@ -155,15 +157,18 @@ def backtest(
                 else:
                     pnl = 0.0
                 realized_pnl += pnl
-                if pnl > 0:
-                    realized_wins += pnl
-                    win_trades += 1
-                elif pnl < 0:
-                    realized_losses += -pnl
-                    loss_trades += 1
-                realized_trades += 1
-                # Update average if position flips
+                # Determine if this action closed a round-trip (full exit or sign flip)
                 new_pos = pos + delta
+                closed_round_trip = (new_pos == 0) or (pos * new_pos < 0)
+                if closed_round_trip:
+                    if pnl > 0:
+                        realized_wins += pnl
+                        win_trades += 1
+                    elif pnl < 0:
+                        realized_losses += -pnl
+                        loss_trades += 1
+                    realized_trades += 1
+                # Update average if position flips
                 if new_pos == 0:
                     avg_price[sym] = 0.0
                 elif (pos > 0 and new_pos < 0) or (pos < 0 and new_pos > 0):

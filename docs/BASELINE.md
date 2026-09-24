@@ -27,3 +27,12 @@ Observación: la estrategia underperforma fuertemente a Buy&Hold en este periodo
 Datos:
 - Archivo JSON con métricas: ver `baselines/phase1_sma_spy_20210927_20260923.json`
 
+### P5 — Comparación de direcciones (SPY, ~5 años)
+- Long only: CAGR 6.29%, Sharpe 0.78, Máx DD -18.5%, Fills 38, Comisión ~$39
+- Short only: CAGR -5.51%, Sharpe -0.24, Máx DD -31.9%, Fills 405
+- Long+Short (banda 0.02): CAGR 0.48%, Fills 225, Comisión ~$256
+- Buy&Hold SPY: CAGR 11.7%, Sharpe 0.73, Máx DD -25.4%
+
+Notas:
+- El modo SHORT permanece deshabilitado por defecto (evidencia negativa).
+- La comparación se ejecuta con `ibtrader compare-directions --exp-id p1p5_compare` y reporta métricas extendidas por modo y para Buy&Hold.

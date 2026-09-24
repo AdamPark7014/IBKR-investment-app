@@ -20,7 +20,13 @@ from ..strategy.sma_crossover import SMACrossover
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
 
-KNOWN_TRADING_VARS = {"TRADING__ALLOW_SHORT", "TRADING__REBALANCE_BAND_PCT", "TRADING__DIRECTION"}
+KNOWN_TRADING_VARS = {
+    "TRADING__ALLOW_SHORT",
+    "TRADING__REBALANCE_BAND_PCT",
+    "TRADING__DIRECTION",
+    "TRADING__BENEFIT_BPS",
+    "TRADING__RISK_COST_BPS",
+}
 
 def warn_unknown_trading_env() -> None:
     import os as _os
@@ -58,11 +64,13 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
     if symbol:
         s.universe.symbols = [symbol]
     data = load_universe_v2(s)
-    strat = SMACrossover(
+    # Build base strategy; direction controls exposure, not allow_short
+    base_strat = SMACrossover(
         fast_window=int(s.strategy.params.get("fast_window", 10)),
         slow_window=int(s.strategy.params.get("slow_window", 30)),
-        allow_short=bool(s.trading.allow_short),
+        allow_short=True,
     )
+    strat = _DirectionWrapper(base_strat, s.trading.direction)
     result = backtest(
         data=data,
         strategy=strat,
@@ -110,9 +118,11 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
         {
             "report": out,
             "settings": {
-                "allow_short": s.trading.allow_short,
-                "rebalance_band_pct": s.trading.rebalance_band_pct,
                 "direction": s.trading.direction,
+                "rebalance_band_pct": s.trading.rebalance_band_pct,
+                "allow_short_deprecated": s.trading.allow_short,
+                "benefit_bps": s.trading.benefit_bps,
+                "risk_cost_bps": s.trading.risk_cost_bps,
             },
             "cagr": result.stats.cagr,
             "sharpe": result.stats.sharpe,
@@ -122,6 +132,8 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
             "exposure": result.stats.exposure,
             "calmar": result.stats.calmar,
             "recovery_factor": result.stats.recovery_factor,
+            "current_underwater_days": result.stats.current_underwater_days,
+            "max_underwater_days": result.stats.max_underwater_days,
             "var_95": result.stats.var_95,
             "cvar_95": result.stats.cvar_95,
             "trade_count": result.stats.trade_count,
@@ -187,8 +199,19 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
             "sortino": res.stats.sortino,
             "calmar": res.stats.calmar,
             "max_dd": res.stats.max_drawdown,
+            "win_rate": res.stats.win_rate,
+            "exposure": res.stats.exposure,
+            "recovery_factor": res.stats.recovery_factor,
+            "current_underwater_days": res.stats.current_underwater_days,
+            "max_underwater_days": res.stats.max_underwater_days,
+            "var_95": res.stats.var_95,
+            "cvar_95": res.stats.cvar_95,
             "trade_count": res.stats.trade_count,
-            "commission": res.stats.total_commission,
+            "total_commission": res.stats.total_commission,
+            "turnover": res.stats.turnover,
+            "win_rate_trades": res.stats.win_rate_trades,
+            "profit_factor": res.stats.profit_factor,
+            "expectancy": res.stats.expectancy,
         }
     # Buy & Hold
     bench = s.universe.benchmark
@@ -230,15 +253,11 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
     )
 
 
-if __name__ == "__main__":
-    app()
-
-
 @app.command("paper-run")
 def paper_run() -> None:
     s = AppSettings()
     s.resolve_paths()
-    data = load_universe_data(s.universe, s.engine, s.data)
+    data = load_universe_v2(s)
     engine = DecisionEngine(s)
     decisions = engine.generate(data)
     # Fase 1: sólo imprimir/registrar (NO_TRADE)
@@ -259,4 +278,7 @@ def clear_kill() -> None:
     s.resolve_paths()
     clear_killswitch(s.risk.killswitch_file)
     rprint({"kill_switch": False})
+
+if __name__ == "__main__":
+    app()
 

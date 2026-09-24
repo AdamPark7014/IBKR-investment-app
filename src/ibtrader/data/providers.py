@@ -75,7 +75,7 @@ class YahooProvider(MarketDataProvider):
 
 
 class IBKRProvider(MarketDataProvider):
-    def __init__(self, host: str = "127.0.0.1", port: int = 4001, client_id: int = 123) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 4002, client_id: int = 123) -> None:
         self.host = host
         self.port = port
         self.client_id = client_id

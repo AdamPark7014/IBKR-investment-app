@@ -36,5 +36,15 @@ def test_backtest_runs_and_returns_metrics() -> None:
         slippage_cfg=SlippageConfig(),
     )
     assert result.stats.cagr > 0.0
+    # With cost-aware hysteresis enabled, initial entry should still occur (trade_count >= 1)
+    result_hyst = backtest(
+        data=data,
+        strategy=AlwaysLong(),
+        commission_cfg=CommissionConfig(),
+        slippage_cfg=SlippageConfig(),
+        benefit_bps=1.0,
+        risk_cost_bps=0.5,
+    )
+    assert result_hyst.stats.trade_count >= 1
     assert len(result.equity_curve) == 100
 

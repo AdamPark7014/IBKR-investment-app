@@ -36,6 +36,7 @@ class DataConfig(BaseModel):
     cache_dir: str = "./data/cache"
     reports_dir: str = "./reports"
     journal_db: str = "./data/journal.sqlite"
+    providers: List[str] = Field(default_factory=lambda: ["yahoo", "stooq"])
 
 
 class IBConfig(BaseModel):
