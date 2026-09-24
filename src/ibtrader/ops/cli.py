@@ -19,11 +19,23 @@ from ..strategy.sma_crossover import SMACrossover
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
 
+KNOWN_TRADING_VARS = {"TRADING__ALLOW_SHORT", "TRADING__REBALANCE_BAND_PCT", "TRADING__DIRECTION"}
+
+def warn_unknown_trading_env() -> None:
+    import os as _os
+
+    unknown = [
+        k for k in _os.environ.keys() if k.startswith("TRADING__") and k not in KNOWN_TRADING_VARS
+    ]
+    if unknown:
+        log.warning("unknown_trading_env_vars %s", unknown)
+
 
 @app.command()
 def status() -> None:
     s = AppSettings()
     s.resolve_paths()
+    warn_unknown_trading_env()
     rprint(status_summary(s))
 
 
@@ -31,14 +43,16 @@ def status() -> None:
 def download_data() -> None:
     s = AppSettings()
     s.resolve_paths()
+    warn_unknown_trading_env()
     data = load_universe_data(s.universe, s.engine, s.data)
     rprint({k: len(v) for k, v in data.items()})
 
 
 @app.command()
-def backtest_sample(symbol: Optional[str] = None) -> None:
+def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) -> None:
     s = AppSettings()
     s.resolve_paths()
+    warn_unknown_trading_env()
     if symbol:
         s.universe.symbols = [symbol]
     data = load_universe_data(s.universe, s.engine, s.data)
@@ -73,10 +87,17 @@ def backtest_sample(symbol: Optional[str] = None) -> None:
         }
     else:
         bh = None
-    out = save_equity_report(result, s.data.reports_dir, name="sample_backtest")
+    from datetime import datetime as _dt
+    run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    out = save_equity_report(result, s.data.reports_dir, name=f"backtest_{run_id}")
     rprint(
         {
             "report": out,
+            "settings": {
+                "allow_short": s.trading.allow_short,
+                "rebalance_band_pct": s.trading.rebalance_band_pct,
+                "direction": s.trading.direction,
+            },
             "cagr": result.stats.cagr,
             "sharpe": result.stats.sharpe,
             "sortino": result.stats.sortino,
@@ -91,11 +112,95 @@ def backtest_sample(symbol: Optional[str] = None) -> None:
             "total_commission": result.stats.total_commission,
             "turnover": result.stats.turnover,
             "win_rate_trades": result.stats.win_rate_trades,
+            "pnl_win_share": (
+                result.stats.profit_factor / (1 + result.stats.profit_factor)
+                if result.stats.profit_factor > 0
+                else 0.0
+            ),
             "profit_factor": result.stats.profit_factor,
             "expectancy": result.stats.expectancy,
             "buy_hold": bh,
         }
     )
+
+
+class _DirectionWrapper(SMACrossover):
+    def __init__(self, base: SMACrossover, mode: str) -> None:
+        super().__init__(fast_window=base.fast, slow_window=base.slow, allow_short=True)
+        self.mode = mode
+
+    def generate_signals(self, data):
+        sigs = super().generate_signals(data)
+        if self.mode == "long_only":
+            return {k: v.clip(lower=0) for k, v in sigs.items()}
+        if self.mode == "short_only":
+            return {k: (v.mask(v > 0, 0)).clip(upper=0) for k, v in sigs.items()}
+        return sigs
+
+
+@app.command("compare-directions")
+def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = None) -> None:
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    if symbol:
+        s.universe.symbols = [symbol]
+    data = load_universe_data(s.universe, s.engine, s.data)
+    base = SMACrossover(
+        fast_window=int(s.strategy.params.get("fast_window", 10)),
+        slow_window=int(s.strategy.params.get("slow_window", 30)),
+        allow_short=True,
+    )
+    modes = ["long_only", "short_only", "long_short"]
+    results = {}
+    for m in modes:
+        strat = _DirectionWrapper(base, m)
+        res = backtest(
+            data=data,
+            strategy=strat,
+            commission_cfg=s.commission,
+            slippage_cfg=s.slippage,
+            rebalance_band_pct=float(s.trading.rebalance_band_pct),
+        )
+        results[m] = {
+            "cagr": res.stats.cagr,
+            "sharpe": res.stats.sharpe,
+            "sortino": res.stats.sortino,
+            "calmar": res.stats.calmar,
+            "max_dd": res.stats.max_drawdown,
+            "trade_count": res.stats.trade_count,
+            "commission": res.stats.total_commission,
+        }
+    # Buy & Hold
+    bench = s.universe.benchmark
+    bh = None
+    if bench in data:
+        px = data[bench]["close"].astype(float).dropna()
+        initial = 100_000.0
+        units = initial / float(px.iloc[0])
+        equity_bh = (units * px).rename("equity")
+        returns_bh = equity_bh.pct_change().fillna(0.0)
+        stats_bh = compute_stats(equity_bh, returns_bh)
+        bh = {
+            "cagr": stats_bh.cagr,
+            "sharpe": stats_bh.sharpe,
+            "sortino": stats_bh.sortino,
+            "calmar": stats_bh.calmar,
+            "max_dd": stats_bh.max_drawdown,
+            "trade_count": 0,
+            "commission": 0.0,
+        }
+    rprint(
+        {
+            "settings": {"rebalance_band_pct": s.trading.rebalance_band_pct},
+            "directions": results,
+            "buy_hold": bh,
+        }
+    )
+
+
+if __name__ == "__main__":
+    app()
 
 
 @app.command("paper-run")

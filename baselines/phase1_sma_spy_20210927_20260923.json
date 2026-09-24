@@ -1,5 +1,5 @@
 {
-  "strategy": "SMA_10_30_long_flat",
+  "strategy": "SMA_10_30_long_short",
   "universe": ["SPY"],
   "benchmark": "SPY",
   "period": {
@@ -13,25 +13,31 @@
   },
   "initial_equity": 100000.0,
   "metrics": {
-    "cagr": 0.0043,
-    "sharpe": 0.11,
-    "sortino": 0.15,
-    "max_drawdown": -0.272,
-    "total_return": 0.022,
+    "cagr": 0.004349060450075104,
+    "sharpe": 0.1112034889540013,
+    "sortino": 0.14991858161642665,
+    "max_drawdown": -0.27155142547360467,
+    "total_return": 0.02181208784033073,
     "fills": 410,
+    "commission_total": 440.40,
     "days_long": 797,
     "days_short": 427,
     "days_flat": 29
   },
   "buy_hold": {
-    "cagr": 0.117,
-    "sharpe": 0.73,
-    "max_drawdown": -0.254
+    "cagr": 0.1171407252215686,
+    "sharpe": 0.7289258234489157,
+    "sortino": 1.0155793814370613,
+    "max_drawdown": -0.25360573583036894
   },
   "source": {
     "runner": "Owner PC Windows 11",
     "commit": "32f2686",
     "timestamp_utc": "2026-09-24T22:11:00Z",
-    "notes": "Console log with attempts and pytest output archived by owner."
+    "effective_settings": {
+      "allow_short": true,
+      "rebalance_band_pct": 0.0,
+      "direction": "long_short"
+    }
   }
 }

@@ -12,26 +12,26 @@ Ejecución (propietario):
 - Costes: comisión fija IBKR $0.005/sh (mín $1), slippage 1bp
 - HTML reproducible: `reports/sample_backtest.html` (generado localmente)
 
-Resultados (copiados del run real, ver `uploads/baseline_console_7449.txt`):
-- Estrategia SMA 10/30 (implícito con short habilitado en ese run):
-  - CAGR: 0.43%
-  - Sharpe: 0.11
-  - Sortino: 0.15
-  - Máx Drawdown: -27.2%
-  - Retorno total: +2.2%
+Resultados (copiados del run real):
+- Estrategia SMA 10/30 (short habilitado en ese run):
+  - CAGR: 0.004349060450075104
+  - Sharpe: 0.1112034889540013
+  - Sortino: 0.14991858161642665
+  - Máx Drawdown: -0.27155142547360467
+  - Retorno total: 0.02181208784033073
   - Fills: 410
   - Días long: 797 / SHORT: 427 / flat: 29
 - Buy&Hold SPY:
-  - CAGR: 11.7%
-  - Sharpe: 0.73
-  - Máx Drawdown: -25.4%
+  - CAGR: 0.1171407252215686
+  - Sharpe: 0.7289258234489157
+  - Máx Drawdown: -0.25360573583036894
 
 Métricas derivadas (calculadas a partir de los valores anteriores, sin alterar los insumos):
 - Calmar ≈ 0.004349 / 0.271551 ≈ 0.0160
 - Recovery Factor ≈ 0.021812 / 0.271551 ≈ 0.0803
 - Exposición por estado (fracciones): long ≈ 797/1253 ≈ 0.636; short ≈ 0.341; flat ≈ 0.023
 - Volatilidad (diaria, reporte original): 0.1710 (solo informativa)
-- Profit factor, expectancy, turnover y costes totales no fueron impresos en ese run; el sistema ahora los calcula al ejecutar `ibtrader backtest-sample` y/o `baseline-report` (ver CLI), pero este baseline preserva intactos los números originales del propietario.
+-- Profit factor, expectancy, turnover y costes totales no fueron impresos en ese run; el sistema ahora los calcula al ejecutar `ibtrader backtest-sample` (ver CLI), pero este baseline preserva intactos los números originales del propietario.
 
 JSON del baseline:
 - `baselines/phase1_sma_spy_20210927_20260923.json`

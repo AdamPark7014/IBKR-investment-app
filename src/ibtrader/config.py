@@ -60,6 +60,7 @@ class EngineConfig(BaseModel):
 class TradingConfig(BaseModel):
     allow_short: bool = False
     rebalance_band_pct: float = 0.0
+    direction: Literal["long_only", "short_only", "long_short"] = "long_only"
 
 
 class StrategyConfig(BaseModel):
@@ -68,7 +69,12 @@ class StrategyConfig(BaseModel):
 
 
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="",
+        case_sensitive=False,
+        env_nested_delimiter="__",
+    )
 
     mode: Literal["PAPER", "LIVE"] = "PAPER"
     live_trading_confirmed: str = Field(default="no", validation_alias="LIVE_TRADING_CONFIRMED")

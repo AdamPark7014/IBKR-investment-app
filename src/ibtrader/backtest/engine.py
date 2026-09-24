@@ -62,6 +62,8 @@ def backtest(
     realized_wins = 0.0
     realized_losses = 0.0
     realized_trades = 0
+    win_trades = 0
+    loss_trades = 0
     for dt in all_dates:
         # Price snapshot
         prices = {
@@ -138,8 +140,10 @@ def backtest(
                 realized_pnl += pnl
                 if pnl > 0:
                     realized_wins += pnl
+                    win_trades += 1
                 elif pnl < 0:
                     realized_losses += -pnl
+                    loss_trades += 1
                 realized_trades += 1
                 # Update average if position flips
                 new_pos = pos + delta
@@ -166,14 +170,13 @@ def backtest(
     stats = compute_stats(equity_series, returns_series)
     # Extend stats with trade-level metrics
     trade_count = len(trades)
-    total_abs = realized_wins + realized_losses
-    win_rate_trades = (realized_wins / total_abs) if total_abs > 0 else 0.0
     profit_factor = (realized_wins / realized_losses) if realized_losses > 0 else 0.0
     expectancy = (realized_pnl / realized_trades) if realized_trades > 0 else 0.0
     stats.trade_count = trade_count
     stats.total_commission = float(total_commission)
     stats.turnover = float(turnover_notional / initial_equity if initial_equity else 0.0)
-    stats.win_rate_trades = float(win_rate_trades)
+    stats.win_rate_trades = float((win_trades / realized_trades) if realized_trades > 0 else 0.0)
+    # use pnl share separately through profit_factor
     stats.profit_factor = float(profit_factor)
     stats.expectancy = float(expectancy)
     return BacktestResult(
