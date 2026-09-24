@@ -12,6 +12,7 @@ from ..backtest.report import save_equity_report
 from ..config import AppSettings
 from ..data.downloader import load_universe_data  # legacy
 from ..data.service import load_universe_v2
+from ..diagnostics.suspicious import diagnose as diagnose_suspicious
 from ..engine.decision import DecisionEngine
 from ..logging import setup_logging
 from ..ops.killswitch import activate_killswitch, clear_killswitch
@@ -22,6 +23,7 @@ from ..validation.signal import validate_sma_signal
 from ..ml.cv import PurgedTimeSeriesSplit
 from ..risk.sizing import volatility_target_weight
 from ..validation.walkforward import walk_forward_sma
+from .artifacts import save_run_artifact
 
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
@@ -144,15 +146,14 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None, 
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     out = save_equity_report(result, s.data.reports_dir, name=f"backtest_{run_id}")
-    # BacktestSkeptic flags
-    skeptic_flags = []
-    if result.stats.cagr > 1.0:
-        skeptic_flags.append("CAGR>100%")
-    if result.stats.sharpe > 3.0:
-        skeptic_flags.append("Sharpe>3")
+    # Suspicious-performance diagnostics
+    susp = diagnose_suspicious(result, data, lineage_sources=None)
+    # Save run artifact
+    art_path = save_run_artifact(result, s, data, s.data.reports_dir, run_id, extra={"report_html": out})
     rprint(
         {
             "report": out,
+            "artifact": art_path,
             "settings": {
                 "direction": s.trading.direction,
                 "rebalance_band_pct": s.trading.rebalance_band_pct,
@@ -160,7 +161,7 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None, 
                 "benefit_bps": s.trading.benefit_bps,
                 "risk_cost_bps": s.trading.risk_cost_bps,
             },
-            "skeptic_flags": skeptic_flags,
+            "suspicious": [f"{f.code}:{f.reason}" for f in susp],
             "cagr": result.stats.cagr,
             "sharpe": result.stats.sharpe,
             "sortino": result.stats.sortino,
@@ -491,6 +492,43 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     data = load_universe_v2(s)
     sym = s.universe.symbols[0]
     wf, summary = walk_forward_sma(s, data, sym, direction=s.trading.direction)
+    # Save stitched OOS artifact from the last fold's params applied to the last test span equity (already in wf/test)
+    from datetime import datetime as _dt
+    run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    # Build a pseudo BacktestResult from last test metrics to capture artifact context
+    # We won't reconstruct trades/curve here; artifact focuses on configuration and summary
+    # For reproducibility, still save a minimal artifact shell
+    class _MiniRes:
+        def __init__(self) -> None:
+            import pandas as _pd
+            self.equity_curve = _pd.Series(dtype=float)
+            self.returns = _pd.Series(dtype=float)
+            self.positions = {}
+            self.trades = []
+            from types import SimpleNamespace as _SN
+            last = summary.get("folds", [])[-1] if summary.get("folds") else {}
+            stats = last.get("oos", {}) if last else {}
+            self.stats = _SN(
+                cagr=stats.get("cagr", 0.0),
+                sharpe=stats.get("sharpe", 0.0),
+                sortino=stats.get("sortino", 0.0),
+                max_drawdown=stats.get("max_drawdown", 0.0),
+                win_rate=stats.get("win_rate", 0.0),
+                exposure=0.0,
+                total_return=0.0,
+                volatility=0.0,
+                trade_count=stats.get("trade_count", 0),
+                total_commission=stats.get("commission", 0.0),
+                turnover=stats.get("turnover", 0.0),
+                win_rate_trades=0.0,
+                profit_factor=0.0,
+                expectancy=0.0,
+                var_95=0.0,
+                cvar_95=0.0,
+                current_underwater_days=0,
+                max_underwater_days=0,
+            )
+    art_path = save_run_artifact(_MiniRes(), s, data, s.data.reports_dir, f"wf_{run_id}", extra={"walk_forward": summary})
     rprint(
         {
             "symbol": sym,
@@ -502,6 +540,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
             "folds": summary.get("folds"),
             "oos_total_trades": summary.get("oos_total_trades"),
             "tried_param_count": summary.get("tried_param_count"),
+            "artifact": art_path,
         }
     )
 

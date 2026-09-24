@@ -31,6 +31,8 @@ def validate_sma_signal(
     direction: str = "long_only",
     n_splits: int = 5,
     embargo: int = 5,
+    commission_cfg: CommissionConfig | None = None,
+    slippage_cfg: SlippageConfig | None = None,
 ) -> Tuple[List[CVFoldResult], CVFoldResult]:
     df = data[symbol]
     open_px = df["open"].astype(float)
@@ -46,8 +48,8 @@ def validate_sma_signal(
     strat_ret_gross = sig_lag * rets
     # Costs: slippage + commission on signal changes at open
     changes = sig_lag.diff().abs().fillna(0)
-    slip = SlippageConfig()  # default bps
-    commission = CommissionConfig()  # default per-share/min
+    slip = slippage_cfg or SlippageConfig()  # default bps
+    commission = commission_cfg or CommissionConfig()  # default per-share/min
     nav = 100_000.0
     # Shares traded per change_t = |Δsig| * nav / open_t
     shares_traded = (changes * nav / open_px).fillna(0.0)

@@ -8,7 +8,7 @@ import pandas as pd
 from ..config import AppSettings
 from .cache import load_from_cache, load_lineage, save_lineage, save_to_cache
 from .lineage import DataFrameWithMeta, DataLineage
-from .providers import DataQualityGate, IBKRProvider, StooqProvider, YahooProvider
+from .providers import DataQualityGate, IBKRProvider, StooqProvider, YahooProvider, FixtureProvider
 
 
 def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
@@ -19,6 +19,7 @@ def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
         "ibkr": lambda: IBKRProvider(
             host=settings.ib.host, port=settings.ib.paper_port, client_id=settings.ib.client_id
         ),
+        "fixture": lambda: FixtureProvider(),
     }
     provider_chain: List[Tuple[str, object]] = []
     for name in settings.data.providers:

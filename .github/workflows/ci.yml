@@ -30,3 +30,31 @@ jobs:
         run: |
           pytest -q
 
+  clean-install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fresh venv and install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+      - name: Run official CLIs on fixtures (no network)
+        env:
+          DATA__PROVIDERS: '["fixture"]'
+          DATA__FIXTURE_DIR: ./tests/fixtures
+          DATA__CACHE_DIR: ./tmp-cache
+          DATA__REPORTS_DIR: ./tmp-reports
+        run: |
+          source .venv/bin/activate
+          ibtrader download-data
+          ibtrader backtest-sample --exp-id ci
+          ibtrader compare-directions --exp-id ci2
+          ibtrader walk-forward --exp-id ciwf
+

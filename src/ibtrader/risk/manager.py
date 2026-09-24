@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from ..config import RiskConfig
+from .state_machine import Intent, RiskFSM, RiskState as RiskStateEnum
 
 
 @dataclass
@@ -19,6 +20,8 @@ class RiskManager:
     def __init__(self, cfg: RiskConfig, state: RiskState | None = None) -> None:
         self.cfg = cfg
         self.state = state or RiskState(starting_equity_today=0.0)
+        # Explicit finite-state machine for risk permissions
+        self.fsm = RiskFSM()
 
     def on_new_day(self, date_str: str, starting_equity: float) -> None:
         if self.state.current_date != date_str:
@@ -27,9 +30,13 @@ class RiskManager:
             self.state.orders_today = 0
             # Do not auto-clear halted; daily halt applies only to this day
             self.state.halted = False
+            # Reset FSM to NORMAL at start of day; transitions may restrict later
+            self.fsm.set_normal()
 
     def check_killswitch(self) -> Tuple[bool, str]:
         if os.path.exists(self.cfg.killswitch_file):
+            # Killswitch implies EMERGENCY state (but exits/reductions still allowed via FSM)
+            self.fsm.set_emergency()
             return False, "Kill switch activado."
         return True, "OK"
 
@@ -58,6 +65,8 @@ class RiskManager:
         limit = self.state.starting_equity_today * (self.cfg.daily_loss_limit_pct / 100.0)
         if current_equity < self.state.starting_equity_today - limit:
             self.state.halted = True
+            # Enter restricted state for new/increase orders
+            self.fsm.set_restricted()
             return False, "Límite de pérdida diario excedido. Trading detenido."
         return True, "OK"
 
@@ -75,10 +84,22 @@ class RiskManager:
         current_positions_value: float,
         current_position_qty: int,
     ) -> Tuple[bool, str]:
-        # Allow risk-reducing orders even if halted
-        is_reducing = (current_position_qty > 0 and quantity < 0) or (current_position_qty < 0 and quantity > 0)
-        if self.state.halted and not is_reducing:
-            return False, "Trading detenido por riesgo."
+        # Classify intent and evaluate via FSM permissions
+        delta = int(quantity)
+        is_reducing = (current_position_qty > 0 and delta < 0) or (current_position_qty < 0 and delta > 0)
+        intent = RiskFSM.classify_intent(
+            current_qty=int(current_position_qty),
+            delta=delta,
+            is_stop=False,
+            is_emergency=False,
+        )
+        # If halted (daily loss), ensure FSM is in restricted state (defensive)
+        if self.state.halted:
+            self.fsm.set_restricted()
+        # Enforce FSM: allow REDUCE/CLOSE even if restricted/emergency; block OPEN/INCREASE when restricted
+        if not self.fsm.allow(intent):
+            return False, f"Operación no permitida en estado de riesgo ({self.fsm.state.name}): {intent.name}"
+        # Daily loss check updates FSM and still allows reductions
         ok, msg = self.check_daily_loss(equity)
         if not ok:
             # Daily loss triggered; still allow reducing
@@ -90,7 +111,7 @@ class RiskManager:
             # Do not block risk-reducing orders on position-size
             (lambda: (True, "OK"))
             if is_reducing
-            else (lambda: self.check_position_size(equity, price, current_position_qty + quantity)),
+            else (lambda: self.check_position_size(equity, price, current_position_qty + delta)),
             lambda: self.check_total_exposure(
                 equity,
                 current_positions_value,

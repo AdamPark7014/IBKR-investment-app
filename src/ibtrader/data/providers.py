@@ -21,6 +21,48 @@ class MarketDataProvider(abc.ABC):
     ) -> DataFrameWithMeta:
         ...
 
+class FixtureProvider(MarketDataProvider):
+    """
+    Test/CI-only provider that loads deterministic local fixtures.
+    Path resolution:
+      - ENV DATA__FIXTURE_DIR, else ./tests/fixtures
+      - File pattern: <symbol>_1d.csv or <symbol>_1d.parquet
+    """
+    def __init__(self, directory: Optional[str] = None) -> None:
+        import os
+        self.dir = directory or os.environ.get("DATA__FIXTURE_DIR", "./tests/fixtures")
+
+    def fetch_daily_ohlcv(self, symbol: str, start: Optional[str] = None, end: Optional[str] = None) -> DataFrameWithMeta:
+        import os
+        import pandas as pd
+        base = os.path.join(self.dir, f"{symbol.upper()}_1d")
+        df: Optional[pd.DataFrame] = None
+        for ext in ("parquet", "csv"):
+            path = f"{base}.{ext}"
+            if os.path.exists(path):
+                if ext == "parquet":
+                    df = pd.read_parquet(path)
+                else:
+                    tmp = pd.read_csv(path)
+                    if "date" in tmp.columns:
+                        tmp["date"] = pd.to_datetime(tmp["date"])
+                        tmp = tmp.set_index("date")
+                    df = tmp
+                break
+        if df is None or df.empty:
+            raise RuntimeError(f"Fixture no encontrado para {symbol} en {self.dir}")
+        ok, msg = validate_timeseries_strict(df)
+        if not ok:
+            raise RuntimeError(f"Fixture inválido: {msg}")
+        lin = DataLineage(
+            source="fixture",
+            source_url=None,
+            methodology="local CSV/Parquet fixture",
+            parameters={"file": os.path.basename(path)},
+            license="internal-test-only",
+        )
+        return DataFrameWithMeta(df, lin)
+
 
 def _normalize_df_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
