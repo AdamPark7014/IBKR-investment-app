@@ -76,5 +76,9 @@ V2 Fase P6–P9 (comandos reproducibles)
   - Respeta `RISK__TARGET_VOL_ANNUAL`, `RISK__RISK_ON_THRESHOLD`, `RISK`* límites. No envía órdenes.
 - P9 Walk-Forward (train/validate/test por tiempo, parámetros congelados):
   - `ibtrader walk-forward --exp-id p9_wf`
-  - Salida: `in_sample`, `validation`, `oos` (OOS nunca usado para tuning) y B&H OOS.
+  - Salida: `folds` con fechas y parámetros por fold, combos probados y métricas por fold; agregado `in_sample`, `validation`, `oos` y `buy_hold_oos`. OOS nunca se usa para tuning.
+
+Opcional — Riesgo en backtest-sample/compare:
+- `ibtrader backtest-sample --with-risk --risk-on-threshold 0.5 --exp-id demo`
+- `COMPARE_WITH_RISK=true ibtrader compare-directions --exp-id demo2`
 

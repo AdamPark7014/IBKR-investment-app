@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class RiskConfig(BaseModel):
-    max_position_pct: float = Field(5.0, description="Max position size as % of equity")
+    max_position_pct: float = Field(100.0, description="Max position size as % of equity")
     max_total_exposure_pct: float = Field(100.0, description="Max total gross exposure %")
     daily_loss_limit_pct: float = Field(
         5.0, description="If daily PnL < -limit% of starting equity, halt"

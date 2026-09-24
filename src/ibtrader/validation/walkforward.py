@@ -64,6 +64,9 @@ def walk_forward_sma(
     agg_test = None
     chosen = None
     # Use expanding train and rolling OOS folds
+    folds_detail = []
+    tried_all: List[Tuple[Tuple[int, int], float]] = []
+    total_oos_trades = 0
     for f in range(n_folds):
         test_start = oos_start + f * fold_size
         test_end = oos_start + (f + 1) * fold_size if f < n_folds - 1 else n
@@ -71,12 +74,12 @@ def walk_forward_sma(
         # Validation: last 20% of train
         v_start = int(len(train_idx) * 0.8)
         val_idx = train_idx[v_start:]
-        # Warmup indices before test_start
-        warm_start = max(0, test_start - warmup_bars)
+        # Warmup indices before val/test start
+        warm_start = max(0, min(v_start, test_start) - warmup_bars)
         span_idx = idx[warm_start:test_end]
         # Fit regime model on train and build risk_on series over span
         bench = settings.universe.benchmark if settings.universe.benchmark in data else symbol
-        model, _ = fit_gmm_regime(data[bench]["close"].reindex(train_idx), n_components=2)
+        model, _ = fit_gmm_regime(data[bench]["close"].reindex(train_idx), n_components=2, train_slice=slice(None))
         feats_span = build_regime_features(data[bench]["close"].reindex(span_idx))
         proba_span = model.predict_proba(feats_span)
         import numpy as _np
@@ -89,9 +92,10 @@ def walk_forward_sma(
         best_sharpe = -1e9
         for fast, slow in param_grid:
             tried.append((fast, slow))
+            # Backtest on span (warmup+val), compute stats on val only
             strat = SMACrossover(fast_window=fast, slow_window=slow, allow_short=True)
-            res_val = backtest(
-                data=slice_data(val_idx),
+            res_span = backtest(
+                data=slice_data(span_idx),
                 strategy=strat,
                 commission_cfg=settings.commission,
                 slippage_cfg=settings.slippage,
@@ -101,16 +105,41 @@ def walk_forward_sma(
                 target_vol_annual=float(settings.risk.target_vol_annual),
                 risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=100_000.0)),
             )
-            if res_val.stats.sharpe > best_sharpe:
-                best_sharpe = res_val.stats.sharpe
+            # Recompute stats on val window only
+            eq = res_span.equity_curve.reindex(val_idx).dropna()
+            rets = res_span.returns.reindex(val_idx).dropna()
+            from ..backtest.metrics import compute_stats as _cs
+            res_val_stats = _cs(eq, rets)
+            if res_val_stats.sharpe > best_sharpe:
+                best_sharpe = res_val_stats.sharpe
                 best = (fast, slow)
+            tried_all.append(((fast, slow), float(res_val_stats.sharpe)))
         if chosen is None:
             chosen = best
-        # Evaluate train/val/test with frozen params
+        # Evaluate with frozen params on train/val/test using warmup spans
         fast, slow = best
         strat = SMACrossover(fast_window=fast, slow_window=slow, allow_short=True)
-        res_train = backtest(
-            data=slice_data(train_idx),
+        # Train span and compute on train window
+        train_span_idx = idx[max(0, len(train_idx) - warmup_bars) : test_start]
+        res_train_span = backtest(
+            data=slice_data(train_span_idx),
+            strategy=strat,
+            commission_cfg=settings.commission,
+            slippage_cfg=settings.slippage,
+                direction=direction or settings.trading.direction,
+                risk_on=risk_on_series,
+                risk_on_threshold=float(settings.risk.risk_on_threshold),
+                target_vol_annual=float(settings.risk.target_vol_annual),
+                risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=100_000.0)),
+            )
+        train_eq = res_train_span.equity_curve.reindex(train_idx).dropna()
+        train_rets = res_train_span.returns.reindex(train_idx).dropna()
+        from ..backtest.metrics import compute_stats as _cs
+        res_train_stats = _cs(train_eq, train_rets)
+        # Val span (warmup+val), compute on val
+        val_span_idx = idx[warm_start:test_start]
+        res_val_span = backtest(
+            data=slice_data(val_span_idx),
             strategy=strat,
             commission_cfg=settings.commission,
             slippage_cfg=settings.slippage,
@@ -120,8 +149,13 @@ def walk_forward_sma(
             target_vol_annual=float(settings.risk.target_vol_annual),
             risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=100_000.0)),
         )
-        res_val = backtest(
-            data=slice_data(val_idx),
+        val_eq = res_val_span.equity_curve.reindex(val_idx).dropna()
+        val_rets = res_val_span.returns.reindex(val_idx).dropna()
+        res_val_stats = _cs(val_eq, val_rets)
+        # Test span (warmup+test), compute on test
+        test_span_idx = idx[warm_start:test_end]
+        res_test_span = backtest(
+            data=slice_data(test_span_idx),
             strategy=strat,
             commission_cfg=settings.commission,
             slippage_cfg=settings.slippage,
@@ -131,21 +165,24 @@ def walk_forward_sma(
             target_vol_annual=float(settings.risk.target_vol_annual),
             risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=100_000.0)),
         )
-        res_test = backtest(
-            data=slice_data(idx[test_start:test_end]),
-            strategy=strat,
-            commission_cfg=settings.commission,
-            slippage_cfg=settings.slippage,
-            direction=direction or settings.trading.direction,
-            risk_on=risk_on_series,
-            risk_on_threshold=float(settings.risk.risk_on_threshold),
-            target_vol_annual=float(settings.risk.target_vol_annual),
-            risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=100_000.0)),
+        test_eq = res_test_span.equity_curve.reindex(idx[test_start:test_end]).dropna()
+        test_rets = res_test_span.returns.reindex(idx[test_start:test_end]).dropna()
+        res_test_stats = _cs(test_eq, test_rets)
+        total_oos_trades += int(res_test_span.stats.trade_count)
+        folds_detail.append(
+            {
+                "fold": f + 1,
+                "dates": {"train": [str(train_idx[0]), str(train_idx[-1])] if train_idx else None, "val": [str(val_idx[0]), str(val_idx[-1])] if val_idx else None, "test": [str(idx[test_start]), str(idx[test_end - 1])] if test_end - test_start > 0 else None},
+                "chosen_params": {"fast": fast, "slow": slow},
+                "train": res_train_stats.__dict__,
+                "val": res_val_stats.__dict__,
+                "oos": res_test_stats.__dict__,
+            }
         )
-        # Aggregate per-fold stats (simple last-wins for brevity; could average)
-        agg_train = _stats_to_dict(res_train.stats)
-        agg_val = _stats_to_dict(res_val.stats)
-        agg_test = _stats_to_dict(res_test.stats)
+    # Aggregate last known stats (simple; could be averaged across folds)
+    agg_train = folds_detail[-1]["train"] if folds_detail else {}
+    agg_val = folds_detail[-1]["val"] if folds_detail else {}
+    agg_test = folds_detail[-1]["oos"] if folds_detail else {}
     wf = WFResult(
         params=chosen or param_grid[0],
         train_stats=agg_train or {},
@@ -166,4 +203,7 @@ def walk_forward_sma(
             "max_dd": float((eq / eq.cummax() - 1.0).min()),
         }
     summary = {"buy_hold_oos": bh}
+    summary["folds"] = folds_detail
+    summary["oos_total_trades"] = int(total_oos_trades)
+    summary["tried_param_count"] = len(tried_all)
     return wf, summary

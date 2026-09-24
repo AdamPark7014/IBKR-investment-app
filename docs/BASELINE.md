@@ -43,3 +43,9 @@ Corrección de ejecución (v1.1):
   - `ibtrader download-data`
   - `ibtrader backtest-sample --exp-id baseline_v11`
   - `ibtrader compare-directions --exp-id p1p5_v11`
+
+Resultados v1.1 (pendientes de registro oficial en la PC del propietario):
+- Long only (v1.1): [registrar aquí]
+- Short only (v1.1): [registrar aquí]
+- Long+Short (v1.1): [registrar aquí]
+- Buy&Hold SPY (referencia): [registrar aquí]

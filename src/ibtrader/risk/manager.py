@@ -36,8 +36,11 @@ class RiskManager:
         return True, "OK"
 
     def check_total_exposure(
-        self, equity: float, current_positions_value: float
+        self, equity: float, current_positions_value: float, is_risk_reducing: bool
     ) -> Tuple[bool, str]:
+        # Never block risk-reducing/orders de-risking exposure
+        if is_risk_reducing:
+            return True, "OK"
         if abs(current_positions_value) > equity * (self.cfg.max_total_exposure_pct / 100.0):
             return False, "Exposición total excede el máximo permitido."
         return True, "OK"
@@ -61,14 +64,23 @@ class RiskManager:
         price: float,
         quantity: int,
         current_positions_value: float,
+        current_position_qty: int,
     ) -> Tuple[bool, str]:
         if self.state.halted:
             return False, "Trading detenido por riesgo."
+        ok, msg = self.check_daily_loss(equity)
+        if not ok:
+            return ok, msg
         for check in [
             self.check_killswitch,
             lambda: self.check_symbol_allowed(symbol),
             lambda: self.check_position_size(equity, price, quantity),
-            lambda: self.check_total_exposure(equity, current_positions_value),
+            lambda: self.check_total_exposure(
+                equity,
+                current_positions_value,
+                is_risk_reducing=(current_position_qty > 0 and quantity < 0)
+                or (current_position_qty < 0 and quantity > 0),
+            ),
             self.check_order_count,
         ]:
             ok, msg = check()

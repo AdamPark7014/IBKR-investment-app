@@ -68,7 +68,7 @@ def download_data() -> None:
 
 
 @app.command()
-def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) -> None:
+def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None, with_risk: bool = False, risk_on_threshold: Optional[float] = None) -> None:
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
@@ -86,6 +86,17 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
         allow_short=True,
     )
     strat = _DirectionWrapper(base_strat, s.trading.direction)
+    # Optional risk veto
+    risk_on_series = None
+    if with_risk:
+        from ..regime.gmm import fit_gmm_regime, build_regime_features
+        bench = s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0]
+        model, _ = fit_gmm_regime(data[bench]["close"], n_components=2)
+        feats = build_regime_features(data[bench]["close"])
+        import numpy as _np
+        proba = model.predict_proba(feats)
+        risk_on_series = feats.index.to_series().map(lambda d: float(proba[list(feats.index).index(d), model.risk_on_label]) if d in feats.index else 1.0)
+        risk_on_series.index = feats.index
     result = backtest(
         data=data,
         strategy=strat,
@@ -94,6 +105,10 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
         rebalance_band_pct=float(s.trading.rebalance_band_pct),
         benefit_bps=float(s.trading.benefit_bps),
         risk_cost_bps=float(s.trading.risk_cost_bps),
+        direction=s.trading.direction,
+        risk_on=risk_on_series,
+        risk_on_threshold=float(risk_on_threshold) if risk_on_threshold is not None else float(s.risk.risk_on_threshold),
+        target_vol_annual=float(s.risk.target_vol_annual),
     )
     # Buy & Hold baseline on benchmark
     bench = s.universe.benchmark
@@ -210,6 +225,20 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
     results = {}
     for m in modes:
         strat = _DirectionWrapper(base, m)
+        # Optional simple risk veto via flag env COMPARE_WITH_RISK
+        import os
+        with_risk = os.environ.get("COMPARE_WITH_RISK", "").strip().lower() in {"1", "true", "yes"}
+        risk_on_series = None
+        rot = float(s.risk.risk_on_threshold)
+        if with_risk:
+            from ..regime.gmm import fit_gmm_regime, build_regime_features
+            bench = s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0]
+            model, _ = fit_gmm_regime(data[bench]["close"], n_components=2)
+            feats = build_regime_features(data[bench]["close"])
+            import numpy as _np
+            proba = model.predict_proba(feats)
+            risk_on_series = feats.index.to_series().map(lambda d: float(proba[list(feats.index).index(d), model.risk_on_label]) if d in feats.index else 1.0)
+            risk_on_series.index = feats.index
         res = backtest(
             data=data,
             strategy=strat,
@@ -218,6 +247,10 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
             rebalance_band_pct=float(s.trading.rebalance_band_pct),
             benefit_bps=float(s.trading.benefit_bps),
             risk_cost_bps=float(s.trading.risk_cost_bps),
+            direction=m,
+            risk_on=risk_on_series,
+            risk_on_threshold=rot,
+            target_vol_annual=float(s.risk.target_vol_annual),
         )
         results[m] = {
             "cagr": res.stats.cagr,
@@ -451,7 +484,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     warn_unknown_trading_env()
     data = load_universe_v2(s)
     sym = s.universe.symbols[0]
-    wf, summary = walk_forward_sma(s, data, sym)
+    wf, summary = walk_forward_sma(s, data, sym, direction=s.trading.direction)
     rprint(
         {
             "symbol": sym,
@@ -460,6 +493,9 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
             "validation": wf.val_stats,
             "oos": wf.test_stats,
             "buy_hold_oos": summary.get("buy_hold_oos"),
+            "folds": summary.get("folds"),
+            "oos_total_trades": summary.get("oos_total_trades"),
+            "tried_param_count": summary.get("tried_param_count"),
         }
     )
 

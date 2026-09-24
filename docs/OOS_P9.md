@@ -6,10 +6,17 @@ Configuración y ventana:
 - Costes incluidos (comisiones IBKR y slippage)
 - Entradas a apertura t+1 (v1.1), sin fuga de información
 
-Resultados reportados por el propietario:
-- Estrategia SMA 10/30 (long+short, baseline): OOS CAGR -12.4%, Sharpe -1.02
-- Long only (misma partición temporal): OOS CAGR +0.19%, Sharpe 0.41
-- Buy&Hold SPY OOS: CAGR +16.2%, Sharpe 1.22
+Resultados con el motor actual (v1.1, next‑open, multi‑fold WFO):
+- Los números OOS deben ser generados con:
+  - `ibtrader download-data`
+  - `ibtrader walk-forward --exp-id p9_wf`
+- Este archivo se actualizará con los resultados por fold (fechas, parámetros elegidos, combos probados y métricas) y el agregado OOS vs B&H, todos fechados. (Pendiente de la corrida oficial en la PC del propietario.)
 
-Conclusión honesta:
-- La estrategia no demuestra edge OOS frente a Buy&Hold en el periodo evaluado; el modo Long only se comporta sustancialmente mejor que Long+Short, pero aún sin superar al benchmark. Hasta que no haya evidencia OOS sólida y reproducible (multi-fold, con costes, sin fuga), la respuesta a §49 es: NO — INSUFFICIENT EVIDENCE.
+Números v1.0 (mismo-bar) — superados:
+- SMA 10/30 (long+short): OOS CAGR -12.4%, Sharpe -1.02
+- Long only: OOS CAGR +0.19%, Sharpe 0.41
+- B&H: OOS CAGR +16.2%, Sharpe 1.22
+Estos provienen del motor v1.0 con ejecución “mismo bar”; se mantienen aquí sólo como referencia histórica y no deben usarse para evaluar v1.1.
+
+Conclusión honesta (a la fecha):
+- Con la evidencia disponible, no hay edge OOS robusto frente a B&H. La respuesta a §49 permanece: NO — INSUFFICIENT EVIDENCE.

@@ -66,6 +66,8 @@ def backtest(
     equity_curve = []
     returns = []
     prev_equity = initial_equity
+    # Track last executed targets to reduce churn
+    last_targets: Dict[str, int] = {sym: 0 for sym in data}
     total_commission = 0.0
     turnover_notional = 0.0
     realized_pnl = 0.0
@@ -136,7 +138,13 @@ def backtest(
                     vt = volatility_target_weight(rets, target_vol_annual=target_vol_annual)
                 w = base_alloc * vt * (1 if raw_sign[sym] > 0 else -1)
                 qty = int(nav_prev * abs(w) / open_now[sym])
-                targets[sym] = qty if w >= 0 else -qty
+                proposed = qty if w >= 0 else -qty
+                # Only trade on signal changes, or when drift exceeds band (if configured)
+                prev_target = last_targets.get(sym, 0)
+                sign_change = (prev_target == 0 and proposed != 0) or (prev_target * proposed < 0)
+                if not sign_change and rebalance_band_pct <= 0.0:
+                    proposed = prev_target
+                targets[sym] = proposed
         # Execute at today's open
         for sym, target in targets.items():
             price = open_now.get(sym)
@@ -172,7 +180,12 @@ def backtest(
                 eq_prev = nav_prev
                 cur_pos_val = sum(holdings[s] * close_prev.get(s, 0.0) for s in holdings)
                 ok, msg = risk_manager.approve_order(
-                    symbol=sym, equity=eq_prev, price=fill_price, quantity=int(delta), current_positions_value=float(cur_pos_val)
+                    symbol=sym,
+                    equity=eq_prev,
+                    price=fill_price,
+                    quantity=int(delta),
+                    current_positions_value=float(cur_pos_val),
+                    current_position_qty=int(pos),
                 )
                 if not ok:
                     log.info("risk_veto sym=%s reason=%s", sym, msg)
@@ -181,6 +194,8 @@ def backtest(
             holdings[sym] = pos + delta
             turnover_notional += abs(delta) * fill_price
             total_commission += commission
+            if risk_manager is not None:
+                risk_manager.notify_order_sent()
             if pos == 0 or (pos > 0 and delta > 0) or (pos < 0 and delta < 0):
                 # Opening/increasing: update average and include entry commission in trade bucket
                 new_qty = pos + delta
@@ -218,6 +233,8 @@ def backtest(
                 elif (pos > 0 and new_pos < 0) or (pos < 0 and new_pos > 0):
                     avg_price[sym] = fill_price
             trades.append((str(dt), sym, int(delta), float(fill_price)))
+            # Update last target after execution
+            last_targets[sym] = target
         # Mark-to-market at today's close
         close_today = {
             sym: float(data[sym].reindex([dt])["close"].iloc[0])
