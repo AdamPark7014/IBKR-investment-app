@@ -64,3 +64,17 @@ Histeresis costo-aware (P3–P4):
 BacktestSkeptic:
 - El CLI señalará resultados “sospechosos” (e.g., Sharpe > 3 o CAGR > 100%) vía `skeptic_flags` en la salida para evitar falsas conclusiones por datos corruptos o fugas.
 
+V2 Fase P6–P9 (comandos reproducibles)
+- P6 Régimen (aprendido, no hardcodeado): GMM sobre [ret_1d, vol_20] del benchmark.
+  - `ibtrader regime-fit --n-components 2 --exp-id p6_regime`
+  - Salida: `reports/regime_<exp-id>.csv`, conteos por régimen, medias por componente.
+- P7 Validación de señales (SMA): CV con purga/embargo y comparación con B&H.
+  - `ibtrader signal-validate --direction long_only --exp-id p7_sig`
+  - Salida: métricas por fold y agregadas; B&H de referencia.
+- P8 Riesgo integrado: veto de régimen + sizing por objetivo de volatilidad (anual) y límites.
+  - `ibtrader run-with-risk --risk-on-threshold 0.5 --exp-id p8_risk`
+  - Respeta `RISK__TARGET_VOL_ANNUAL`, `RISK__RISK_ON_THRESHOLD`, `RISK`* límites. No envía órdenes.
+- P9 Walk-Forward (train/validate/test por tiempo, parámetros congelados):
+  - `ibtrader walk-forward --exp-id p9_wf`
+  - Salida: `in_sample`, `validation`, `oos` (OOS nunca usado para tuning) y B&H OOS.
+

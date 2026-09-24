@@ -14,6 +14,8 @@ class RiskConfig(BaseModel):
     daily_loss_limit_pct: float = Field(
         5.0, description="If daily PnL < -limit% of starting equity, halt"
     )
+    target_vol_annual: float = Field(0.10, description="Volatility target for sizing (annualized)")
+    risk_on_threshold: float = Field(0.5, description="Minimum risk-on probability to allow trades")
     max_orders_per_day: int = 50
     allowed_symbols: List[str] = Field(default_factory=list)
     killswitch_file: str = "./data/KILL_SWITCH"

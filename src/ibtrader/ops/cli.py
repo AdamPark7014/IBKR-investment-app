@@ -4,6 +4,7 @@ from typing import Optional
 
 import typer
 from rich import print as rprint
+import numpy as np
 
 from ..backtest.engine import backtest
 from ..backtest.metrics import compute_stats
@@ -16,6 +17,11 @@ from ..logging import setup_logging
 from ..ops.killswitch import activate_killswitch, clear_killswitch
 from ..ops.status import status_summary
 from ..strategy.sma_crossover import SMACrossover
+from ..regime.gmm import fit_gmm_regime, build_regime_features
+from ..validation.signal import validate_sma_signal
+from ..ml.cv import PurgedTimeSeriesSplit
+from ..risk.sizing import volatility_target_weight
+from ..validation.walkforward import walk_forward_sma
 
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
@@ -298,6 +304,160 @@ def clear_kill() -> None:
     s.resolve_paths()
     clear_killswitch(s.risk.killswitch_file)
     rprint({"kill_switch": False})
+
+
+@app.command("regime-fit")
+def regime_fit(symbol: Optional[str] = None, n_components: int = 2, exp_id: Optional[str] = None) -> None:
+    """
+    P6 Regime Engine: learned regimes via GaussianMixture on benchmark returns/volatility.
+    """
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    if symbol:
+        s.universe.symbols = [symbol]
+    data = load_universe_v2(s)
+    bench = s.universe.benchmark if s.universe.benchmark in data else next(iter(data.keys()))
+    feats = build_regime_features(data[bench]["close"])
+    model, rep = fit_gmm_regime(data[bench]["close"], n_components=n_components)
+    from datetime import datetime as _dt
+    run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    # Save CSV report
+    import os
+    out_csv = os.path.join(s.data.reports_dir, f"regime_{run_id}.csv")
+    rep.to_csv(out_csv, index=True)
+    # Summary
+    counts = rep["regime"].value_counts().to_dict()
+    cols = [c for c in ["ret_1d", "vol_20"] if c in rep.columns]
+    means = rep.groupby("regime")[cols].mean().to_dict() if cols else {}
+    rprint(
+        {
+            "report": out_csv,
+            "components": n_components,
+            "counts": counts,
+            "means": means,
+        }
+    )
+
+@app.command("signal-validate")
+def signal_validate(
+    symbol: Optional[str] = None,
+    direction: str = "long_only",
+    exp_id: Optional[str] = None,
+) -> None:
+    """
+    P7 Signal Validation: CV evaluation of SMA signal against forward returns.
+    """
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    if symbol:
+        s.universe.symbols = [symbol]
+    data = load_universe_v2(s)
+    sym = s.universe.symbols[0]
+    folds, agg = validate_sma_signal(
+        data,
+        sym,
+        fast=int(s.strategy.params.get("fast_window", 10)),
+        slow=int(s.strategy.params.get("slow_window", 30)),
+        direction=direction,
+    )
+    # Buy & Hold for comparison
+    px = data[s.universe.benchmark]["close"].astype(float)
+    eq = (100_000.0 / float(px.iloc[0])) * px
+    bh_ret = eq.pct_change().fillna(0.0)
+    ann = np.sqrt(252.0)
+    bh_stats = {
+        "cagr": float((eq.iloc[-1] / eq.iloc[0]) ** (252 / max(len(eq), 1)) - 1.0),
+        "sharpe": float((bh_ret.mean() / (bh_ret.std(ddof=0) or 1e-9)) * ann),
+        "max_dd": float((eq / eq.cummax() - 1.0).min()),
+    }
+    rprint(
+        {
+            "symbol": sym,
+            "direction": direction,
+            "cv": [{"mean": f.mean_ret, "sharpe": f.sharpe, "n": f.n_obs} for f in folds],
+            "cv_aggregate": {"mean": agg.mean_ret, "sharpe": agg.sharpe, "n": agg.n_obs},
+            "buy_hold": bh_stats,
+        }
+    )
+
+@app.command("run-with-risk")
+def run_with_risk(symbol: Optional[str] = None, exp_id: Optional[str] = None, risk_on_threshold: Optional[float] = None) -> None:
+    """
+    P8 Risk Integration: regime veto + volatility-target sizing. No live orders; prints decision.
+    """
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    if symbol:
+        s.universe.symbols = [symbol]
+    data = load_universe_v2(s)
+    sym = s.universe.symbols[0]
+    # Regime model on benchmark
+    bench = s.universe.benchmark if s.universe.benchmark in data else sym
+    model, rep = fit_gmm_regime(data[bench]["close"], n_components=2)
+    # Identify risk-on component by higher mean return
+    mu = rep.groupby("regime")["ret_1d"].mean()
+    risk_on_label = int(mu.idxmax()) if len(mu) else 0
+    last = rep.iloc[-1]
+    p_risk_on = float(last.get(f"p_{risk_on_label}", 0.0))
+    # EV proxy from SMA signal
+    base = SMACrossover(
+        fast_window=int(s.strategy.params.get("fast_window", 10)),
+        slow_window=int(s.strategy.params.get("slow_window", 30)),
+        allow_short=True,
+    )
+    sig = base.generate_signals({sym: data[sym]})[sym].reindex(data[sym].index).fillna(0)
+    last_sig = int(sig.iloc[-1]) if len(sig) else 0
+    # Risk veto
+    thr = float(risk_on_threshold) if risk_on_threshold is not None else float(s.risk.risk_on_threshold)
+    veto_reason = None
+    action = "ABSTAIN"
+    size_pct = 0.0
+    if last_sig == 0:
+        veto_reason = "No signal"
+    elif p_risk_on < thr:
+        veto_reason = f"Risk-on prob {p_risk_on:.2f} < threshold {thr:.2f}"
+    else:
+        # Volatility-target sizing
+        rets = data[sym]["close"].astype(float).pct_change().fillna(0.0)
+        w = volatility_target_weight(rets, target_vol_annual=float(s.risk.target_vol_annual))
+        size_pct = min(100.0 * w, float(s.risk.max_position_pct))
+        action = "TRADE"
+    rprint(
+        {
+            "symbol": sym,
+            "signal": last_sig,
+            "p_risk_on": p_risk_on,
+            "threshold": thr,
+            "action": action,
+            "size_pct": size_pct,
+            "veto_reason": veto_reason,
+        }
+    )
+
+@app.command("walk-forward")
+def walk_forward(exp_id: Optional[str] = None) -> None:
+    """
+    P9 Walk Forward: train/validate/test by time with frozen params; OOS never used for tuning.
+    """
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    data = load_universe_v2(s)
+    sym = s.universe.symbols[0]
+    wf, summary = walk_forward_sma(s, data, sym)
+    rprint(
+        {
+            "symbol": sym,
+            "best_params": {"fast": wf.params[0], "slow": wf.params[1]},
+            "in_sample": wf.train_stats,
+            "validation": wf.val_stats,
+            "oos": wf.test_stats,
+            "buy_hold_oos": summary.get("buy_hold_oos"),
+        }
+    )
 
 if __name__ == "__main__":
     app()
