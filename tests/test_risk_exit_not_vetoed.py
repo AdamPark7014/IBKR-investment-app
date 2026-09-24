@@ -16,6 +16,8 @@ def test_exit_not_vetoed_by_exposure() -> None:
     )
     rm = RiskManager(cfg, state)
     # Large exposure but reducing long position -> should be allowed
+    # Set daily state
+    rm.on_new_day("2024-01-01", 100_000.0)
     ok, msg = rm.approve_order(
         symbol="SPY",
         equity=100_000.0,

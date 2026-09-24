@@ -12,12 +12,21 @@ class RiskState:
     starting_equity_today: float
     orders_today: int = 0
     halted: bool = False
+    current_date: str | None = None
 
 
 class RiskManager:
     def __init__(self, cfg: RiskConfig, state: RiskState | None = None) -> None:
         self.cfg = cfg
         self.state = state or RiskState(starting_equity_today=0.0)
+
+    def on_new_day(self, date_str: str, starting_equity: float) -> None:
+        if self.state.current_date != date_str:
+            self.state.current_date = date_str
+            self.state.starting_equity_today = float(starting_equity)
+            self.state.orders_today = 0
+            # Do not auto-clear halted; daily halt applies only to this day
+            self.state.halted = False
 
     def check_killswitch(self) -> Tuple[bool, str]:
         if os.path.exists(self.cfg.killswitch_file):
@@ -29,8 +38,8 @@ class RiskManager:
             return False, f"Símbolo no permitido: {symbol}"
         return True, "OK"
 
-    def check_position_size(self, equity: float, price: float, quantity: int) -> Tuple[bool, str]:
-        notional = abs(quantity) * price
+    def check_position_size(self, equity: float, price: float, resulting_position_qty: int) -> Tuple[bool, str]:
+        notional = abs(resulting_position_qty) * price
         if notional > equity * (self.cfg.max_position_pct / 100.0):
             return False, "Tamaño de posición excede el máximo permitido."
         return True, "OK"
@@ -66,20 +75,26 @@ class RiskManager:
         current_positions_value: float,
         current_position_qty: int,
     ) -> Tuple[bool, str]:
-        if self.state.halted:
+        # Allow risk-reducing orders even if halted
+        is_reducing = (current_position_qty > 0 and quantity < 0) or (current_position_qty < 0 and quantity > 0)
+        if self.state.halted and not is_reducing:
             return False, "Trading detenido por riesgo."
         ok, msg = self.check_daily_loss(equity)
         if not ok:
-            return ok, msg
+            # Daily loss triggered; still allow reducing
+            if not is_reducing:
+                return ok, msg
         for check in [
             self.check_killswitch,
             lambda: self.check_symbol_allowed(symbol),
-            lambda: self.check_position_size(equity, price, quantity),
+            # Do not block risk-reducing orders on position-size
+            (lambda: (True, "OK"))
+            if is_reducing
+            else (lambda: self.check_position_size(equity, price, current_position_qty + quantity)),
             lambda: self.check_total_exposure(
                 equity,
                 current_positions_value,
-                is_risk_reducing=(current_position_qty > 0 and quantity < 0)
-                or (current_position_qty < 0 and quantity > 0),
+                is_risk_reducing=is_reducing,
             ),
             self.check_order_count,
         ]:

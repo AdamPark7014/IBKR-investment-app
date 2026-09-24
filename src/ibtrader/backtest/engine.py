@@ -52,6 +52,9 @@ def backtest(
     target_vol_annual: float | None = None,
     risk_manager: RiskManager | None = None,
 ) -> BacktestResult:
+    # Validate band units
+    if rebalance_band_pct < 0.0 or rebalance_band_pct > 1.0:
+        raise ValueError("rebalance_band_pct debe estar en [0,1]. Usa fracción (e.g., 0.02 para 2%).")
     # Prepare signals
     signals = strategy.generate_signals(data)
     # Align dates
@@ -92,6 +95,10 @@ def backtest(
                 positions[sym].loc[dt] = holdings.get(sym, 0)
             continue
         dt_prev = all_dates[i - 1]
+        # Reset daily risk state at day open
+        if risk_manager is not None:
+            # Use previous equity as starting equity for the day
+            risk_manager.on_new_day(str(dt), float(prev_equity))
         close_prev = {
             sym: float(data[sym].reindex([dt_prev])["close"].iloc[0])
             for sym in data
@@ -244,8 +251,7 @@ def backtest(
         equity = cash + sum(qty * close_today.get(sym, 0.0) for sym, qty in holdings.items())
         equity_curve.append((dt, equity))
         ret = (equity / prev_equity - 1.0) if prev_equity else 0.0
-        if all(qty == 0 for qty in holdings.values()):
-            ret = 0.0
+        # Do not force zero returns; compute from equity curve directly
         returns.append((dt, ret))
         prev_equity = equity
         for sym in data.keys():

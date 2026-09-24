@@ -225,7 +225,7 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
     results = {}
     for m in modes:
         strat = _DirectionWrapper(base, m)
-        # Optional simple risk veto via flag env COMPARE_WITH_RISK
+        # Optional simple risk veto via flag env COMPARE_WITH_RISK (expanding WFO labeling)
         import os
         with_risk = os.environ.get("COMPARE_WITH_RISK", "").strip().lower() in {"1", "true", "yes"}
         risk_on_series = None
@@ -233,12 +233,18 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
         if with_risk:
             from ..regime.gmm import fit_gmm_regime, build_regime_features
             bench = s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0]
-            model, _ = fit_gmm_regime(data[bench]["close"], n_components=2)
-            feats = build_regime_features(data[bench]["close"])
-            import numpy as _np
-            proba = model.predict_proba(feats)
-            risk_on_series = feats.index.to_series().map(lambda d: float(proba[list(feats.index).index(d), model.risk_on_label]) if d in feats.index else 1.0)
-            risk_on_series.index = feats.index
+            bench_close = data[bench]["close"].astype(float)
+            feats_all = build_regime_features(bench_close)
+            # Expanding fit per date (walk-forward regime probabilities)
+            probs = []
+            idxs = list(feats_all.index)
+            for i in range(len(idxs)):
+                tr_idx = idxs[: i + 1]
+                model, _ = fit_gmm_regime(bench_close.reindex(tr_idx), n_components=2, train_slice=slice(None))
+                p = model.predict_proba(feats_all.iloc[[i]])
+                probs.append(float(p[0, model.risk_on_label]))
+            import pandas as _pd
+            risk_on_series = _pd.Series(probs, index=feats_all.index)
         res = backtest(
             data=data,
             strategy=strat,
