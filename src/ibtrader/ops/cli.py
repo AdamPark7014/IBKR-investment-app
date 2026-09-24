@@ -6,6 +6,7 @@ import typer
 from rich import print as rprint
 
 from ..backtest.engine import backtest
+from ..backtest.metrics import compute_stats
 from ..backtest.report import save_equity_report
 from ..config import AppSettings
 from ..data.downloader import load_universe_data
@@ -51,6 +52,25 @@ def backtest_sample(symbol: Optional[str] = None) -> None:
         commission_cfg=s.commission,
         slippage_cfg=s.slippage,
     )
+    # Buy & Hold baseline on benchmark
+    bench = s.universe.benchmark
+    if bench in data:
+        px = data[bench]["close"].astype(float).dropna()
+        initial = 100_000.0
+        units = initial / float(px.iloc[0])
+        equity_bh = (units * px).rename("equity")
+        returns_bh = equity_bh.pct_change().fillna(0.0)
+        stats_bh = compute_stats(equity_bh, returns_bh)
+        bh = {
+            "cagr": stats_bh.cagr,
+            "sharpe": stats_bh.sharpe,
+            "sortino": stats_bh.sortino,
+            "max_dd": stats_bh.max_drawdown,
+            "win_rate": stats_bh.win_rate,
+            "exposure": stats_bh.exposure,
+        }
+    else:
+        bh = None
     out = save_equity_report(result, s.data.reports_dir, name="sample_backtest")
     rprint(
         {
@@ -61,6 +81,7 @@ def backtest_sample(symbol: Optional[str] = None) -> None:
             "max_dd": result.stats.max_drawdown,
             "win_rate": result.stats.win_rate,
             "exposure": result.stats.exposure,
+            "buy_hold": bh,
         }
     )
 
