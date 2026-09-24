@@ -57,6 +57,11 @@ class EngineConfig(BaseModel):
     use_cache: bool = True
 
 
+class TradingConfig(BaseModel):
+    allow_short: bool = False
+    rebalance_band_pct: float = 0.0
+
+
 class StrategyConfig(BaseModel):
     name: str = "sma_crossover"
     params: dict = Field(default_factory=lambda: {"fast_window": 10, "slow_window": 30})
@@ -76,6 +81,7 @@ class AppSettings(BaseSettings):
     universe: UniverseConfig = Field(default_factory=lambda: UniverseConfig())
     engine: EngineConfig = Field(default_factory=lambda: EngineConfig())
     strategy: StrategyConfig = Field(default_factory=lambda: StrategyConfig())
+    trading: TradingConfig = Field(default_factory=lambda: TradingConfig())
 
     @field_validator("live_trading_confirmed")
     @classmethod

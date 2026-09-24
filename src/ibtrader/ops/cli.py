@@ -45,12 +45,14 @@ def backtest_sample(symbol: Optional[str] = None) -> None:
     strat = SMACrossover(
         fast_window=int(s.strategy.params.get("fast_window", 10)),
         slow_window=int(s.strategy.params.get("slow_window", 30)),
+        allow_short=bool(s.trading.allow_short),
     )
     result = backtest(
         data=data,
         strategy=strat,
         commission_cfg=s.commission,
         slippage_cfg=s.slippage,
+        rebalance_band_pct=float(s.trading.rebalance_band_pct),
     )
     # Buy & Hold baseline on benchmark
     bench = s.universe.benchmark
@@ -81,6 +83,16 @@ def backtest_sample(symbol: Optional[str] = None) -> None:
             "max_dd": result.stats.max_drawdown,
             "win_rate": result.stats.win_rate,
             "exposure": result.stats.exposure,
+            "calmar": result.stats.calmar,
+            "recovery_factor": result.stats.recovery_factor,
+            "var_95": result.stats.var_95,
+            "cvar_95": result.stats.cvar_95,
+            "trade_count": result.stats.trade_count,
+            "total_commission": result.stats.total_commission,
+            "turnover": result.stats.turnover,
+            "win_rate_trades": result.stats.win_rate_trades,
+            "profit_factor": result.stats.profit_factor,
+            "expectancy": result.stats.expectancy,
             "buy_hold": bh,
         }
     )

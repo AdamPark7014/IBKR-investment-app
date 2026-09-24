@@ -22,6 +22,10 @@ class PerformanceStats:
     win_rate_trades: float = 0.0
     profit_factor: float = 0.0
     expectancy: float = 0.0
+    calmar: float = 0.0
+    recovery_factor: float = 0.0
+    var_95: float = 0.0
+    cvar_95: float = 0.0
 
 
 def compute_stats(
@@ -52,6 +56,12 @@ def compute_stats(
     # exposure: fraction of time invested (assumes signal != 0 means invested)
     # For now approximate by non-zero returns (backtest sets to 0 when flat)
     exposure = float((returns != 0).sum()) / float(len(returns)) if len(returns) else 0.0
+    # tail risk (historical)
+    var_95 = float(np.percentile(returns.dropna().values, 5)) if len(returns.dropna()) else 0.0
+    cvar_95 = float(returns[returns <= var_95].mean()) if len(returns.dropna()) else 0.0
+    # calmar & recovery
+    calmar = float(cagr / abs(max_drawdown)) if max_drawdown < 0 else 0.0
+    recovery_factor = float(total_return / abs(max_drawdown)) if max_drawdown < 0 else 0.0
     return PerformanceStats(
         cagr=float(cagr),
         sharpe=float(sharpe),
@@ -61,5 +71,9 @@ def compute_stats(
         exposure=float(exposure),
         total_return=float(total_return),
         volatility=float(vol),
+        calmar=calmar,
+        recovery_factor=recovery_factor,
+        var_95=var_95,
+        cvar_95=cvar_95,
     )
 
