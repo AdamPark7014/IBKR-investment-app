@@ -6,6 +6,7 @@ from typing import Optional
 import pandas as pd
 
 from .lineage import DataLineage
+import json
 
 def cache_path(cache_dir: str, symbol: str, bar_size: str) -> Path:
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
@@ -36,10 +37,28 @@ def cache_meta_path(cache_dir: str, symbol: str, bar_size: str) -> Path:
 def save_lineage(cache_dir: str, symbol: str, bar_size: str, lineage: DataLineage) -> None:
     path = cache_meta_path(cache_dir, symbol, bar_size)
     try:
-        import json
         with open(path, "w", encoding="utf-8") as f:
             json.dump(lineage.to_dict(), f, ensure_ascii=False, indent=2)
     except Exception:
         # Sidecar meta is best-effort
         return
+
+def load_lineage(cache_dir: str, symbol: str, bar_size: str) -> Optional[DataLineage]:
+    path = cache_meta_path(cache_dir, symbol, bar_size)
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return DataLineage(
+            source=data.get("source"),
+            source_url=data.get("source_url"),
+            fetched_at_utc=data.get("fetched_at_utc"),
+            methodology=data.get("methodology"),
+            parameters=data.get("parameters") or {},
+            license=data.get("license"),
+            notes=data.get("notes"),
+        )
+    except Exception:
+        return None
 

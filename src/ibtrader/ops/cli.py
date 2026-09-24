@@ -36,6 +36,11 @@ def warn_unknown_trading_env() -> None:
     ]
     if unknown:
         log.warning("unknown_trading_env_vars %s", unknown)
+    # Warn loudly on deprecated ALLOW_SHORT usage
+    if _os.environ.get("TRADING__ALLOW_SHORT", "").strip().lower() in {"true", "1", "yes"}:
+        log.warning(
+            "deprecated_trading_allow_short set=true; usa TRADING__DIRECTION=long_only|short_only|long_short"
+        )
 
 
 @app.command()
@@ -61,6 +66,10 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
+    if s.trading.allow_short:
+        log.warning(
+            "deprecated_trading_allow_short config=true; usa TRADING__DIRECTION=long_only|short_only|long_short"
+        )
     if symbol:
         s.universe.symbols = [symbol]
     data = load_universe_v2(s)
@@ -114,6 +123,12 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     out = save_equity_report(result, s.data.reports_dir, name=f"backtest_{run_id}")
+    # BacktestSkeptic flags
+    skeptic_flags = []
+    if result.stats.cagr > 1.0:
+        skeptic_flags.append("CAGR>100%")
+    if result.stats.sharpe > 3.0:
+        skeptic_flags.append("Sharpe>3")
     rprint(
         {
             "report": out,
@@ -124,6 +139,7 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None) 
                 "benefit_bps": s.trading.benefit_bps,
                 "risk_cost_bps": s.trading.risk_cost_bps,
             },
+            "skeptic_flags": skeptic_flags,
             "cagr": result.stats.cagr,
             "sharpe": result.stats.sharpe,
             "sortino": result.stats.sortino,
@@ -171,6 +187,10 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
+    if s.trading.allow_short:
+        log.warning(
+            "deprecated_trading_allow_short config=true; usa TRADING__DIRECTION=long_only|short_only|long_short"
+        )
     if symbol:
         s.universe.symbols = [symbol]
     # Use V2 providers pipeline with quality gate

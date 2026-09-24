@@ -64,6 +64,8 @@ def backtest(
     realized_wins = 0.0
     realized_losses = 0.0
     realized_trades = 0
+    # Accumulate partial P&L per open trade; finalize on round-trip close
+    cur_trade_pnl: Dict[str, float] = {sym: 0.0 for sym in data}
     win_trades = 0
     loss_trades = 0
     for dt in all_dates:
@@ -156,18 +158,23 @@ def backtest(
                     pnl = reduce_qty * (avg_price[sym] - fill_price) - commission
                 else:
                     pnl = 0.0
-                realized_pnl += pnl
+                # Accumulate segment P&L into the current open trade bucket
+                cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) + pnl
                 # Determine if this action closed a round-trip (full exit or sign flip)
                 new_pos = pos + delta
                 closed_round_trip = (new_pos == 0) or (pos * new_pos < 0)
                 if closed_round_trip:
+                    total_trade_pnl = cur_trade_pnl.get(sym, 0.0)
+                    realized_pnl += total_trade_pnl
                     if pnl > 0:
-                        realized_wins += pnl
+                        realized_wins += max(total_trade_pnl, 0.0)
                         win_trades += 1
                     elif pnl < 0:
-                        realized_losses += -pnl
+                        realized_losses += max(-total_trade_pnl, 0.0)
                         loss_trades += 1
                     realized_trades += 1
+                    # reset accumulator for the symbol
+                    cur_trade_pnl[sym] = 0.0
                 # Update average if position flips
                 if new_pos == 0:
                     avg_price[sym] = 0.0

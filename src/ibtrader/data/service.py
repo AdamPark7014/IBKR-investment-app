@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 
 from ..config import AppSettings
-from .cache import load_from_cache, save_lineage, save_to_cache
+from .cache import load_from_cache, load_lineage, save_lineage, save_to_cache
 from .providers import DataQualityGate, IBKRProvider, StooqProvider, YahooProvider
 
 
@@ -31,12 +31,21 @@ def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
     start_s = str(start_dt.date())
     end_s = str(end_dt.date())
     for sym in settings.universe.symbols:
-        # Cache check
+        # Cache check + validation
         if settings.engine.use_cache:
             cached = load_from_cache(settings.data.cache_dir, sym, settings.engine.bar_size)
             if cached is not None and not cached.empty and len(cached) >= gate.min_rows:
-                out[sym] = cached
-                continue
+                meta = load_lineage(settings.data.cache_dir, sym, settings.engine.bar_size)
+                last_dt = pd.to_datetime(cached.index.max()).tz_localize("UTC", nonexistent="shift_forward", ambiguous="NaT") if not pd.api.types.is_datetime64tz_dtype(cached.index) else cached.index.max()
+                today = pd.Timestamp(datetime.now(timezone.utc).date()).tz_localize("UTC")
+                age_days = (today - last_dt.normalize()).days if last_dt is not pd.NaT else 10**9
+                allowed_sources = {"yahoo", "stooq", "ibkr"}
+                has_future = pd.to_datetime(cached.index.max()) > pd.Timestamp(datetime.now(timezone.utc).date())
+                meta_ok = meta is not None and (meta.source or "").lower() in allowed_sources
+                fresh_ok = (age_days <= max(settings.data.max_cache_age_days, 1))
+                if (not has_future) and meta_ok and fresh_ok:
+                    out[sym] = cached
+                    continue
         errors: List[str] = []
         for name, prov in provider_chain:
             try:

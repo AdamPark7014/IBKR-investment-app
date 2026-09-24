@@ -37,6 +37,7 @@ class DataConfig(BaseModel):
     reports_dir: str = "./reports"
     journal_db: str = "./data/journal.sqlite"
     providers: List[str] = Field(default_factory=lambda: ["yahoo", "stooq"])
+    max_cache_age_days: int = 7
 
 
 class IBConfig(BaseModel):
