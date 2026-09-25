@@ -22,14 +22,24 @@ def test_risk_manager_position_and_killswitch() -> None:
         rm = RiskManager(cfg, state)
         # Position too large
         ok, msg = rm.approve_order(
-            symbol="SPY", equity=100_000.0, price=500.0, quantity=2000, current_positions_value=0.0, current_position_qty=0
+            symbol="SPY",
+            equity=100_000.0,
+            price=500.0,
+            quantity=2000,
+            current_positions_value=0.0,
+            current_position_qty=0,
         )
         assert not ok and "Tamaño de posición" in msg
         # Killswitch blocks
         with open(ks, "w", encoding="utf-8") as f:
             f.write("HALT")
         ok, msg = rm.approve_order(
-            symbol="SPY", equity=100_000.0, price=500.0, quantity=10, current_positions_value=0.0, current_position_qty=0
+            symbol="SPY",
+            equity=100_000.0,
+            price=500.0,
+            quantity=10,
+            current_positions_value=0.0,
+            current_position_qty=0,
         )
         assert not ok and "Kill switch" in msg
 
