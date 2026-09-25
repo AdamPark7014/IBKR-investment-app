@@ -5,8 +5,8 @@ from types import SimpleNamespace as _SN
 
 import numpy as np
 import pandas as _pd
-import typer
 from rich import print as rprint
+import typer
 
 from ..backtest.engine import backtest
 from ..backtest.metrics import compute_stats
@@ -124,7 +124,6 @@ def backtest_sample(
             model, _ = fit_gmm_regime(bench_close.reindex(tr_idx), n_components=2, train_slice=slice(None))
             p = model.predict_proba(feats_all.iloc[[i]])
             probs.append(float(p[0, model.risk_on_label]))
-        import pandas as _pd
         risk_on_series = _pd.Series(probs, index=feats_all.index)
     result = backtest(
         data=data,
@@ -283,7 +282,6 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
                 model, _ = fit_gmm_regime(bench_close.reindex(tr_idx), n_components=2, train_slice=slice(None))
                 p = model.predict_proba(feats_all.iloc[[i]])
                 probs.append(float(p[0, model.risk_on_label]))
-            import pandas as _pd
             risk_on_series = _pd.Series(probs, index=feats_all.index)
         res = backtest(
             data=data,
@@ -491,7 +489,6 @@ def run_with_risk(
         model, _ = fit_gmm_regime(bench_close.reindex(tr_idx), n_components=2, train_slice=slice(None))
         p = model.predict_proba(feats_all.iloc[[i]])
         probs.append(float(p[0, model.risk_on_label]))
-    import pandas as _pd
     risk_on_series = _pd.Series(probs, index=feats_all.index)
     # Strategy with risk veto + vol-target sizing backtest
     strat = SMACrossover(
@@ -645,7 +642,6 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
         meta = load_lineage(s.data.cache_dir, symb, s.engine.bar_size)
         if meta is not None:
             lineage_sources[symb] = meta.source or ""
-    import pandas as _pd
     susp = diagnose_suspicious(_mini, data, lineage_sources=lineage_sources)
     # Build payload as JSON with None for undefined values and include strategy_version from chosen params
     import json as _json
