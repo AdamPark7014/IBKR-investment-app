@@ -117,7 +117,7 @@ class RiskManager:
         is_stop: bool = False,
         is_emergency: bool = False,
     ) -> Tuple[bool, str]:
-        # Classify intent and evaluate via FSM permissions
+        # Classify intent
         delta = int(quantity)
         is_reducing = (current_position_qty > 0 and delta < 0) or (current_position_qty < 0 and delta > 0)
         intent = RiskFSM.classify_intent(
@@ -126,6 +126,26 @@ class RiskManager:
             is_stop=is_stop,
             is_emergency=is_emergency,
         )
+        # Special probe: no-op order used to probe risk state
+        if delta == 0 and current_position_qty == 0:
+            ok, msg = self.check_daily_loss(equity)
+            if not ok:
+                return ok, msg
+            ok, msg = self.check_cumulative_loss(equity)
+            if not ok:
+                return ok, msg
+            ok, msg = self.check_drawdown(equity)
+            if not ok:
+                return ok, msg
+            return True, "OK"
+        # Evaluate killswitch and loss limits BEFORE deciding permissions
+        ok, msg = self.check_killswitch(intent)
+        if not ok and not is_reducing:
+            return ok, msg
+        # Daily loss check updates FSM (restricted) but should not block reductions/exits
+        _ok, _ = self.check_daily_loss(equity)
+        _ok, _ = self.check_cumulative_loss(equity)
+        _ok, _ = self.check_drawdown(equity)
         # If halted (daily loss), ensure FSM is in restricted state (defensive)
         if self.state.halted:
             self.fsm.set_restricted()
@@ -139,7 +159,9 @@ class RiskManager:
             # If restricted/emergency, open leg is not permitted
             if not self.fsm.allow(close_intent):
                 return False, f"Operación no permitida en estado de riesgo ({self.fsm.state.name}): {close_intent.name}"
-            if not self.fsm.allow(open_intent):
+            # Check killswitch for the open leg as well
+            ok_kill, msg_kill = self.check_killswitch(open_intent)
+            if (not self.fsm.allow(open_intent)) or (not ok_kill):
                 return False, (
                     "Flip requiere apertura nueva pero está bloqueada por "
                     f"estado de riesgo ({self.fsm.state.name})."
@@ -156,26 +178,10 @@ class RiskManager:
             ok, msg = self.check_order_count(open_intent)
             if not ok:
                 return False, msg
-            # Daily loss still evaluated for context, but reduction allowed and open permitted if not halted further
-            _ok, _ = self.check_daily_loss(equity)
-            _ok, _ = self.check_cumulative_loss(equity)
-            _ok, _ = self.check_drawdown(equity)
             return True, "OK"
         # Enforce FSM: allow REDUCE/CLOSE even if restricted/emergency; block OPEN/INCREASE when restricted
         if not self.fsm.allow(intent):
             return False, f"Operación no permitida en estado de riesgo ({self.fsm.state.name}): {intent.name}"
-        # Daily loss check updates FSM and still allows reductions
-        ok, msg = self.check_daily_loss(equity)
-        if not ok:
-            # Daily loss triggered; still allow reducing
-            if not is_reducing:
-                return ok, msg
-        ok, msg = self.check_cumulative_loss(equity)
-        if not ok and not is_reducing:
-            return ok, msg
-        ok, msg = self.check_drawdown(equity)
-        if not ok and not is_reducing:
-            return ok, msg
         for check in [
             lambda: self.check_killswitch(intent),
             lambda: self.check_symbol_allowed(symbol),

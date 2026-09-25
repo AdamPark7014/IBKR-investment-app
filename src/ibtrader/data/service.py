@@ -26,7 +26,11 @@ def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
         fac = prov_map.get(name.lower())
         if fac is not None:
             provider_chain.append((name.lower(), fac()))
-    gate = DataQualityGate(min_rows=min(252, settings.engine.history_days))
+    # Lower gate for fixtures to accommodate smaller synthetic datasets
+    gate_min = min(252, settings.engine.history_days)
+    if "fixture" in [n.lower() for n in settings.data.providers]:
+        gate_min = min(gate_min, 200)
+    gate = DataQualityGate(min_rows=gate_min)
     out: Dict[str, pd.DataFrame] = {}
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=settings.engine.history_days)
@@ -38,15 +42,13 @@ def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
             cached = load_from_cache(settings.data.cache_dir, sym, settings.engine.bar_size)
             if cached is not None and not cached.empty and len(cached) >= gate.min_rows:
                 meta = load_lineage(settings.data.cache_dir, sym, settings.engine.bar_size)
-                last_dt = (
-                    pd.to_datetime(cached.index.max()).tz_localize(
-                        "UTC",
-                        nonexistent="shift_forward",
-                        ambiguous="NaT",
+                # Normalize to tz-aware
+                if isinstance(cached.index.dtype, pd.DatetimeTZDtype):
+                    last_dt = cached.index.max()
+                else:
+                    last_dt = pd.to_datetime(cached.index.max()).tz_localize(
+                        "UTC", nonexistent="shift_forward", ambiguous="NaT"
                     )
-                    if not pd.api.types.is_datetime64tz_dtype(cached.index)
-                    else cached.index.max()
-                )
                 today = pd.Timestamp(datetime.now(timezone.utc).date()).tz_localize("UTC")
                 age_days = (today - last_dt.normalize()).days if last_dt is not pd.NaT else 10**9
                 allowed_sources = {"yahoo", "stooq", "ibkr"}

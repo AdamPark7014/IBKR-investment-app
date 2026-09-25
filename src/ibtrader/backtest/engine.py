@@ -179,21 +179,97 @@ def backtest(
                         total_cost,
                     )
                     continue
-            # Risk manager veto (optional)
+            # Evaluate stop-loss / emergency flatten
+            force_close = False
+            is_emergency = False
+            if risk_manager is not None:
+                # Emergency flatten via killswitch if configured
+                try:
+                    import os as _os
+                    if risk_manager.cfg.emergency_flatten_on_kill and _os.path.exists(risk_manager.cfg.killswitch_file):
+                        # killswitch active -> allow emergency close
+                        force_close = pos != 0
+                        is_emergency = True
+                except Exception:
+                    pass
+                # Per-position stop loss
+                stop_pct = float(risk_manager.cfg.stop_loss_per_position_pct or 0.0)
+                if stop_pct > 0.0 and pos != 0 and avg_price.get(sym, 0.0) > 0.0:
+                    thresh = (
+                        avg_price[sym] * (1 - stop_pct / 100.0)
+                        if pos > 0
+                        else avg_price[sym] * (1 + stop_pct / 100.0)
+                    )
+                    if (pos > 0 and price <= thresh) or (pos < 0 and price >= thresh):
+                        force_close = True
+            # If forced close due to stop/emergency, override target
+            if force_close:
+                target = 0
+                delta = -pos
+                side = 1 if delta > 0 else -1
+                fill_price = _slip(slippage_cfg, price, side)
+                commission = _commission(commission_cfg, delta, fill_price)
+            # Risk manager veto (optional) with flip handling
             if risk_manager is not None:
                 eq_prev = nav_prev
                 cur_pos_val = sum(holdings[s] * close_prev.get(s, 0.0) for s in holdings)
-                ok, msg = risk_manager.approve_order(
-                    symbol=sym,
-                    equity=eq_prev,
-                    price=fill_price,
-                    quantity=int(delta),
-                    current_positions_value=float(cur_pos_val),
-                    current_position_qty=int(pos),
-                )
-                if not ok:
-                    log.info("risk_veto sym=%s reason=%s", sym, msg)
-                    continue
+                # Detect flip
+                is_flip = pos != 0 and target != 0 and (pos > 0 > target or pos < 0 < target)
+                if is_flip:
+                    # Try full flip first
+                    ok, msg = risk_manager.approve_order(
+                        symbol=sym,
+                        equity=eq_prev,
+                        price=fill_price,
+                        quantity=int(delta),
+                        current_positions_value=float(cur_pos_val),
+                        current_position_qty=int(pos),
+                    )
+                    if not ok:
+                        # Attempt close-only leg; open leg vetoed
+                        delta_close = -pos
+                        okc, msgc = risk_manager.approve_order(
+                            symbol=sym,
+                            equity=eq_prev,
+                            price=_slip(slippage_cfg, price, (1 if delta_close > 0 else -1)),
+                            quantity=int(delta_close),
+                            current_positions_value=float(cur_pos_val),
+                            current_position_qty=int(pos),
+                            is_stop=False,
+                            is_emergency=is_emergency,
+                        )
+                        if okc and delta_close != 0:
+                            # Execute close-only
+                            dfill = _slip(slippage_cfg, price, (1 if delta_close > 0 else -1))
+                            dcomm = _commission(commission_cfg, delta_close, dfill)
+                            cash -= delta_close * dfill + dcomm
+                            holdings[sym] = 0
+                            turnover_notional += abs(delta_close) * dfill
+                            total_commission += dcomm
+                            trades.append((str(dt), sym, int(delta_close), float(dfill)))
+                            last_targets[sym] = 0
+                            if risk_manager is not None:
+                                risk_manager.notify_order_sent()
+                            # Skip open leg
+                            continue
+                        else:
+                            log.info("risk_veto_flip sym=%s reason=%s", sym, msg)
+                            continue
+                else:
+                    ok, msg = risk_manager.approve_order(
+                        symbol=sym,
+                        equity=eq_prev,
+                        price=fill_price,
+                        quantity=int(delta),
+                        current_positions_value=float(cur_pos_val),
+                        current_position_qty=int(pos),
+                        is_stop=force_close,
+                        is_emergency=is_emergency,
+                    )
+                    if not ok:
+                        log.info("risk_veto sym=%s reason=%s", sym, msg)
+                        continue
+            # Execute order
             cash -= delta * fill_price + commission
             holdings[sym] = pos + delta
             turnover_notional += abs(delta) * fill_price

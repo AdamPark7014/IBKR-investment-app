@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, cast as _cast
 
 import pandas as pd
 
@@ -64,9 +64,10 @@ def walk_forward_sma(
     tried: List[Tuple[int, int]] = []
     chosen = None
     # Use expanding train and rolling OOS folds
-    folds_detail = []
+    folds_detail: List[Dict[str, Any]] = []
     tried_all: List[Tuple[Tuple[int, int], float]] = []
     total_oos_trades = 0
+    total_oos_commission = 0.0
     stitched_eq = pd.Series(dtype=float)
     stitched_bh = pd.Series(dtype=float)
     for f in range(n_folds):
@@ -173,6 +174,7 @@ def walk_forward_sma(
         test_rets = res_test_span.returns.reindex(test_idx).dropna()
         res_test_stats = _cs(test_eq, test_rets)
         total_oos_trades += int(res_test_span.stats.trade_count)
+        total_oos_commission += float(res_test_span.stats.total_commission)
         # Stitch OOS equity and B&H for this fold
         stitched_eq = pd.concat([stitched_eq, test_eq]) if not stitched_eq.empty else test_eq.copy()
         # B&H for same test window
@@ -209,42 +211,62 @@ def walk_forward_sma(
                 ],
             }
         )
-    # Aggregate stitched OOS stats
+    # Aggregate stitched OOS stats: chain daily returns across folds
     stitched_oos_stats = {}
-    if len(stitched_eq) > 1:
-        stitched_rets = stitched_eq.pct_change().fillna(0.0)
-        st = _cs(stitched_eq, stitched_rets)
-        stitched_oos_stats = {
-            "cagr": st.cagr,
-            "sharpe": st.sharpe,
-            "sortino": st.sortino,
-            "calmar": st.calmar,
-            "max_dd": st.max_drawdown,
-            "trade_count": int(total_oos_trades),
-        }
-    # mypy: ensure dict typing for selected fold stats
-    from typing import cast as _cast, Any as _Any, Dict as _Dict
+    if len(folds_detail) > 0:
+        # Build stitched returns across folds from per-fold equity
+        stitched_rets = pd.Series(dtype=float)
+        for fd in folds_detail:
+            oos_eq = pd.Series({pd.Timestamp(t): v for t, v in fd["oos_equity"]}).sort_index()
+            r = oos_eq.pct_change().dropna()
+            stitched_rets = pd.concat([stitched_rets, r]) if not stitched_rets.empty else r.copy()
+        if len(stitched_rets) > 0:
+            eq0 = 100_000.0
+            stitched_eq_chain = (1.0 + stitched_rets).cumprod() * eq0
+            st = _cs(stitched_eq_chain, stitched_rets)
+            # Count only trades occurring within OOS dates
+            oos_trade_count = sum(len(fd["oos_trades"]) for fd in folds_detail)
+            stitched_oos_stats = {
+                "cagr": st.cagr,
+                "sharpe": st.sharpe,
+                "sortino": st.sortino,
+                "calmar": st.calmar,
+                "max_dd": st.max_drawdown,
+                "trade_count": int(oos_trade_count),
+            }
     wf = WFResult(
         params=chosen or param_grid[0],
-        train_stats=_cast(_Dict[_Any, _Any], folds_detail[-1]["train"]) if folds_detail else {},
-        val_stats=_cast(_Dict[_Any, _Any], folds_detail[-1]["val"]) if folds_detail else {},
-        test_stats=_cast(_Dict[_Any, _Any], folds_detail[-1]["oos"]) if folds_detail else {},
+        train_stats=_cast(Dict[str, Any], folds_detail[-1]["train"]) if folds_detail else {},
+        val_stats=_cast(Dict[str, Any], folds_detail[-1]["val"]) if folds_detail else {},
+        test_stats=_cast(Dict[str, Any], stitched_oos_stats) if stitched_oos_stats else {},
         stitched_oos=stitched_oos_stats,
         per_fold=folds_detail,
     )
     # Buy&Hold on stitched OOS
     bh = None
-    if len(stitched_bh) > 1:
-        ret = stitched_bh.pct_change().fillna(0.0)
-        bh = {
-            "cagr": float((stitched_bh.iloc[-1] / stitched_bh.iloc[0]) ** (252 / max(len(stitched_bh), 1)) - 1.0),
-            "sharpe": float((ret.mean() / (ret.std(ddof=0) or 1e-9)) * (252 ** 0.5)),
-            "max_dd": float((stitched_bh / stitched_bh.cummax() - 1.0).min()),
-        }
+    if len(folds_detail) > 0:
+        stitched_bh_rets = pd.Series(dtype=float)
+        for fd in folds_detail:
+            test_idx = [pd.Timestamp(t) for t, _ in fd["oos_equity"]]
+            if settings.universe.benchmark in data and len(test_idx) > 1:
+                px = data[settings.universe.benchmark]["close"].astype(float).reindex(test_idx)
+                bh_eq = (100_000.0 / float(px.iloc[0])) * px
+                r = bh_eq.pct_change().dropna()
+                stitched_bh_rets = pd.concat([stitched_bh_rets, r]) if not stitched_bh_rets.empty else r.copy()
+        if len(stitched_bh_rets) > 0:
+            eq0 = 100_000.0
+            bh_chain = (1.0 + stitched_bh_rets).cumprod() * eq0
+            ret = stitched_bh_rets
+            bh = {
+                "cagr": float((bh_chain.iloc[-1] / bh_chain.iloc[0]) ** (252 / max(len(bh_chain), 1)) - 1.0),
+                "sharpe": float((ret.mean() / (ret.std(ddof=0) or 1e-9)) * (252 ** 0.5)),
+                "max_dd": float((bh_chain / bh_chain.cummax() - 1.0).min()),
+            }
     summary = {
         "buy_hold_oos": bh,
         "folds": folds_detail,
         "oos_total_trades": int(total_oos_trades),
+        "oos_commission_approx": float(total_oos_commission),
         "tried_param_count": len(tried_all),
         "stitched_oos_equity": [[str(t), float(v)] for t, v in stitched_eq.items()],
         "stitched_bh_equity": [[str(t), float(v)] for t, v in stitched_bh.items()],

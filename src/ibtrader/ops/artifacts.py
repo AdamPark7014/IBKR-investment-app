@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 from datetime import datetime, timezone
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -98,11 +99,17 @@ def save_run_artifact(
         "config_hash": config_hash(settings),
         "dataset": {"hash": ds_hash, "symbols": sym_dates},
         "strategy": settings.strategy.model_dump(),
-        "strategy_version": settings.strategy.name,
+        "strategy_version": (
+            f"{settings.strategy.name}-"
+            f"{settings.strategy.params.get('fast_window','')}-"
+            f"{settings.strategy.params.get('slow_window','')}-"
+            f"{git_commit()[:7]}-"
+            f"{_pkg_version('ibtrader')}"
+        ),
         "commission": settings.commission.model_dump(),
         "slippage": settings.slippage.model_dump(),
         "execution": {"model": "next_open_with_slippage"},
-        "seed": 0,
+        "seeds": {"gmm": 42},
         "metrics": {
             "cagr": result.stats.cagr,
             "sharpe": result.stats.sharpe,

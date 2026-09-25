@@ -67,7 +67,7 @@ def diagnose(
             if s != sym:
                 continue
             ts = pd.Timestamp(d)
-            prev = closes.reindex([ts]).shift(1).iloc[0] if ts in closes.index else np.nan
+            prev = closes.shift(1).reindex([ts]).iloc[0] if ts in closes.index else np.nan
             if np.isfinite(prev) and abs(float(prev) - float(p)) < 1e-9:
                 flags.append(
                     Suspicion(

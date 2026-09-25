@@ -6,8 +6,8 @@ from ibtrader.config import AppSettings
 
 
 def test_rebalance_band_pct_out_of_range_raises() -> None:
-    import pandas as pd
     import numpy as np
+    import pandas as pd
 
     from ibtrader.backtest.engine import backtest
     from ibtrader.config import CommissionConfig, SlippageConfig

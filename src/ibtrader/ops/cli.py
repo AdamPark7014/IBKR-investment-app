@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from typing import cast as _cast
 
 import numpy as np
 import typer
@@ -18,6 +19,7 @@ from ..logging import setup_logging
 from ..ops.killswitch import activate_killswitch, clear_killswitch
 from ..ops.status import status_summary
 from ..regime.gmm import build_regime_features, fit_gmm_regime
+from ..risk.manager import RiskManager, RiskState
 from ..strategy.sma_crossover import SMACrossover
 from ..validation.signal import validate_sma_signal
 from ..validation.walkforward import walk_forward_sma
@@ -94,17 +96,23 @@ def backtest_sample(
     # Optional risk veto
     risk_on_series = None
     if with_risk:
+        # Expanding fit per date (walk-forward regime probabilities)
         from ..regime.gmm import build_regime_features, fit_gmm_regime
         bench = s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0]
-        model, _ = fit_gmm_regime(data[bench]["close"], n_components=2)
-        feats = build_regime_features(data[bench]["close"])
-        proba = model.predict_proba(feats)
-        risk_on_series = feats.index.to_series().map(
-            lambda d: float(proba[list(feats.index).index(d), model.risk_on_label])
-            if d in feats.index
-            else 1.0
-        )
-        risk_on_series.index = feats.index
+        bench_close = data[bench]["close"].astype(float)
+        feats_all = build_regime_features(bench_close)
+        probs = []
+        idxs = list(feats_all.index)
+        for i in range(len(idxs)):
+            tr_idx = idxs[: i + 1]
+            if len(tr_idx) < 60:
+                probs.append(0.0)
+                continue
+            model, _ = fit_gmm_regime(bench_close.reindex(tr_idx), n_components=2, train_slice=slice(None))
+            p = model.predict_proba(feats_all.iloc[[i]])
+            probs.append(float(p[0, model.risk_on_label]))
+        import pandas as _pd
+        risk_on_series = _pd.Series(probs, index=feats_all.index)
     result = backtest(
         data=data,
         strategy=strat,
@@ -489,6 +497,7 @@ def run_with_risk(
         risk_on=risk_on_series,
         risk_on_threshold=thr,
         target_vol_annual=float(s.risk.target_vol_annual),
+        risk_manager=RiskManager(s.risk, RiskState(starting_equity_today=100_000.0)),
     )
     # Save artifact
     from datetime import datetime as _dt
@@ -568,7 +577,6 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
                 max_underwater_days=0,
             )
     # mypy: save artifact with a BacktestResult-compatible shell
-    from typing import cast as _cast
     from ..backtest.engine import BacktestResult as _BTRes
     _mini = _MiniRes()
     art_path = save_run_artifact(
@@ -585,7 +593,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
             "best_params": {"fast": wf.params[0], "slow": wf.params[1]},
             "in_sample": wf.train_stats,
             "validation": wf.val_stats,
-            "oos": wf.test_stats,
+            "oos": wf.stitched_oos,
             "buy_hold_oos": summary.get("buy_hold_oos"),
             "folds": summary.get("folds"),
             "oos_total_trades": summary.get("oos_total_trades"),

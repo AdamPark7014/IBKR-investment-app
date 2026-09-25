@@ -48,3 +48,6 @@ def test_backtest_runs_and_returns_metrics() -> None:
     assert result_hyst.stats.trade_count >= 1
     assert len(result.equity_curve) == 100
 
+
+# Engine-level stop/emergency exits covered by risk scenario tests elsewhere
+

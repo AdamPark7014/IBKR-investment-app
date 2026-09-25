@@ -54,6 +54,8 @@ class FixtureProvider(MarketDataProvider):
                 break
         if df is None or df.empty:
             raise RuntimeError(f"Fixture no encontrado para {symbol} en {self.dir}")
+        # Drop non-business days to avoid weekends in fixtures
+        df = df[df.index.dayofweek < 5]
         ok, msg = validate_timeseries_strict(df)
         if not ok:
             raise RuntimeError(f"Fixture inválido: {msg}")
