@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ibtrader.config import CommissionConfig, RiskConfig, SlippageConfig
+from ibtrader.config import RiskConfig
 from ibtrader.risk.manager import RiskManager, RiskState
 from ibtrader.strategy.base import Strategy
 
