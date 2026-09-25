@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-import os
 import pytest
 
 from ibtrader.config import AppSettings
 
 
 def test_rebalance_band_pct_out_of_range_raises() -> None:
-    from ibtrader.backtest.engine import backtest
-    from ibtrader.strategy.sma_crossover import SMACrossover
-    from ibtrader.config import CommissionConfig, SlippageConfig
     import pandas as pd
+    import numpy as np
+
+    from ibtrader.backtest.engine import backtest
+    from ibtrader.config import CommissionConfig, SlippageConfig
+    from ibtrader.strategy.sma_crossover import SMACrossover
     idx = pd.bdate_range("2024-01-01", periods=30)
-    px = pd.Series(100.0 + range(30), index=idx).astype(float)
+    px = pd.Series(100.0 + np.arange(30), index=idx).astype(float)
     df = pd.DataFrame(
         {"open": px, "high": px, "low": px, "close": px, "volume": 1000.0},
         index=idx,

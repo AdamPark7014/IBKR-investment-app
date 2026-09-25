@@ -6,9 +6,9 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
+from ..config import CommissionConfig, SlippageConfig
 from ..ml.cv import PurgedTimeSeriesSplit
 from ..strategy.sma_crossover import SMACrossover
-from ..config import CommissionConfig, SlippageConfig
 
 
 def _next_open_returns(open_px: pd.Series) -> pd.Series:

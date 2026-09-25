@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import pandas as pd
 from datetime import datetime, timezone
 
-from ibtrader.regime.gmm import fit_gmm_regime, build_regime_features
+import pandas as pd
+
+from ibtrader.regime.gmm import build_regime_features, fit_gmm_regime
 
 
 def _series(len_days: int = 400) -> pd.Series:

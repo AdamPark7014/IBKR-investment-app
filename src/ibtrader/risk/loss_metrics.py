@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
 
-import numpy as np
 import pandas as pd
 
 
@@ -45,7 +43,11 @@ def compute_loss_metrics(
             unreal = (last_price - avg_price) * position_qty
         else:
             unreal = (avg_price - last_price) * abs(position_qty)
-    per_position_unrealized_pct = 0.0 if avg_price == 0 or position_qty == 0 else (last_price - avg_price) / avg_price * (1 if position_qty > 0 else -1)
+    per_position_unrealized_pct = (
+        0.0
+        if avg_price == 0 or position_qty == 0
+        else ((last_price - avg_price) / avg_price) * (1 if position_qty > 0 else -1)
+    )
     realized_loss = float(min(0.0, realized_pnl_cum))
     unrealized_loss = float(min(0.0, unreal))
     return LossMetrics(

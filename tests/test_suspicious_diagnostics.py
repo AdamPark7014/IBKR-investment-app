@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import pandas as pd
 from types import SimpleNamespace as SN
 
-from ibtrader.diagnostics.suspicious import diagnose
+import pandas as pd
+
 from ibtrader.backtest.engine import BacktestResult
+from ibtrader.diagnostics.suspicious import diagnose
 
 
 def test_suspicious_flags_detect_extremes() -> None:

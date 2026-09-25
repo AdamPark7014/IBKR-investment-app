@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typer.testing import CliRunner
-import pandas as pd
 from datetime import datetime, timezone
+
+import pandas as pd
+from typer.testing import CliRunner
 
 import ibtrader.ops.cli as cli_mod
 

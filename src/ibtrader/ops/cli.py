@@ -2,26 +2,26 @@ from __future__ import annotations
 
 from typing import Optional
 
+import numpy as np
 import typer
 from rich import print as rprint
-import numpy as np
 
 from ..backtest.engine import backtest
 from ..backtest.metrics import compute_stats
 from ..backtest.report import save_equity_report
 from ..config import AppSettings
+from ..data.cache import load_lineage
 from ..data.service import load_universe_v2
 from ..diagnostics.suspicious import diagnose as diagnose_suspicious
 from ..engine.decision import DecisionEngine
 from ..logging import setup_logging
 from ..ops.killswitch import activate_killswitch, clear_killswitch
 from ..ops.status import status_summary
+from ..regime.gmm import build_regime_features, fit_gmm_regime
 from ..strategy.sma_crossover import SMACrossover
-from ..regime.gmm import fit_gmm_regime, build_regime_features
 from ..validation.signal import validate_sma_signal
 from ..validation.walkforward import walk_forward_sma
 from .artifacts import save_run_artifact
-from ..data.cache import load_lineage
 
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
@@ -68,7 +68,12 @@ def download_data() -> None:
 
 
 @app.command()
-def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None, with_risk: bool = False, risk_on_threshold: Optional[float] = None) -> None:
+def backtest_sample(
+    symbol: Optional[str] = None,
+    exp_id: Optional[str] = None,
+    with_risk: bool = False,
+    risk_on_threshold: Optional[float] = None,
+) -> None:
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
@@ -89,13 +94,16 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None, 
     # Optional risk veto
     risk_on_series = None
     if with_risk:
-        from ..regime.gmm import fit_gmm_regime, build_regime_features
+        from ..regime.gmm import build_regime_features, fit_gmm_regime
         bench = s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0]
         model, _ = fit_gmm_regime(data[bench]["close"], n_components=2)
         feats = build_regime_features(data[bench]["close"])
-        import numpy as _np
         proba = model.predict_proba(feats)
-        risk_on_series = feats.index.to_series().map(lambda d: float(proba[list(feats.index).index(d), model.risk_on_label]) if d in feats.index else 1.0)
+        risk_on_series = feats.index.to_series().map(
+            lambda d: float(proba[list(feats.index).index(d), model.risk_on_label])
+            if d in feats.index
+            else 1.0
+        )
         risk_on_series.index = feats.index
     result = backtest(
         data=data,
@@ -107,7 +115,11 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None, 
         risk_cost_bps=float(s.trading.risk_cost_bps),
         direction=s.trading.direction,
         risk_on=risk_on_series,
-        risk_on_threshold=float(risk_on_threshold) if risk_on_threshold is not None else float(s.risk.risk_on_threshold),
+        risk_on_threshold=(
+            float(risk_on_threshold)
+            if risk_on_threshold is not None
+            else float(s.risk.risk_on_threshold)
+        ),
         target_vol_annual=float(s.risk.target_vol_annual),
     )
     # Buy & Hold baseline on benchmark
@@ -235,7 +247,7 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
         risk_on_series = None
         rot = float(s.risk.risk_on_threshold)
         if with_risk:
-            from ..regime.gmm import fit_gmm_regime, build_regime_features
+            from ..regime.gmm import build_regime_features, fit_gmm_regime
             bench = s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0]
             bench_close = data[bench]["close"].astype(float)
             feats_all = build_regime_features(bench_close)
@@ -364,7 +376,6 @@ def regime_fit(symbol: Optional[str] = None, n_components: int = 2, exp_id: Opti
         s.universe.symbols = [symbol]
     data = load_universe_v2(s)
     bench = s.universe.benchmark if s.universe.benchmark in data else next(iter(data.keys()))
-    feats = build_regime_features(data[bench]["close"])
     model, rep = fit_gmm_regime(data[bench]["close"], n_components=n_components)
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
@@ -429,7 +440,11 @@ def signal_validate(
     )
 
 @app.command("run-with-risk")
-def run_with_risk(symbol: Optional[str] = None, exp_id: Optional[str] = None, risk_on_threshold: Optional[float] = None) -> None:
+def run_with_risk(
+    symbol: Optional[str] = None,
+    exp_id: Optional[str] = None,
+    risk_on_threshold: Optional[float] = None,
+) -> None:
     """
     P8 Risk Integration: regime veto + volatility-target sizing. No live orders; prints decision.
     """
@@ -478,7 +493,14 @@ def run_with_risk(symbol: Optional[str] = None, exp_id: Optional[str] = None, ri
     # Save artifact
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    art_path = save_run_artifact(res, s, data, s.data.reports_dir, f"risk_{run_id}", extra={"risk_on_threshold": thr})
+    art_path = save_run_artifact(
+        res,
+        s,
+        data,
+        s.data.reports_dir,
+        f"risk_{run_id}",
+        extra={"risk_on_threshold": thr},
+    )
     rprint(
         {
             "symbol": sym,
@@ -517,8 +539,9 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
             import pandas as _pd
             self.equity_curve = _pd.Series(dtype=float)
             self.returns = _pd.Series(dtype=float)
-            self.positions = {}
-            self.trades = []
+            from pandas import Series as _Series
+            self.positions: dict[str, _Series] = {}
+            self.trades: list[tuple[str, str, int, float]] = []
             from types import SimpleNamespace as _SN
             last = summary.get("folds", [])[-1] if summary.get("folds") else {}
             stats = last.get("oos", {}) if last else {}
@@ -544,7 +567,18 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
                 current_underwater_days=0,
                 max_underwater_days=0,
             )
-    art_path = save_run_artifact(_MiniRes(), s, data, s.data.reports_dir, f"wf_{run_id}", extra={"walk_forward": summary})
+    # mypy: save artifact with a BacktestResult-compatible shell
+    from typing import cast as _cast
+    from ..backtest.engine import BacktestResult as _BTRes
+    _mini = _MiniRes()
+    art_path = save_run_artifact(
+        _cast(_BTRes, _mini),
+        s,
+        data,
+        s.data.reports_dir,
+        f"wf_{run_id}",
+        extra={"walk_forward": summary},
+    )
     rprint(
         {
             "symbol": sym,

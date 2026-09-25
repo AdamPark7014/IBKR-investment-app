@@ -4,17 +4,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, List
 
 import pandas as pd
-import pytest
 
 from ibtrader.data.providers import IBKRProvider
 
 
 class _Bar:
-    def __init__(self, dt: datetime, o: float, h: float, l: float, c: float, v: float) -> None:
+    def __init__(self, dt: datetime, o: float, h: float, lo: float, c: float, v: float) -> None:
         self.date = dt
         self.open = o
         self.high = h
-        self.low = l
+        self.low = lo
         self.close = c
         self.volume = v
 

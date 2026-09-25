@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 import pandas as pd
@@ -77,7 +77,7 @@ def test_service_calls_yahoo_with_window(monkeypatch: Any, tmp_path) -> None:
 
 def test_cache_poisoning_blocked(monkeypatch: Any, tmp_path) -> None:
     # Write a poisoned cache (future-dated, mock source)
-    from ibtrader.data.cache import save_to_cache, save_lineage
+    from ibtrader.data.cache import save_lineage, save_to_cache
     from ibtrader.data.lineage import DataLineage
     # Future dates
     idx = pd.date_range("2099-01-01", periods=260, freq="B")

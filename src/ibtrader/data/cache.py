@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
 from .lineage import DataLineage
-import json
+
 
 def cache_path(cache_dir: str, symbol: str, bar_size: str) -> Path:
     Path(cache_dir).mkdir(parents=True, exist_ok=True)

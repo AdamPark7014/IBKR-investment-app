@@ -7,8 +7,8 @@ import pandas as pd
 
 from ..config import AppSettings
 from .cache import load_from_cache, load_lineage, save_lineage, save_to_cache
-from .lineage import DataFrameWithMeta, DataLineage
-from .providers import DataQualityGate, IBKRProvider, StooqProvider, YahooProvider, FixtureProvider
+from .lineage import DataFrameWithMeta
+from .providers import DataQualityGate, FixtureProvider, IBKRProvider, StooqProvider, YahooProvider
 
 
 def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
@@ -38,7 +38,15 @@ def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
             cached = load_from_cache(settings.data.cache_dir, sym, settings.engine.bar_size)
             if cached is not None and not cached.empty and len(cached) >= gate.min_rows:
                 meta = load_lineage(settings.data.cache_dir, sym, settings.engine.bar_size)
-                last_dt = pd.to_datetime(cached.index.max()).tz_localize("UTC", nonexistent="shift_forward", ambiguous="NaT") if not pd.api.types.is_datetime64tz_dtype(cached.index) else cached.index.max()
+                last_dt = (
+                    pd.to_datetime(cached.index.max()).tz_localize(
+                        "UTC",
+                        nonexistent="shift_forward",
+                        ambiguous="NaT",
+                    )
+                    if not pd.api.types.is_datetime64tz_dtype(cached.index)
+                    else cached.index.max()
+                )
                 today = pd.Timestamp(datetime.now(timezone.utc).date()).tz_localize("UTC")
                 age_days = (today - last_dt.normalize()).days if last_dt is not pd.NaT else 10**9
                 allowed_sources = {"yahoo", "stooq", "ibkr"}

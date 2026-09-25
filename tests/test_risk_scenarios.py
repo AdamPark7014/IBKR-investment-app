@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import pandas as pd
-
-from ibtrader.risk.manager import RiskManager, RiskState
 from ibtrader.config import RiskConfig
+from ibtrader.risk.manager import RiskManager, RiskState
 
 
 def test_exit_allowed_during_crash_gap() -> None:

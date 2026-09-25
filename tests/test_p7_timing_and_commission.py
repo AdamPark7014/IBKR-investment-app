@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ibtrader.validation.signal import validate_sma_signal
 from ibtrader.config import CommissionConfig, SlippageConfig
+from ibtrader.validation.signal import validate_sma_signal
 
 
 def _mk(len_days: int = 300) -> pd.DataFrame:

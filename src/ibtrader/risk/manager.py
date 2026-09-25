@@ -140,7 +140,10 @@ class RiskManager:
             if not self.fsm.allow(close_intent):
                 return False, f"Operación no permitida en estado de riesgo ({self.fsm.state.name}): {close_intent.name}"
             if not self.fsm.allow(open_intent):
-                return False, f"Flip requiere apertura nueva pero está bloqueada por estado de riesgo ({self.fsm.state.name})."
+                return False, (
+                    "Flip requiere apertura nueva pero está bloqueada por "
+                    f"estado de riesgo ({self.fsm.state.name})."
+                )
             # Check size/exposure for the resulting open leg
             new_qty = resulting
             ok, msg = self.check_position_size(equity, price, new_qty)

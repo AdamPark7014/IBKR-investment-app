@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+
 from typer.testing import CliRunner
 
 import ibtrader.ops.cli as cli_mod

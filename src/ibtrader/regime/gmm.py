@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -19,11 +19,11 @@ class RegimeModel:
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         Z = self.scaler.transform(X[list(self.feature_names)].values)
-        return self.gmm.predict_proba(Z)
+        return cast(np.ndarray, self.gmm.predict_proba(Z))
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         Z = self.scaler.transform(X[list(self.feature_names)].values)
-        return self.gmm.predict(Z)
+        return cast(np.ndarray, self.gmm.predict(Z))
 
 
 def build_regime_features(benchmark_px: pd.Series) -> pd.DataFrame:
@@ -34,7 +34,11 @@ def build_regime_features(benchmark_px: pd.Series) -> pd.DataFrame:
     return feats
 
 
-def fit_gmm_regime(benchmark_px: pd.Series, n_components: int = 2, train_slice: slice | None = None) -> Tuple[RegimeModel, pd.DataFrame]:
+def fit_gmm_regime(
+    benchmark_px: pd.Series,
+    n_components: int = 2,
+    train_slice: slice | None = None,
+) -> Tuple[RegimeModel, pd.DataFrame]:
     feats = build_regime_features(benchmark_px)
     if train_slice is None:
         # Default: first 60% of data for training

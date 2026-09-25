@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import pytest
 import pandas as pd
+import pytest
 
 from ibtrader.backtest.engine import backtest
 from ibtrader.config import CommissionConfig, SlippageConfig

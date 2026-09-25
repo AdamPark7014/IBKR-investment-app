@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ibtrader.risk.manager import RiskManager, RiskState
 from ibtrader.config import RiskConfig
+from ibtrader.risk.manager import RiskManager, RiskState
 
 
 def test_daily_reset_and_halt_allows_exit_and_next_day_trading() -> None:
@@ -53,7 +53,7 @@ def test_flip_uses_resulting_position_not_order_size() -> None:
     cfg = RiskConfig(
         max_position_pct=100.0,
         max_total_exposure_pct=100.0,
-        daily_loss_limit_pct=50.0,
+        daily_loss_limit_pct=5.0,
         max_orders_per_day=50,
         killswitch_file="./data/NO_KILL",
     )

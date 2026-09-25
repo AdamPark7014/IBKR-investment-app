@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import subprocess
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -30,7 +29,11 @@ def dataset_hash(data: Dict[str, pd.DataFrame]) -> str:
         df = data[sym]
         h.update(sym.encode("utf-8"))
         # Hash all standard OHLCV columns if present, else all columns
-        cols = [c for c in ["open", "high", "low", "close", "adj_close", "volume"] if c in df.columns] or list(df.columns)
+        cols = [
+            c
+            for c in ["open", "high", "low", "close", "adj_close", "volume"]
+            if c in df.columns
+        ] or list(df.columns)
         for c in cols:
             h.update(c.encode("utf-8"))
             h.update(_hash_series(df[c].astype(float)).encode("utf-8"))
@@ -80,7 +83,14 @@ def save_run_artifact(
 ) -> str:
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     ds_hash = dataset_hash(data)
-    sym_dates = {k: {"start": str(v.index.min()), "end": str(v.index.max()), "rows": int(len(v))} for k, v in data.items()}
+    sym_dates = {
+        k: {
+            "start": str(v.index.min()),
+            "end": str(v.index.max()),
+            "rows": int(len(v)),
+        }
+        for k, v in data.items()
+    }
     art = {
         "run_id": exp_id,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),

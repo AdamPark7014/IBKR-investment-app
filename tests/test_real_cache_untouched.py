@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+
 from typer.testing import CliRunner
 
 import ibtrader.ops.cli as cli_mod

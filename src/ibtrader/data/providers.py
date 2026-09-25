@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import os
 from dataclasses import dataclass
 from io import StringIO
 from typing import Optional
@@ -29,12 +30,14 @@ class FixtureProvider(MarketDataProvider):
       - File pattern: <symbol>_1d.csv or <symbol>_1d.parquet
     """
     def __init__(self, directory: Optional[str] = None) -> None:
-        import os
         self.dir = directory or os.environ.get("DATA__FIXTURE_DIR", "./tests/fixtures")
 
-    def fetch_daily_ohlcv(self, symbol: str, start: Optional[str] = None, end: Optional[str] = None) -> DataFrameWithMeta:
-        import os
-        import pandas as pd
+    def fetch_daily_ohlcv(
+        self,
+        symbol: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+    ) -> DataFrameWithMeta:
         base = os.path.join(self.dir, f"{symbol.upper()}_1d")
         df: Optional[pd.DataFrame] = None
         for ext in ("parquet", "csv"):

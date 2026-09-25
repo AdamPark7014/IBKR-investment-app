@@ -6,11 +6,11 @@ from typing import Dict, List, Tuple
 import pandas as pd
 
 from ..backtest.engine import backtest
-from ..config import AppSettings
-from ..strategy.sma_crossover import SMACrossover
-from ..regime.gmm import fit_gmm_regime, build_regime_features
-from ..risk.manager import RiskManager, RiskState
 from ..backtest.metrics import compute_stats as _cs
+from ..config import AppSettings
+from ..regime.gmm import build_regime_features, fit_gmm_regime
+from ..risk.manager import RiskManager, RiskState
+from ..strategy.sma_crossover import SMACrossover
 
 
 @dataclass
@@ -118,6 +118,9 @@ def walk_forward_sma(
         if chosen is None:
             chosen = best
         # Evaluate with frozen params on train/val/test using warmup spans
+        if best is None:
+            # Fallback to first grid item (should not happen with non-empty grid)
+            best = param_grid[0]
         fast, slow = best
         strat = SMACrossover(fast_window=fast, slow_window=slow, allow_short=True)
         # Train span and compute on train window
@@ -181,14 +184,29 @@ def walk_forward_sma(
         folds_detail.append(
             {
                 "fold": f + 1,
-                "dates": {"train": [str(train_idx[0]), str(train_idx[-1])] if train_idx else None, "val": [str(val_idx[0]), str(val_idx[-1])] if val_idx else None, "test": [str(idx[test_start]), str(idx[test_end - 1])] if test_end - test_start > 0 else None},
+                "dates": {
+                    "train": [str(train_idx[0]), str(train_idx[-1])] if train_idx else None,
+                    "val": [str(val_idx[0]), str(val_idx[-1])] if val_idx else None,
+                    "test": (
+                        [str(idx[test_start]), str(idx[test_end - 1])]
+                        if test_end - test_start > 0
+                        else None
+                    ),
+                },
                 "chosen_params": {"fast": fast, "slow": slow},
                 "train": res_train_stats.__dict__,
                 "val": res_val_stats.__dict__,
                 "oos": res_test_stats.__dict__,
-                "tried_combos": [{"fast": a, "slow": b, "val_sharpe": s} for (a, b), s in tried_all[-len(param_grid) :]],
+                "tried_combos": [
+                    {"fast": a, "slow": b, "val_sharpe": s}
+                    for (a, b), s in tried_all[-len(param_grid) :]
+                ],
                 "oos_equity": [[str(t), float(v)] for t, v in test_eq.items()],
-                "oos_trades": [{"date": d, "symbol": s, "qty": int(q), "price": float(p)} for d, s, q, p in res_test_span.trades if pd.Timestamp(d) in test_eq.index],
+                "oos_trades": [
+                    {"date": d, "symbol": s, "qty": int(q), "price": float(p)}
+                    for d, s, q, p in res_test_span.trades
+                    if pd.Timestamp(d) in test_eq.index
+                ],
             }
         )
     # Aggregate stitched OOS stats
@@ -204,11 +222,13 @@ def walk_forward_sma(
             "max_dd": st.max_drawdown,
             "trade_count": int(total_oos_trades),
         }
+    # mypy: ensure dict typing for selected fold stats
+    from typing import cast as _cast, Any as _Any, Dict as _Dict
     wf = WFResult(
         params=chosen or param_grid[0],
-        train_stats=folds_detail[-1]["train"] if folds_detail else {},
-        val_stats=folds_detail[-1]["val"] if folds_detail else {},
-        test_stats=folds_detail[-1]["oos"] if folds_detail else {},
+        train_stats=_cast(_Dict[_Any, _Any], folds_detail[-1]["train"]) if folds_detail else {},
+        val_stats=_cast(_Dict[_Any, _Any], folds_detail[-1]["val"]) if folds_detail else {},
+        test_stats=_cast(_Dict[_Any, _Any], folds_detail[-1]["oos"]) if folds_detail else {},
         stitched_oos=stitched_oos_stats,
         per_fold=folds_detail,
     )

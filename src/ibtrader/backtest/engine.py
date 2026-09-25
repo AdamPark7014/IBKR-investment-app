@@ -7,10 +7,10 @@ import pandas as pd
 
 from ..config import CommissionConfig, SlippageConfig
 from ..logging import setup_logging
+from ..risk.manager import RiskManager
+from ..risk.sizing import volatility_target_weight
 from ..strategy.base import Strategy
 from .metrics import PerformanceStats, compute_stats
-from ..risk.sizing import volatility_target_weight
-from ..risk.manager import RiskManager
 
 log = setup_logging()
 
@@ -135,9 +135,6 @@ def backtest(
                 # Volatility-target sizing factor (if enabled)
                 vt = 1.0
                 if target_vol_annual is not None and target_vol_annual > 0:
-                    rets_hist = (
-                        pd.Series(close_prev.get(sym, 0.0), index=[dt_prev])
-                    )  # placeholder to satisfy typing
                     # Use symbol history up to dt_prev for realized vol
                     hist_series = data[sym]["close"].astype(float)
                     hist_series = hist_series.loc[:dt_prev]

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List
@@ -26,7 +25,11 @@ def _has_future_dates(df: pd.DataFrame) -> bool:
         return False
 
 
-def diagnose(result: BacktestResult, datasets: Dict[str, pd.DataFrame], lineage_sources: Dict[str, str] | None = None) -> List[Suspicion]:
+def diagnose(
+    result: BacktestResult,
+    datasets: Dict[str, pd.DataFrame],
+    lineage_sources: Dict[str, str] | None = None,
+) -> List[Suspicion]:
     flags: List[Suspicion] = []
     stats = result.stats
     # Extreme performance
@@ -66,7 +69,12 @@ def diagnose(result: BacktestResult, datasets: Dict[str, pd.DataFrame], lineage_
             ts = pd.Timestamp(d)
             prev = closes.reindex([ts]).shift(1).iloc[0] if ts in closes.index else np.nan
             if np.isfinite(prev) and abs(float(prev) - float(p)) < 1e-9:
-                flags.append(Suspicion("fill_at_signal_price", f"Llenado al precio de cierre previo en {sym} @ {ts.date()}"))
+                flags.append(
+                    Suspicion(
+                        "fill_at_signal_price",
+                        f"Llenado al precio de cierre previo en {sym} @ {ts.date()}",
+                    )
+                )
                 break
     return flags
 
