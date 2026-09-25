@@ -587,26 +587,29 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
         stats_obj.trade_count = trade_count
         stats_obj.total_commission = total_commission
     else:
-        stats_obj = _SN(
-            cagr=None,
-            sharpe=None,
-            sortino=None,
-            calmar=None,
-            max_drawdown=None,
-            win_rate=None,
-            exposure=None,
-            total_return=None,
-            volatility=None,
-            trade_count=summary.get("oos_total_trades"),
-            total_commission=summary.get("oos_commission_approx"),
-            turnover=None,
-            win_rate_trades=None,
-            profit_factor=None,
-            expectancy=None,
-            var_95=None,
-            cvar_95=None,
-            current_underwater_days=None,
-            max_underwater_days=None,
+        from ..backtest.metrics import PerformanceStats as _PS
+        _nan = float("nan")
+        stats_obj = _PS(
+            cagr=_nan,
+            sharpe=_nan,
+            sortino=_nan,
+            max_drawdown=_nan,
+            win_rate=_nan,
+            exposure=_nan,
+            total_return=_nan,
+            volatility=_nan,
+            trade_count=int(summary.get("oos_total_trades") or 0),
+            total_commission=float(summary.get("oos_commission_approx") or 0.0),
+            turnover=_nan,
+            win_rate_trades=_nan,
+            profit_factor=_nan,
+            expectancy=_nan,
+            calmar=_nan,
+            recovery_factor=_nan,
+            var_95=_nan,
+            cvar_95=_nan,
+            current_underwater_days=0,
+            max_underwater_days=0,
         )
     class _BTResObj:
         def __init__(self) -> None:
@@ -642,7 +645,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
         meta = load_lineage(s.data.cache_dir, symb, s.engine.bar_size)
         if meta is not None:
             lineage_sources[symb] = meta.source or ""
-    susp = diagnose_suspicious(_mini, data, lineage_sources=lineage_sources)
+    susp = diagnose_suspicious(cast(_BTRes, _mini), data, lineage_sources=lineage_sources)
     # Build payload as JSON with None for undefined values and include strategy_version from chosen params
     import json as _json
     payload = {
