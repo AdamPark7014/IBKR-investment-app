@@ -31,7 +31,8 @@ def test_walk_forward_fold_independence(monkeypatch):
     res2 = runner.invoke(cli_mod.app, ["walk-forward", "--exp-id", "wf2"])
     assert res2.exit_code == 0
     # Simple equality on total OOS trades to ensure no cross-run leakage
-    import re, json
+    import json
+    import re
 
     def _parse_oos(s: str) -> int:
         m = re.search(r"\{(.|\n)*\}$", s)
