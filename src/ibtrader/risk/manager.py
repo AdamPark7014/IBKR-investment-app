@@ -30,14 +30,14 @@ class RiskManager:
         if self.state.current_date != date_str:
             self.state.current_date = date_str
             self.state.starting_equity_today = float(starting_equity)
-            # Apply prior-day halt to today's permissions (restrict opens)
+            # Apply prior-day daily-loss halt to today's permissions (restrict opens only)
             if self.state.halt_next_day:
                 self.state.halted = True
                 self.fsm.set_restricted()
             else:
                 self.state.halted = False
-                self.fsm.set_normal()
-            # Clear one-shot flag
+            # Do NOT clear EMERGENCY or other restrictions here; kill-switch and drawdown checks govern those states
+            # Clear one-shot flag for daily-loss
             self.state.halt_next_day = False
             if self.state.first_equity is None:
                 self.state.first_equity = float(starting_equity)

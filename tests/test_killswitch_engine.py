@@ -42,14 +42,31 @@ def test_killswitch_vetoes_opens_and_allows_flatten(monkeypatch: pytest.MonkeyPa
     )
     # Expect zero trades because opens are vetoed
     assert all(int(q) <= 0 for *_, q, _, _ in res.trades)
-    # Now test flatten via stop-loss (engine forced exit), without killswitch
+    # Now test that an existing position can be flattened while kill is ACTIVE.
+    # We first allow entry (kill OFF initially), then activate kill for subsequent bars.
     os.remove(ks)
-    rcfg2 = RiskConfig(stop_loss_per_position_pct=5.0, cooldown_bars=1, killswitch_file=str(ks))
+    rcfg2 = RiskConfig(
+        stop_loss_per_position_pct=5.0,
+        cooldown_bars=1,
+        killswitch_file=str(ks),
+        emergency_flatten_on_kill=True,
+        killswitch_action="flatten",
+    )
     rm2 = RiskManager(rcfg2, RiskState(starting_equity_today=100_000.0))
-    # Create a drop to trigger stop on day 3
+    # Deterministic dynamic activation: OFF on days <= t2, ON from t3 onward
+    idx = df.index
+    from pandas import Timestamp
+    def ks_active():
+        cur = rm2.state.current_date
+        return bool(cur and Timestamp(cur) >= idx[2])
+    monkeypatch.setattr(rm2, "killswitch_active", ks_active)
+    # Create a drop to also be eligible for stop loss if needed
     df2 = df.copy()
-    df2.iloc[2, df2.columns.get_loc("open")] = df2.iloc[1]["open"] * 0.90
-    df2.iloc[2, df2.columns.get_loc("close")] = df2.iloc[2]["open"]
+    df2.iloc[2, df2.columns.get_loc("close")] = df2.iloc[1]["close"] * 0.90
+    # Assert kill is OFF before run
+    from ibtrader.risk.state_machine import Intent
+    ok_before, msg_before = rm2.check_killswitch(Intent.OPEN)
+    assert ok_before, f"pre-run kill-switch should be off: {msg_before}"
     res2 = backtest(
         {"SPY": df2.iloc[:4]},
         AlwaysLong(),
@@ -58,6 +75,7 @@ def test_killswitch_vetoes_opens_and_allows_flatten(monkeypatch: pytest.MonkeyPa
         direction="long_only",
         risk_manager=rm2,
     )
+    # Expect at least one negative delta (flatten/exit) while kill is ACTIVE
     assert any(int(q) < 0 for *_, q, _ in res2.trades)
 
 

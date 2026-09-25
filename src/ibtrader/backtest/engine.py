@@ -402,10 +402,12 @@ def backtest(
                             eq_y = float(equity_curve[-1][1])
                             eq_y_1 = float(equity_curve[-2][1])
                             prev_ret_exec = (eq_y / eq_y_1 - 1.0) if eq_y_1 else 0.0
-                        if risk_manager.state.halted or (
-                            prev_ret_exec <= -abs(risk_manager.cfg.daily_loss_limit_pct) / 100.0
-                        ):
-                            if (pos == 0 and delta != 0) or (pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))):
+                        daily_limit = abs(risk_manager.cfg.daily_loss_limit_pct) / 100.0
+                        if risk_manager.state.halted or (prev_ret_exec <= -daily_limit):
+                            exposure_increasing = (pos == 0 and delta != 0) or (
+                                pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))
+                            )
+                            if exposure_increasing:
                                 log.info("risk_veto sym=%s reason=daily_halt_hard_gate", sym)
                                 continue
                     except Exception:
