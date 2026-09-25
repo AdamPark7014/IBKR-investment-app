@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, cast as _cast
+from typing import Any, Optional, cast
 
 import numpy as np
 import typer
@@ -587,7 +587,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     from ..backtest.engine import BacktestResult as _BTRes
     _mini = _MiniRes()
     art_path = save_run_artifact(
-        _cast(_BTRes, _mini),
+        cast(_BTRes, _mini),
         s,
         data,
         s.data.reports_dir,
@@ -615,7 +615,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
         if len(eq_series) > 1:
             stats = compute_stats(eq_series, eq_series.pct_change().fillna(0.0))
         else:
-            stats = _cast(
+            stats = cast(
                 Any,
                 _SN(
                 cagr=0.0,

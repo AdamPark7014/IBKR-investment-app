@@ -14,9 +14,16 @@ Límites duros (en `src/ibtrader/risk/manager.py`):
 “NO TRADE” (reglas explícitas, ver SPEC):
 - Datos insuficientes, alta incertidumbre, spread/impacto demasiado alto, liquidez insuficiente, riesgo alto, tesis contradictoria, valoración extrema sin catalizador, régimen no permitido, anomalías de datos, conexión IBKR inestable.
 
-Gestión de stops (en `ensemble/combiner.py`):
-- Stops y trailing stops basados en ATR como mecanismo técnico estándar.
-- Tipos de salida (a documentar en el journal): tesis, valoración, riesgo, técnico, portafolio.
+Semántica de Kill Switch (archivo `data/KILL_SWITCH`):
+- Modo por defecto: `flatten` (documentado en `RiskConfig.killswitch_action`). Cuando el archivo existe:
+  - Se liquidan posiciones existentes en la siguiente apertura (emergency exit).
+  - Se bloquean nuevas aperturas y aumentos.
+  - Las reducciones y cierres siempre están permitidos.
+- Alternativa configurable: `block_new_only`, que bloquea nuevas aperturas/aumentos pero NO fuerza liquidación automática. En ambos modos, las salidas (reduce/cierre/stop/emergency) nunca se bloquean.
+
+Gestión de stops:
+- `stop_loss_per_position_pct` (en `RiskConfig`): salida forzada por instrumento, ejecutada en la siguiente apertura cuando el precio cruza el umbral vs. precio medio de la posición.
+- Tipos de salida (a documentar en el journal): tesis, valoración, riesgo, técnico, portafolio. Los forced exits se etiquetan explícitamente como `stop_loss` o `kill_switch`.
 
 Auditoría:
 - Toda decisión (incluyendo “NO_TRADE”) se registra en SQLite con timestamp, parámetros, evaluación de riesgo y motivo.
