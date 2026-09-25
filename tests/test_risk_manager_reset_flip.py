@@ -59,7 +59,7 @@ def test_flip_uses_resulting_position_not_order_size() -> None:
     )
     rm = RiskManager(cfg, state)
     rm.on_new_day("2024-01-01", 100_000.0)
-    # Large flip order (from -500 to +500 shares): under restricted state should require OPEN leg permission
+    # Large flip (-500 to +500): under restriction requires OPEN leg permission
     # First, simulate restricted by daily loss
     ok, _ = rm.check_daily_loss(94_000.0)
     assert not ok
