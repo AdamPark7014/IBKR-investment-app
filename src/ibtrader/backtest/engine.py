@@ -231,6 +231,7 @@ def backtest(
                             cur_trade_pnl[sym] = 0.0
                             avg_price[sym] = 0.0
                             holdings[sym] = 0
+                            log.info("forced_exit reason=kill_switch sym=%s qty=%s", sym, int(-pos))
                             trades.append((str(dt), sym, int(-pos), float(fill_exit), "kill_switch"))
                             last_targets[sym] = 0
                             if risk_manager.cfg.cooldown_bars > 0:
