@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ibtrader.backtest.engine import backtest
 from ibtrader.config import CommissionConfig, RiskConfig, SlippageConfig
 from ibtrader.risk.manager import RiskManager, RiskState
 from ibtrader.strategy.base import Strategy
@@ -19,25 +18,23 @@ class AlwaysOpen(Strategy):
 
 
 def test_drawdown_persistence_blocks_opens_across_days() -> None:
-    # Price falls steadily triggering drawdown > 1% early and never recovers
-    idx = pd.bdate_range("2024-02-01", periods=6)
-    vals = [100.0, 98.0, 97.0, 96.0, 95.0, 94.0]
-    px = pd.Series(vals, index=idx).astype(float)
-    df = pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
+    # Simulate across days directly on the RiskManager to assert persistent restriction
     cfg = RiskConfig(drawdown_limit_pct=1.0, killswitch_file="./data/NO_KILL")
     rm = RiskManager(cfg, RiskState(starting_equity_today=100_000.0))
-    res = backtest(
-        {"SPY": df},
-        AlwaysOpen(),
-        CommissionConfig(),
-        SlippageConfig(),
-        direction="long_only",
-        risk_manager=rm,
+    # Day 1 start
+    rm.on_new_day("2024-02-01", 100_000.0)
+    # Day 1 close falls to 98k (drawdown > 1% from 100k peak)
+    rm.update_equity(98_000.0)
+    # Day 2 start at 98k (still below peak); drawdown restriction should be active
+    rm.on_new_day("2024-02-02", 98_000.0)
+    # Attempt to open a new position should be blocked by drawdown restriction
+    ok, _ = rm.approve_order(
+        symbol="SPY",
+        equity=98_000.0,
+        price=100.0,
+        quantity=10,
+        current_positions_value=0.0,
+        current_position_qty=0,
     )
-    # Expect either zero opens or an initial open followed by blocks; in any case, after breach, no increases/open
-    # Concretely assert no positive position delta occurs after the second date (breach happens early)
-    breach_day = idx[2]
-    pos = res.positions["SPY"].astype(int)
-    dpos = pos.diff().fillna(0).astype(int)
-    assert all(not (pd.Timestamp(d) >= breach_day and int(dp) > 0) for d, dp in dpos.items())
+    assert not ok
 
