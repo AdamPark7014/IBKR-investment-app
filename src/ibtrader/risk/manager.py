@@ -48,7 +48,7 @@ class RiskManager:
             self.state.orders_today = 0
 
     def check_killswitch(self, intent: Intent) -> Tuple[bool, str]:
-        if os.path.exists(self.cfg.killswitch_file):
+        if self.killswitch_active():
             # Killswitch implies EMERGENCY state (but exits/reductions still allowed via FSM)
             self.fsm.set_emergency()
             # Do not block close/reduce/stop/emergency
@@ -57,6 +57,11 @@ class RiskManager:
             # For opens/increases, if action is block_new_only, veto; if flatten, veto too (engine will flatten)
             return False, "Kill switch activado."
         return True, "OK"
+    def killswitch_active(self) -> bool:
+        try:
+            return os.path.exists(self.cfg.killswitch_file)
+        except Exception:
+            return False
 
     def check_symbol_allowed(self, symbol: str) -> Tuple[bool, str]:
         if self.cfg.allowed_symbols and symbol not in self.cfg.allowed_symbols:

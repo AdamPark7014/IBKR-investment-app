@@ -20,13 +20,13 @@ class HoldThenOpen(Strategy):
 
 
 def test_daily_loss_limit_blocks_new_opens_but_allows_exits() -> None:
-    idx = pd.bdate_range("2024-01-01", periods=4)
-    # Day 1 open 100, day 2 open gap to 90 (>=10% drop), limit 5% should halt new opens
-    open_px = pd.Series([100.0, 90.0, 90.0, 90.0], index=idx)
-    df = pd.DataFrame(
-        {"open": open_px, "high": open_px, "low": open_px, "close": open_px, "volume": 1000.0},
-        index=idx,
-    )
+    idx = pd.bdate_range("2024-01-01", periods=5)
+    # Enter at day 2 open; day 3 closes at 94 (< -5%), so day 4 must be halted for new opens
+    open_px = pd.Series([100.0, 100.0, 100.0, 100.0, 100.0], index=idx)
+    close_px = pd.Series([100.0, 100.0, 94.0, 94.0, 94.0], index=idx)
+    high = open_px.combine(close_px, max)
+    low = open_px.combine(close_px, min)
+    df = pd.DataFrame({"open": open_px, "high": high, "low": low, "close": close_px, "volume": 1000.0}, index=idx)
     rcfg = RiskConfig(daily_loss_limit_pct=5.0, max_position_pct=100.0, max_total_exposure_pct=100.0)
     rm = RiskManager(rcfg, RiskState(starting_equity_today=100_000.0))
     res = backtest(
@@ -37,7 +37,6 @@ def test_daily_loss_limit_blocks_new_opens_but_allows_exits() -> None:
         direction="long_only",
         risk_manager=rm,
     )
-    # No opens should be allowed on day 2 due to daily loss breach (evaluated on close, restricting next decision)
-    # Ensure no positive qty on day 2 open after breach
-    day3 = idx[2]
-    assert all(not (pd.Timestamp(d) == day3 and int(q) > 0) for d, s, q, p, r in res.trades)
+    # Ensure no positive qty on day 4 open after breach at day 3 close
+    day4 = idx[3]
+    assert all(not (pd.Timestamp(d) == day4 and int(q) > 0) for d, s, q, p, r in res.trades)

@@ -101,25 +101,23 @@ def test_killswitch_flatten_vs_block_new_only(monkeypatch: pytest.MonkeyPatch, t
     assert len(res_block.trades) == 0
 
 def test_killswitch_applies_after_open_existing_position(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Simulate kill switch becoming active after first open: os.path.exists returns False then True
-    call_counter = {"n": 0}
-    import os as _os
-    def fake_exists(path: str) -> bool:  # type: ignore[override]
-        call_counter["n"] += 1
-        # Allow initial opens (many early calls) then activate kill
-        return call_counter["n"] > 10
-    monkeypatch.setattr(_os.path, "exists", fake_exists)
-    # Prepare series: enough bars to allow entry then flatten due to kill
+    # Deterministic dynamic activation: patch RiskManager.check_killswitch to turn on at/after day 3
     idx = pd.bdate_range("2024-06-01", periods=5)
     px = pd.Series([100.0, 100.0, 100.0, 100.0, 100.0], index=idx).astype(float)
     df = pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
     rcfg = RiskConfig(
-        killswitch_file="./data/NO_KILL",  # path string irrelevant due to monkeypatch
+        killswitch_file="./data/NO_KILL",
         emergency_flatten_on_kill=True,
         killswitch_action="flatten",
         cooldown_bars=1,
     )
     rm = RiskManager(rcfg, RiskState(starting_equity_today=100_000.0))
+    # Patch method to use current_date for deterministic activation
+    from pandas import Timestamp
+    def ks_active():
+        cur = rm.state.current_date
+        return bool(cur and Timestamp(cur) >= idx[3])
+    monkeypatch.setattr(rm, "killswitch_active", ks_active)
     res = backtest(
         {"SPY": df},
         AlwaysLong(),

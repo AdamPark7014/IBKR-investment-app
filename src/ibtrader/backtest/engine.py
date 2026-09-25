@@ -204,10 +204,9 @@ def backtest(
             is_emergency = False
             if risk_manager is not None:
                 # Emergency flatten via killswitch if configured (apply only when holding)
+                # Emergency flatten via killswitch if configured (apply only when holding)
                 try:
-                    import os as _os
-                    if _os.path.exists(risk_manager.cfg.killswitch_file) and pos != 0:
-                        # Behavior depends on configured killswitch action
+                    if hasattr(risk_manager, "killswitch_active") and risk_manager.killswitch_active() and pos != 0:
                         ks_action = getattr(risk_manager.cfg, "killswitch_action", "flatten")
                         if ks_action == "flatten" and risk_manager.cfg.emergency_flatten_on_kill:
                             force_close = True
@@ -237,6 +236,22 @@ def backtest(
             ):
                 delta = 0
                 target = 0
+            # Also enforce daily-loss hard-gate based on previous day's return
+            if risk_manager is not None and delta != 0:
+                try:
+                    # Prefer equity_curve chain to avoid reliance on returns list contents
+                    if len(equity_curve) >= 2:
+                        eq_y = float(equity_curve[-1][1])
+                        eq_y_1 = float(equity_curve[-2][1])
+                        prev_ret = (eq_y / eq_y_1 - 1.0) if eq_y_1 else 0.0
+                    else:
+                        prev_ret = float(returns[-1][1]) if returns else 0.0
+                    if prev_ret <= -abs(risk_manager.cfg.daily_loss_limit_pct) / 100.0:
+                        if (pos == 0) or (pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))):
+                            delta = 0
+                            target = pos
+                except Exception:
+                    pass
             if delta == 0:
                 continue
             if pos != 0 and rebalance_band_pct > 0:
@@ -380,6 +395,21 @@ def backtest(
                     if not ok:
                         log.info("risk_veto sym=%s reason=%s", sym, msg)
                         continue
+                    # Final hard-gate before execution: block any exposure-increasing order under daily halt
+                    try:
+                        prev_ret_exec = 0.0
+                        if len(equity_curve) >= 2:
+                            eq_y = float(equity_curve[-1][1])
+                            eq_y_1 = float(equity_curve[-2][1])
+                            prev_ret_exec = (eq_y / eq_y_1 - 1.0) if eq_y_1 else 0.0
+                        if risk_manager.state.halted or (
+                            prev_ret_exec <= -abs(risk_manager.cfg.daily_loss_limit_pct) / 100.0
+                        ):
+                            if (pos == 0 and delta != 0) or (pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))):
+                                log.info("risk_veto sym=%s reason=daily_halt_hard_gate", sym)
+                                continue
+                    except Exception:
+                        pass
             # Execute order
             cash -= delta * fill_price + commission
             holdings[sym] = pos + delta
