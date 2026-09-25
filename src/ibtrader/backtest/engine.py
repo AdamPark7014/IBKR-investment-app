@@ -199,6 +199,46 @@ def backtest(
                     cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
                 # Do not attempt any other action on this symbol today
                 continue
+            # Emergency flatten via kill-switch (if configured): must run before any other gating
+            if risk_manager is not None and pos != 0:
+                try:
+                    if hasattr(risk_manager, "killswitch_active") and risk_manager.killswitch_active():
+                        ks_action = getattr(risk_manager.cfg, "killswitch_action", "flatten")
+                        if ks_action == "flatten" and risk_manager.cfg.emergency_flatten_on_kill:
+                            side_exit = -1 if pos > 0 else 1
+                            fill_exit = _slip(slippage_cfg, price, side_exit)
+                            comm_exit = _commission(commission_cfg, -pos, fill_exit)
+                            cash -= (-pos) * fill_exit + comm_exit
+                            turnover_notional += abs(pos) * fill_exit
+                            total_commission += comm_exit
+                            # Book realized P&L for full close
+                            reduce_qty = abs(pos)
+                            pnl = (
+                                reduce_qty * (fill_exit - avg_price[sym]) - comm_exit
+                                if pos > 0
+                                else reduce_qty * (avg_price[sym] - fill_exit) - comm_exit
+                            )
+                            cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) + pnl
+                            total_trade_pnl = cur_trade_pnl.get(sym, 0.0)
+                            realized_pnl += total_trade_pnl
+                            if total_trade_pnl > 0:
+                                realized_wins += total_trade_pnl
+                                win_trades += 1
+                            elif total_trade_pnl < 0:
+                                realized_losses += -total_trade_pnl
+                                loss_trades += 1
+                            realized_trades += 1
+                            cur_trade_pnl[sym] = 0.0
+                            avg_price[sym] = 0.0
+                            holdings[sym] = 0
+                            trades.append((str(dt), sym, int(-pos), float(fill_exit), "kill_switch"))
+                            last_targets[sym] = 0
+                            if risk_manager.cfg.cooldown_bars > 0:
+                                cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
+                            # Do not attempt any other action on this symbol today
+                            continue
+                except Exception:
+                    pass
             # Forced exits (stop/emergency) must run even if target==pos
             force_close = False
             is_emergency = False

@@ -31,21 +31,29 @@ class RiskManager:
             self.state.current_date = date_str
             self.state.starting_equity_today = float(starting_equity)
             # Apply prior-day daily-loss halt to today's permissions (restrict opens only)
-            if self.state.halt_next_day:
-                self.state.halted = True
-                self.fsm.set_restricted()
-            else:
-                self.state.halted = False
-            # Do NOT clear EMERGENCY or other restrictions here; kill-switch and drawdown checks govern those states
+            self.state.halted = bool(self.state.halt_next_day)
+            # Reset daily counters/state
+            self.state.orders_today = 0
             # Clear one-shot flag for daily-loss
             self.state.halt_next_day = False
+            # Default FSM resets to NORMAL at the day boundary; persistent restrictions re-assert during approve()
+            self.fsm.set_normal()
+            # If killswitch is active at the open, enter EMERGENCY immediately
+            try:
+                if self.killswitch_active():
+                    self.fsm.set_emergency()
+                elif self.state.halted:
+                    # Daily halt restricts new opens only
+                    self.fsm.set_restricted()
+            except Exception:
+                if self.state.halted:
+                    self.fsm.set_restricted()
             if self.state.first_equity is None:
                 self.state.first_equity = float(starting_equity)
                 self.state.peak_equity = float(starting_equity)
             else:
                 if self.state.peak_equity is None or starting_equity > self.state.peak_equity:
                     self.state.peak_equity = float(starting_equity)
-            self.state.orders_today = 0
 
     def check_killswitch(self, intent: Intent) -> Tuple[bool, str]:
         if self.killswitch_active():
