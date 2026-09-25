@@ -253,6 +253,8 @@ def backtest(
         ret = (equity / prev_equity - 1.0) if prev_equity else 0.0
         # Do not force zero returns; compute from equity curve directly
         returns.append((dt, ret))
+        if risk_manager is not None:
+            risk_manager.update_equity(float(equity))
         prev_equity = equity
         for sym in data.keys():
             positions[sym].loc[dt] = holdings.get(sym, 0)

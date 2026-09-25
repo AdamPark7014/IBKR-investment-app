@@ -14,6 +14,8 @@ class RiskConfig(BaseModel):
     daily_loss_limit_pct: float = Field(
         5.0, description="If daily PnL < -limit% of starting equity, halt"
     )
+    cumulative_loss_limit_pct: float = Field(100.0, description="If cumulative PnL < -limit% vs first equity, restrict")
+    drawdown_limit_pct: float = Field(100.0, description="If drawdown from peak < -limit%, restrict")
     target_vol_annual: float = Field(0.10, description="Volatility target for sizing (annualized)")
     risk_on_threshold: float = Field(0.5, description="Minimum risk-on probability to allow trades")
     max_orders_per_day: int = 50

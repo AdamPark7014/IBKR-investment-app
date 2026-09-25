@@ -24,6 +24,7 @@ from ..ml.cv import PurgedTimeSeriesSplit
 from ..risk.sizing import volatility_target_weight
 from ..validation.walkforward import walk_forward_sma
 from .artifacts import save_run_artifact
+from ..data.cache import load_lineage
 
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
@@ -146,8 +147,13 @@ def backtest_sample(symbol: Optional[str] = None, exp_id: Optional[str] = None, 
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     out = save_equity_report(result, s.data.reports_dir, name=f"backtest_{run_id}")
-    # Suspicious-performance diagnostics
-    susp = diagnose_suspicious(result, data, lineage_sources=None)
+    # Suspicious-performance diagnostics (pass lineage source)
+    lineage_sources = {}
+    for symb in s.universe.symbols:
+        meta = load_lineage(s.data.cache_dir, symb, s.engine.bar_size)
+        if meta is not None:
+            lineage_sources[symb] = meta.source or ""
+    susp = diagnose_suspicious(result, data, lineage_sources=lineage_sources)
     # Save run artifact
     art_path = save_run_artifact(result, s, data, s.data.reports_dir, run_id, extra={"report_html": out})
     rprint(
@@ -434,50 +440,58 @@ def run_with_risk(symbol: Optional[str] = None, exp_id: Optional[str] = None, ri
         s.universe.symbols = [symbol]
     data = load_universe_v2(s)
     sym = s.universe.symbols[0]
-    # Regime model on benchmark
+    # Historical regime probabilities (expanding, min window)
     bench = s.universe.benchmark if s.universe.benchmark in data else sym
-    model, rep = fit_gmm_regime(data[bench]["close"], n_components=2)
-    # Risk-on probability at last point using training-based label ordering
-    feats = build_regime_features(data[bench]["close"])
-    proba = model.predict_proba(feats.tail(1))
-    p_risk_on = float(proba[0, model.risk_on_label]) if proba.shape[0] == 1 else 0.0
-    # EV proxy from SMA signal
-    base = SMACrossover(
+    bench_close = data[bench]["close"].astype(float)
+    feats_all = build_regime_features(bench_close)
+    min_train = 60
+    probs = []
+    idxs = list(feats_all.index)
+    for i in range(len(idxs)):
+        tr_idx = idxs[: i + 1]
+        if len(tr_idx) < min_train:
+            probs.append(0.0)
+            continue
+        model, _ = fit_gmm_regime(bench_close.reindex(tr_idx), n_components=2, train_slice=slice(None))
+        p = model.predict_proba(feats_all.iloc[[i]])
+        probs.append(float(p[0, model.risk_on_label]))
+    import pandas as _pd
+    risk_on_series = _pd.Series(probs, index=feats_all.index)
+    # Strategy with risk veto + vol-target sizing backtest
+    strat = SMACrossover(
         fast_window=int(s.strategy.params.get("fast_window", 10)),
         slow_window=int(s.strategy.params.get("slow_window", 30)),
         allow_short=True,
     )
-    sig = base.generate_signals({sym: data[sym]})[sym].reindex(data[sym].index).fillna(0)
-    last_sig = int(sig.iloc[-1]) if len(sig) else 0
-    # Respect direction default
-    if s.trading.direction == "long_only":
-        last_sig = max(last_sig, 0)
-    elif s.trading.direction == "short_only":
-        last_sig = min(last_sig, 0)
-    # Risk veto
+    from ..backtest.engine import backtest as _bt
     thr = float(risk_on_threshold) if risk_on_threshold is not None else float(s.risk.risk_on_threshold)
-    veto_reason = None
-    action = "ABSTAIN"
-    size_pct = 0.0
-    if last_sig == 0:
-        veto_reason = "No signal"
-    elif p_risk_on < thr:
-        veto_reason = f"Risk-on prob {p_risk_on:.2f} < threshold {thr:.2f}"
-    else:
-        # Volatility-target sizing
-        rets = data[sym]["close"].astype(float).pct_change().fillna(0.0)
-        w = volatility_target_weight(rets, target_vol_annual=float(s.risk.target_vol_annual))
-        size_pct = min(100.0 * w, float(s.risk.max_position_pct))
-        action = "TRADE"
+    res = _bt(
+        data=data,
+        strategy=strat,
+        commission_cfg=s.commission,
+        slippage_cfg=s.slippage,
+        direction=s.trading.direction,
+        risk_on=risk_on_series,
+        risk_on_threshold=thr,
+        target_vol_annual=float(s.risk.target_vol_annual),
+    )
+    # Save artifact
+    from datetime import datetime as _dt
+    run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    art_path = save_run_artifact(res, s, data, s.data.reports_dir, f"risk_{run_id}", extra={"risk_on_threshold": thr})
     rprint(
         {
             "symbol": sym,
-            "signal": last_sig,
-            "p_risk_on": p_risk_on,
-            "threshold": thr,
-            "action": action,
-            "size_pct": size_pct,
-            "veto_reason": veto_reason,
+            "risk_on_threshold": thr,
+            "metrics": {
+                "cagr": res.stats.cagr,
+                "sharpe": res.stats.sharpe,
+                "sortino": res.stats.sortino,
+                "max_dd": res.stats.max_drawdown,
+                "trade_count": res.stats.trade_count,
+                "fees": res.stats.total_commission,
+            },
+            "artifact": art_path,
         }
     )
 

@@ -12,8 +12,8 @@ from ..config import CommissionConfig, SlippageConfig
 
 
 def _next_open_returns(open_px: pd.Series) -> pd.Series:
-    # r_t = open_t / open_{t-1} - 1
-    return open_px.pct_change().fillna(0.0)
+    # r_t = open_{t+1} / open_t - 1 aligned at t
+    return (open_px.shift(-1) / open_px - 1.0).fillna(0.0)
 
 
 @dataclass
@@ -43,15 +43,15 @@ def validate_sma_signal(
         sig = sig.clip(lower=0)
     elif direction == "short_only":
         sig = (sig.mask(sig > 0, 0)).clip(upper=0)
-    # Strategy daily returns with one-bar lag (sig at t-1 acts on open_t)
+    # Strategy daily returns with one-bar lag (sig at t-1 acts on open_t), realized over open_t->open_{t+1}
     sig_lag = sig.shift(1).fillna(0)
     strat_ret_gross = sig_lag * rets
-    # Costs: slippage + commission on signal changes at open
-    changes = sig_lag.diff().abs().fillna(0)
+    # Costs: slippage + commission on changes effective at open_t
+    changes = sig_lag.diff().abs().fillna(0.0)
     slip = slippage_cfg or SlippageConfig()  # default bps
     commission = commission_cfg or CommissionConfig()  # default per-share/min
     nav = 100_000.0
-    # Shares traded per change_t = |Δsig| * nav / open_t
+    # Shares traded per change at time t -> trade at open_t
     shares_traded = (changes * nav / open_px).fillna(0.0)
     per_share_comm = commission.per_share * shares_traded
     min_comm = shares_traded.apply(lambda sh: commission.min_per_order if sh > 0 else 0.0)

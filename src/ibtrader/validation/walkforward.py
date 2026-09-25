@@ -10,6 +10,7 @@ from ..config import AppSettings
 from ..strategy.sma_crossover import SMACrossover
 from ..regime.gmm import fit_gmm_regime, build_regime_features
 from ..risk.manager import RiskManager, RiskState
+from ..backtest.metrics import compute_stats as _cs
 
 
 @dataclass
@@ -18,6 +19,8 @@ class WFResult:
     train_stats: dict
     val_stats: dict
     test_stats: dict
+    stitched_oos: dict
+    per_fold: List[dict]
 
 
 def _stats_to_dict(stats) -> dict:
@@ -59,14 +62,13 @@ def walk_forward_sma(
 
     # Track best over validation in last 20% of train per fold
     tried: List[Tuple[int, int]] = []
-    agg_train = None
-    agg_val = None
-    agg_test = None
     chosen = None
     # Use expanding train and rolling OOS folds
     folds_detail = []
     tried_all: List[Tuple[Tuple[int, int], float]] = []
     total_oos_trades = 0
+    stitched_eq = pd.Series(dtype=float)
+    stitched_bh = pd.Series(dtype=float)
     for f in range(n_folds):
         test_start = oos_start + f * fold_size
         test_end = oos_start + (f + 1) * fold_size if f < n_folds - 1 else n
@@ -108,7 +110,6 @@ def walk_forward_sma(
             # Recompute stats on val window only
             eq = res_span.equity_curve.reindex(val_idx).dropna()
             rets = res_span.returns.reindex(val_idx).dropna()
-            from ..backtest.metrics import compute_stats as _cs
             res_val_stats = _cs(eq, rets)
             if res_val_stats.sharpe > best_sharpe:
                 best_sharpe = res_val_stats.sharpe
@@ -126,15 +127,14 @@ def walk_forward_sma(
             strategy=strat,
             commission_cfg=settings.commission,
             slippage_cfg=settings.slippage,
-                direction=direction or settings.trading.direction,
-                risk_on=risk_on_series,
-                risk_on_threshold=float(settings.risk.risk_on_threshold),
-                target_vol_annual=float(settings.risk.target_vol_annual),
-                risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=100_000.0)),
+            direction=direction or settings.trading.direction,
+            risk_on=risk_on_series,
+            risk_on_threshold=float(settings.risk.risk_on_threshold),
+            target_vol_annual=float(settings.risk.target_vol_annual),
+            risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=100_000.0)),
             )
         train_eq = res_train_span.equity_curve.reindex(train_idx).dropna()
         train_rets = res_train_span.returns.reindex(train_idx).dropna()
-        from ..backtest.metrics import compute_stats as _cs
         res_train_stats = _cs(train_eq, train_rets)
         # Val span (warmup+val), compute on val
         val_span_idx = idx[warm_start:test_start]
@@ -165,10 +165,19 @@ def walk_forward_sma(
             target_vol_annual=float(settings.risk.target_vol_annual),
             risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=100_000.0)),
         )
-        test_eq = res_test_span.equity_curve.reindex(idx[test_start:test_end]).dropna()
-        test_rets = res_test_span.returns.reindex(idx[test_start:test_end]).dropna()
+        test_idx = idx[test_start:test_end]
+        test_eq = res_test_span.equity_curve.reindex(test_idx).dropna()
+        test_rets = res_test_span.returns.reindex(test_idx).dropna()
         res_test_stats = _cs(test_eq, test_rets)
         total_oos_trades += int(res_test_span.stats.trade_count)
+        # Stitch OOS equity and B&H for this fold
+        stitched_eq = pd.concat([stitched_eq, test_eq]) if not stitched_eq.empty else test_eq.copy()
+        # B&H for same test window
+        bench = settings.universe.benchmark
+        if bench in data:
+            px = data[bench]["close"].astype(float).reindex(test_idx)
+            eq_bh = (100_000.0 / float(px.iloc[0])) * px
+            stitched_bh = pd.concat([stitched_bh, eq_bh]) if not stitched_bh.empty else eq_bh.copy()
         folds_detail.append(
             {
                 "fold": f + 1,
@@ -177,33 +186,47 @@ def walk_forward_sma(
                 "train": res_train_stats.__dict__,
                 "val": res_val_stats.__dict__,
                 "oos": res_test_stats.__dict__,
+                "tried_combos": [{"fast": a, "slow": b, "val_sharpe": s} for (a, b), s in tried_all[-len(param_grid) :]],
+                "oos_equity": [[str(t), float(v)] for t, v in test_eq.items()],
+                "oos_trades": [{"date": d, "symbol": s, "qty": int(q), "price": float(p)} for d, s, q, p in res_test_span.trades if pd.Timestamp(d) in test_eq.index],
             }
         )
-    # Aggregate last known stats (simple; could be averaged across folds)
-    agg_train = folds_detail[-1]["train"] if folds_detail else {}
-    agg_val = folds_detail[-1]["val"] if folds_detail else {}
-    agg_test = folds_detail[-1]["oos"] if folds_detail else {}
+    # Aggregate stitched OOS stats
+    stitched_oos_stats = {}
+    if len(stitched_eq) > 1:
+        stitched_rets = stitched_eq.pct_change().fillna(0.0)
+        st = _cs(stitched_eq, stitched_rets)
+        stitched_oos_stats = {
+            "cagr": st.cagr,
+            "sharpe": st.sharpe,
+            "sortino": st.sortino,
+            "calmar": st.calmar,
+            "max_dd": st.max_drawdown,
+            "trade_count": int(total_oos_trades),
+        }
     wf = WFResult(
         params=chosen or param_grid[0],
-        train_stats=agg_train or {},
-        val_stats=agg_val or {},
-        test_stats=agg_test or {},
+        train_stats=folds_detail[-1]["train"] if folds_detail else {},
+        val_stats=folds_detail[-1]["val"] if folds_detail else {},
+        test_stats=folds_detail[-1]["oos"] if folds_detail else {},
+        stitched_oos=stitched_oos_stats,
+        per_fold=folds_detail,
     )
-    # Buy&Hold on last test fold OOS window
-    bench = settings.universe.benchmark
+    # Buy&Hold on stitched OOS
     bh = None
-    if bench in data:
-        last_test_idx = idx[oos_start + (n_folds - 1) * fold_size : n] if n_folds > 0 else idx[oos_start:]
-        px = data[bench]["close"].astype(float).reindex(last_test_idx)
-        eq = (100_000.0 / float(px.iloc[0])) * px
-        ret = eq.pct_change().fillna(0.0)
+    if len(stitched_bh) > 1:
+        ret = stitched_bh.pct_change().fillna(0.0)
         bh = {
-            "cagr": float((eq.iloc[-1] / eq.iloc[0]) ** (252 / max(len(eq), 1)) - 1.0),
+            "cagr": float((stitched_bh.iloc[-1] / stitched_bh.iloc[0]) ** (252 / max(len(stitched_bh), 1)) - 1.0),
             "sharpe": float((ret.mean() / (ret.std(ddof=0) or 1e-9)) * (252 ** 0.5)),
-            "max_dd": float((eq / eq.cummax() - 1.0).min()),
+            "max_dd": float((stitched_bh / stitched_bh.cummax() - 1.0).min()),
         }
-    summary = {"buy_hold_oos": bh}
-    summary["folds"] = folds_detail
-    summary["oos_total_trades"] = int(total_oos_trades)
-    summary["tried_param_count"] = len(tried_all)
+    summary = {
+        "buy_hold_oos": bh,
+        "folds": folds_detail,
+        "oos_total_trades": int(total_oos_trades),
+        "tried_param_count": len(tried_all),
+        "stitched_oos_equity": [[str(t), float(v)] for t, v in stitched_eq.items()],
+        "stitched_bh_equity": [[str(t), float(v)] for t, v in stitched_bh.items()],
+    }
     return wf, summary

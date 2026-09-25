@@ -21,4 +21,11 @@ def test_regime_default_training_excludes_future() -> None:
     feats = build_regime_features(px)
     assert len(model.train_index) < len(feats)
     assert feats.index[-1] not in set(model.train_index)
+    # Perturb future; past labels must remain unchanged
+    px2 = px.copy()
+    px2.iloc[-1] = px2.iloc[-1] * 2.0
+    model2, rep2 = fit_gmm_regime(px2, n_components=2)
+    past = rep["regime"].iloc[:-1].values
+    past2 = rep2["regime"].iloc[:-1].values
+    assert (past == past2).all()
 

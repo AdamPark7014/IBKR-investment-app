@@ -17,10 +17,12 @@ def _dir_hash(path: str) -> str:
         for f in sorted(files):
             fp = Path(root) / f
             try:
-                st = fp.stat()
-                h.update(fp.name.encode("utf-8"))
-                h.update(str(st.st_size).encode("utf-8"))
-                h.update(str(int(st.st_mtime)).encode("utf-8"))
+                with open(fp, "rb") as fh:
+                    while True:
+                        chunk = fh.read(65536)
+                        if not chunk:
+                            break
+                        h.update(chunk)
             except Exception:
                 continue
     return h.hexdigest()

@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -29,7 +29,11 @@ def dataset_hash(data: Dict[str, pd.DataFrame]) -> str:
     for sym in sorted(data.keys()):
         df = data[sym]
         h.update(sym.encode("utf-8"))
-        h.update(_hash_series(df["close"].astype(float)).encode("utf-8"))
+        # Hash all standard OHLCV columns if present, else all columns
+        cols = [c for c in ["open", "high", "low", "close", "adj_close", "volume"] if c in df.columns] or list(df.columns)
+        for c in cols:
+            h.update(c.encode("utf-8"))
+            h.update(_hash_series(df[c].astype(float)).encode("utf-8"))
         h.update(str(len(df)).encode("utf-8"))
         if len(df) > 0:
             h.update(str(df.index.min()).encode("utf-8"))
@@ -84,9 +88,11 @@ def save_run_artifact(
         "config_hash": config_hash(settings),
         "dataset": {"hash": ds_hash, "symbols": sym_dates},
         "strategy": settings.strategy.model_dump(),
+        "strategy_version": settings.strategy.name,
         "commission": settings.commission.model_dump(),
         "slippage": settings.slippage.model_dump(),
         "execution": {"model": "next_open_with_slippage"},
+        "seed": 0,
         "metrics": {
             "cagr": result.stats.cagr,
             "sharpe": result.stats.sharpe,

@@ -28,10 +28,13 @@ Datos:
 - Archivo JSON con métricas: ver `baselines/phase1_sma_spy_20210927_20260923.json`
 
 ### P5 — Comparación de direcciones (SPY, ~5 años)
-- Long only: CAGR 6.29%, Sharpe 0.78, Máx DD -18.5%, Fills 38, Comisión ~$39
-- Short only: CAGR -5.51%, Sharpe -0.24, Máx DD -31.9%, Fills 405
-- Long+Short (banda 0.02): CAGR 0.48%, Fills 225, Comisión ~$256
-- Buy&Hold SPY: CAGR 11.7%, Sharpe 0.73, Máx DD -25.4%
+
+Nota importante: Las siguientes cifras pertenecen a la versión v1.0 (ejecución “mismo bar”) y se mantienen solo como referencia histórica. Han sido SUPERSEDED por v1.1 (ejecución en la apertura del día siguiente). No deben usarse para evaluar la versión actual del motor.
+
+- [SUPERSEDED v1.0] Long only: CAGR 6.29%, Sharpe 0.78, Máx DD -18.5%, Fills 38, Comisión ~$39
+- [SUPERSEDED v1.0] Short only: CAGR -5.51%, Sharpe -0.24, Máx DD -31.9%, Fills 405
+- [SUPERSEDED v1.0] Long+Short (banda 0.02): CAGR 0.48%, Fills 225, Comisión ~$256
+- [Referencia] Buy&Hold SPY: CAGR 11.7%, Sharpe 0.73, Máx DD -25.4%
 
 Notas:
 - El modo SHORT permanece deshabilitado por defecto (evidencia negativa).

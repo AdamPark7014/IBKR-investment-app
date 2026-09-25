@@ -35,3 +35,20 @@ def test_hysteresis_allows_initial_entry_blocks_micro_rebalances() -> None:
     # Expect exactly one trade (initial entry)
     assert res.stats.trade_count == 1
 
+
+def test_tolerance_cases() -> None:
+    data = _mk(5)
+    from ibtrader.strategy.base import Strategy
+    class Target100(Strategy):
+        def generate_signals(self, data):
+            import pandas as pd
+            # Always 100% long equivalent via +1
+            idx = next(iter(data.values())).index
+            return {"SPY": pd.Series(1, index=idx)}
+    from ibtrader.backtest.engine import backtest
+    from ibtrader.config import CommissionConfig, SlippageConfig
+    # 100 vs 100 -> 0 orders beyond initial
+    res = backtest(data, Target100(), CommissionConfig(), SlippageConfig(), rebalance_band_pct=0.0)
+    # initial entry only
+    assert res.stats.trade_count == 1
+

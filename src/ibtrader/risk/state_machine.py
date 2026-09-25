@@ -20,6 +20,8 @@ class Intent(Enum):
     CLOSE = auto()
     STOP = auto()
     EMERGENCY_EXIT = auto()
+    FLIP_OPEN = auto()
+    FLIP_CLOSE = auto()
 
 
 # Allowed-operation matrix by state

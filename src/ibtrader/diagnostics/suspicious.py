@@ -54,5 +54,19 @@ def diagnose(result: BacktestResult, datasets: Dict[str, pd.DataFrame], lineage_
     # Anomalous turnover (very high given band 0)
     if stats.turnover > 20.0:
         flags.append(Suspicion("anomalous_turnover", f"Turnover acumulado inusualmente alto: {stats.turnover:.2f}x"))
+    # Too few trades on long period
+    if len(result.equity_curve) >= 500 and stats.trade_count < 2:
+        flags.append(Suspicion("too_few_trades", "Muy pocas operaciones en un horizonte amplio"))
+    # Fill at signal price (naive heuristic): if any trade price equals previous day's close exactly
+    for sym, df in datasets.items():
+        closes = df["close"].astype(float)
+        for d, s, q, p in result.trades:
+            if s != sym:
+                continue
+            ts = pd.Timestamp(d)
+            prev = closes.reindex([ts]).shift(1).iloc[0] if ts in closes.index else np.nan
+            if np.isfinite(prev) and abs(float(prev) - float(p)) < 1e-9:
+                flags.append(Suspicion("fill_at_signal_price", f"Llenado al precio de cierre previo en {sym} @ {ts.date()}"))
+                break
     return flags
 

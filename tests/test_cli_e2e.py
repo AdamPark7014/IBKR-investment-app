@@ -36,11 +36,11 @@ class _FakeYFProv(prov_mod.MarketDataProvider):
         return prov_mod.DataFrameWithMeta(_make_df(), lin)
 
 
-def test_cli_download_backtest_compare(monkeypatch: Any) -> None:
-    # Mock the universe loader to return deterministic data without network
-    def fake_loader(settings):
-        return {"SPY": _make_df()}
-    monkeypatch.setattr(cli_mod, "load_universe_v2", fake_loader)
+def test_cli_download_backtest_compare(monkeypatch: Any, tmp_path) -> None:
+    # Use FixtureProvider end-to-end (no mocks)
+    monkeypatch.setenv("DATA__PROVIDERS", '["fixture"]')
+    monkeypatch.setenv("DATA__FIXTURE_DIR", "./tests/fixtures")
+    monkeypatch.setenv("DATA__CACHE_DIR", str(tmp_path))
     runner = CliRunner()
     # download-data
     res = runner.invoke(cli_mod.app, ["download-data"])

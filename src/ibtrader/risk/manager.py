@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from ..config import RiskConfig
-from .state_machine import Intent, RiskFSM, RiskState as RiskStateEnum
+from .state_machine import Intent, RiskFSM
 
 
 @dataclass
@@ -14,6 +14,8 @@ class RiskState:
     orders_today: int = 0
     halted: bool = False
     current_date: str | None = None
+    first_equity: float | None = None
+    peak_equity: float | None = None
 
 
 class RiskManager:
@@ -27,16 +29,25 @@ class RiskManager:
         if self.state.current_date != date_str:
             self.state.current_date = date_str
             self.state.starting_equity_today = float(starting_equity)
+            if self.state.first_equity is None:
+                self.state.first_equity = float(starting_equity)
+                self.state.peak_equity = float(starting_equity)
+            else:
+                if self.state.peak_equity is None or starting_equity > self.state.peak_equity:
+                    self.state.peak_equity = float(starting_equity)
             self.state.orders_today = 0
             # Do not auto-clear halted; daily halt applies only to this day
             self.state.halted = False
             # Reset FSM to NORMAL at start of day; transitions may restrict later
             self.fsm.set_normal()
 
-    def check_killswitch(self) -> Tuple[bool, str]:
+    def check_killswitch(self, intent: Intent) -> Tuple[bool, str]:
         if os.path.exists(self.cfg.killswitch_file):
             # Killswitch implies EMERGENCY state (but exits/reductions still allowed via FSM)
             self.fsm.set_emergency()
+            # Do not block close/reduce/stop/emergency
+            if intent in {Intent.CLOSE, Intent.REDUCE, Intent.STOP, Intent.EMERGENCY_EXIT}:
+                return True, "OK"
             return False, "Kill switch activado."
         return True, "OK"
 
@@ -70,7 +81,27 @@ class RiskManager:
             return False, "Límite de pérdida diario excedido. Trading detenido."
         return True, "OK"
 
-    def check_order_count(self) -> Tuple[bool, str]:
+    def check_cumulative_loss(self, current_equity: float) -> Tuple[bool, str]:
+        if self.state.first_equity is None:
+            return True, "OK"
+        limit = self.state.first_equity * (self.cfg.cumulative_loss_limit_pct / 100.0)
+        if current_equity < self.state.first_equity - limit:
+            self.fsm.set_restricted()
+            return False, "Límite de pérdida acumulada excedido."
+        return True, "OK"
+
+    def check_drawdown(self, current_equity: float) -> Tuple[bool, str]:
+        if self.state.peak_equity is None or self.state.peak_equity == 0:
+            return True, "OK"
+        dd = (current_equity - self.state.peak_equity) / self.state.peak_equity
+        if dd < -abs(self.cfg.drawdown_limit_pct / 100.0):
+            self.fsm.set_restricted()
+            return False, "Límite de drawdown excedido."
+        return True, "OK"
+
+    def check_order_count(self, intent: Intent) -> Tuple[bool, str]:
+        if intent in {Intent.CLOSE, Intent.REDUCE, Intent.STOP, Intent.EMERGENCY_EXIT}:
+            return True, "OK"
         if self.state.orders_today >= self.cfg.max_orders_per_day:
             return False, "Máximo de órdenes diarias alcanzado."
         return True, "OK"
@@ -83,6 +114,8 @@ class RiskManager:
         quantity: int,
         current_positions_value: float,
         current_position_qty: int,
+        is_stop: bool = False,
+        is_emergency: bool = False,
     ) -> Tuple[bool, str]:
         # Classify intent and evaluate via FSM permissions
         delta = int(quantity)
@@ -90,12 +123,41 @@ class RiskManager:
         intent = RiskFSM.classify_intent(
             current_qty=int(current_position_qty),
             delta=delta,
-            is_stop=False,
-            is_emergency=False,
+            is_stop=is_stop,
+            is_emergency=is_emergency,
         )
         # If halted (daily loss), ensure FSM is in restricted state (defensive)
         if self.state.halted:
             self.fsm.set_restricted()
+        # Detect flip (sign change across zero)
+        resulting = current_position_qty + delta
+        is_flip = (current_position_qty > 0 and resulting < 0) or (current_position_qty < 0 and resulting > 0)
+        if is_flip:
+            # CLOSE leg must be allowed; OPEN leg must obey restrictions/limits
+            close_intent = Intent.CLOSE
+            open_intent = Intent.OPEN
+            # If restricted/emergency, open leg is not permitted
+            if not self.fsm.allow(close_intent):
+                return False, f"Operación no permitida en estado de riesgo ({self.fsm.state.name}): {close_intent.name}"
+            if not self.fsm.allow(open_intent):
+                return False, f"Flip requiere apertura nueva pero está bloqueada por estado de riesgo ({self.fsm.state.name})."
+            # Check size/exposure for the resulting open leg
+            new_qty = resulting
+            ok, msg = self.check_position_size(equity, price, new_qty)
+            if not ok:
+                return False, msg
+            ok, msg = self.check_total_exposure(equity, current_positions_value, is_risk_reducing=False)
+            if not ok:
+                return False, msg
+            # Order count should not block close; only counts when actually sent — engine sends a single order
+            ok, msg = self.check_order_count(open_intent)
+            if not ok:
+                return False, msg
+            # Daily loss still evaluated for context, but reduction allowed and open permitted if not halted further
+            _ok, _ = self.check_daily_loss(equity)
+            _ok, _ = self.check_cumulative_loss(equity)
+            _ok, _ = self.check_drawdown(equity)
+            return True, "OK"
         # Enforce FSM: allow REDUCE/CLOSE even if restricted/emergency; block OPEN/INCREASE when restricted
         if not self.fsm.allow(intent):
             return False, f"Operación no permitida en estado de riesgo ({self.fsm.state.name}): {intent.name}"
@@ -105,8 +167,14 @@ class RiskManager:
             # Daily loss triggered; still allow reducing
             if not is_reducing:
                 return ok, msg
+        ok, msg = self.check_cumulative_loss(equity)
+        if not ok and not is_reducing:
+            return ok, msg
+        ok, msg = self.check_drawdown(equity)
+        if not ok and not is_reducing:
+            return ok, msg
         for check in [
-            self.check_killswitch,
+            lambda: self.check_killswitch(intent),
             lambda: self.check_symbol_allowed(symbol),
             # Do not block risk-reducing orders on position-size
             (lambda: (True, "OK"))
@@ -117,12 +185,19 @@ class RiskManager:
                 current_positions_value,
                 is_risk_reducing=is_reducing,
             ),
-            self.check_order_count,
+            lambda: self.check_order_count(intent),
         ]:
             ok, msg = check()
             if not ok:
                 return ok, msg
         return True, "OK"
+
+    def update_equity(self, equity: float) -> None:
+        # Update peak equity
+        if self.state.first_equity is None:
+            self.state.first_equity = float(equity)
+        if self.state.peak_equity is None or equity > self.state.peak_equity:
+            self.state.peak_equity = float(equity)
 
     def notify_order_sent(self) -> None:
         self.state.orders_today += 1

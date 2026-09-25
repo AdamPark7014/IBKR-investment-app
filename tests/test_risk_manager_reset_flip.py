@@ -34,8 +34,11 @@ def test_flip_uses_resulting_position_not_order_size() -> None:
     cfg = RiskConfig(max_position_pct=100.0, max_total_exposure_pct=100.0, daily_loss_limit_pct=50.0, max_orders_per_day=50, killswitch_file="./data/NO_KILL")
     rm = RiskManager(cfg, state)
     rm.on_new_day("2024-01-01", 100_000.0)
-    # Large flip order (from -500 to +500 shares), price=100, resulting notional = 50,000, within 100%
+    # Large flip order (from -500 to +500 shares): under restricted state should require OPEN leg permission
+    # First, simulate restricted by daily loss
+    ok, _ = rm.check_daily_loss(94_000.0)
+    assert not ok
     ok, msg = rm.approve_order(
-        symbol="SPY", equity=100_000.0, price=100.0, quantity=1000, current_positions_value=0.0, current_position_qty=-500
+        symbol="SPY", equity=94_000.0, price=100.0, quantity=1000, current_positions_value=0.0, current_position_qty=-500
     )
-    assert ok, msg
+    assert not ok  # flip open blocked under restriction
