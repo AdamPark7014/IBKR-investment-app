@@ -39,6 +39,11 @@ def test_flip_uses_resulting_position_not_order_size() -> None:
     ok, _ = rm.check_daily_loss(94_000.0)
     assert not ok
     ok, msg = rm.approve_order(
-        symbol="SPY", equity=94_000.0, price=100.0, quantity=1000, current_positions_value=0.0, current_position_qty=-500
+        symbol="SPY",
+        equity=94_000.0,
+        price=100.0,
+        quantity=1000,
+        current_positions_value=0.0,
+        current_position_qty=-500,
     )
     assert not ok  # flip open blocked under restriction

@@ -14,7 +14,10 @@ def _mk(len_days: int = 600) -> pd.DataFrame:
     px = pd.Series(100.0, index=idx).astype(float)
     # Add simple uptrend to provoke trades
     px = px + (pd.Series(range(len(idx)), index=idx) * 0.05).astype(float)
-    df = pd.DataFrame({"close": px, "open": px, "high": px, "low": px, "volume": 1_000.0}, index=idx)
+    df = pd.DataFrame(
+        {"close": px, "open": px, "high": px, "low": px, "volume": 1_000.0},
+        index=idx,
+    )
     return df
 
 

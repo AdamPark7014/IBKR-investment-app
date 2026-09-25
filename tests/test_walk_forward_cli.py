@@ -16,7 +16,10 @@ def _mk(len_days: int = 300) -> pd.DataFrame:
     for i in range(1, len(idx)):
         vals.append(vals[-1] * (1.0 + 0.0005))
     px = pd.Series(vals, index=idx).astype(float)
-    df = pd.DataFrame({"close": px, "open": px, "high": px, "low": px, "volume": 1_000.0}, index=idx)
+    df = pd.DataFrame(
+        {"close": px, "open": px, "high": px, "low": px, "volume": 1_000.0},
+        index=idx,
+    )
     return df
 
 

@@ -32,7 +32,12 @@ def test_suspicious_flags_detect_extremes() -> None:
         max_underwater_days=0,
     )
     res = BacktestResult(equity_curve=eq, returns=ret, positions={}, trades=[], stats=stats)
-    data = {"SPY": pd.DataFrame({"close": [1.0, 2.0]}, index=pd.to_datetime(["2024-01-01", "2024-12-31"]))}
+    data = {
+        "SPY": pd.DataFrame(
+            {"close": [1.0, 2.0]},
+            index=pd.to_datetime(["2024-01-01", "2024-12-31"]),
+        )
+    }
     flags = diagnose(res, data, lineage_sources={"SPY": "fixture"})
     codes = {f.code for f in flags}
     assert "extreme_cagr" in codes
