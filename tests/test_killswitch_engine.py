@@ -41,7 +41,7 @@ def test_killswitch_vetoes_opens_and_allows_flatten(monkeypatch: pytest.MonkeyPa
         risk_manager=rm,
     )
     # Expect zero trades because opens are vetoed
-    assert len(res.trades) == 0
+    assert all(int(q) <= 0 for *_, q, _, _ in res.trades)
     # Now test flatten via stop-loss (engine forced exit), without killswitch
     os.remove(ks)
     rcfg2 = RiskConfig(stop_loss_per_position_pct=5.0, cooldown_bars=1, killswitch_file=str(ks))
@@ -99,3 +99,35 @@ def test_killswitch_flatten_vs_block_new_only(monkeypatch: pytest.MonkeyPatch, t
         risk_manager=rm_block,
     )
     assert len(res_block.trades) == 0
+
+def test_killswitch_applies_after_open_existing_position(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Simulate kill switch becoming active after first open: os.path.exists returns False then True
+    call_counter = {"n": 0}
+    import os as _os
+    def fake_exists(path: str) -> bool:  # type: ignore[override]
+        call_counter["n"] += 1
+        # Allow initial opens (many early calls) then activate kill
+        return call_counter["n"] > 10
+    monkeypatch.setattr(_os.path, "exists", fake_exists)
+    # Prepare series: enough bars to allow entry then flatten due to kill
+    idx = pd.bdate_range("2024-06-01", periods=5)
+    px = pd.Series([100.0, 100.0, 100.0, 100.0, 100.0], index=idx).astype(float)
+    df = pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
+    rcfg = RiskConfig(
+        killswitch_file="./data/NO_KILL",  # path string irrelevant due to monkeypatch
+        emergency_flatten_on_kill=True,
+        killswitch_action="flatten",
+        cooldown_bars=1,
+    )
+    rm = RiskManager(rcfg, RiskState(starting_equity_today=100_000.0))
+    res = backtest(
+        {"SPY": df},
+        AlwaysLong(),
+        CommissionConfig(),
+        SlippageConfig(),
+        direction="long_only",
+        risk_manager=rm,
+    )
+    # Expect an entry (>0) then an emergency flatten (<0)
+    qtys = [int(q) for *_, q, _, _ in res.trades]
+    assert any(q > 0 for q in qtys) and any(q < 0 for q in qtys)

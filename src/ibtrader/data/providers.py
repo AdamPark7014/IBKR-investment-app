@@ -242,7 +242,17 @@ class DataQualityGate:
     def validate(self, data: DataFrameWithMeta) -> None:
         ok, msg = validate_timeseries_strict(data.data)
         if not ok:
-            raise RuntimeError(f"Data inválida: {msg}")
+            # Enhance message with offending dates and provider when possible
+            details = msg
+            try:
+                required = [c for c in ["open", "high", "low", "close", "volume"] if c in data.data.columns]
+                if "faltantes" in msg.lower() and required:
+                    mask = data.data[required].isna().any(axis=1)
+                    bad_idx = [str(ts) for ts in list(data.data.index[mask])[:10]]
+                    details = f"{msg} Fechas con NaN: {bad_idx} Proveedor: {data.lineage.source}"
+            except Exception:
+                pass
+            raise RuntimeError(f"Data inválida: {details}")
         if len(data.data) < self.min_rows:
             raise RuntimeError(f"Data insuficiente: {len(data.data)} filas (<{self.min_rows})")
 

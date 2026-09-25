@@ -32,11 +32,12 @@ def test_walk_forward_cli(monkeypatch):
     res = runner.invoke(cli_mod.app, ["walk-forward", "--exp-id", "p9test"])
     assert res.exit_code == 0
     out = res.stdout
-    assert "'in_sample':" in out and "'validation':" in out and "'oos':" in out
+    assert '"in_sample":' in out and '"validation":' in out and '"oos":' in out
     # Top-level OOS trade count must equal stitched OOS count
+    import json
     import re
     m = re.search(r"\{(.|\n)*\}$", out)
     assert m
-    payload = eval(m.group(0))
+    payload = json.loads(m.group(0))
     stitched = sum(len(fd.get("oos_trades", [])) for fd in payload.get("folds", []))
     assert payload["oos_total_trades"] == stitched

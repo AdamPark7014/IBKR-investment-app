@@ -21,7 +21,7 @@ Estos provienen del motor v1.0 con ejecución “mismo bar”; se mantienen aqu�
 Conclusión honesta (a la fecha):
 - Con la evidencia disponible, no hay edge OOS robusto frente a B&H. La respuesta a §49 permanece: NO — INSUFFICIENT EVIDENCE.
 
-Resultados OOS recientes (v1.1, reportados desde la PC del propietario; stitched 2024‑09‑23..2026‑09‑23):
+Resultados OOS históricos (v1.1, reportados en la R6 desde commit 4c4acb9; stitched 2024‑09‑23..2026‑09‑23; PENDIENTE de re-ejecutar en este head):
 - Long only: CAGR 5.9%, Sharpe 0.74
 - Long+Short: CAGR 7.7%, Sharpe 0.93
 - Buy & Hold SPY: CAGR 16.2%, Sharpe 0.99

@@ -27,16 +27,16 @@ from .artifacts import save_run_artifact
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
 
-def _sanitize(obj: Any) -> Any:
+def _noneify(obj: Any) -> Any:
     import math as _math
     if isinstance(obj, float):
         if _math.isnan(obj) or _math.isinf(obj):
-            return 0.0
+            return None
         return obj
     if isinstance(obj, dict):
-        return {k: _sanitize(v) for k, v in obj.items()}
+        return {k: _noneify(v) for k, v in obj.items()}
     if isinstance(obj, list):
-        return [_sanitize(v) for v in obj]
+        return [_noneify(v) for v in obj]
     return obj
 
 KNOWN_TRADING_VARS = {
@@ -598,84 +598,78 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     # mypy: save artifact with a BacktestResult-compatible shell
     from ..backtest.engine import BacktestResult as _BTRes
     _mini = _MiniRes()
+    extra = {"walk_forward": summary, "strategy_version_override": f"sma_{wf.params[0]}_{wf.params[1]}"}
     art_path = save_run_artifact(
         cast(_BTRes, _mini),
         s,
         data,
         s.data.reports_dir,
         f"wf_{run_id}",
-        extra={"walk_forward": summary},
+        extra=extra,
     )
-    # Suspicious diagnostics using stitched series (best-effort via last fold)
+    # Suspicious diagnostics using stitched series
     lineage_sources = {}
     for symb in s.universe.symbols:
         meta = load_lineage(s.data.cache_dir, symb, s.engine.bar_size)
         if meta is not None:
             lineage_sources[symb] = meta.source or ""
-    # Suspicious diagnostics using stitched series
-    susp = []
-    try:
-        from types import SimpleNamespace as _SN
-
-        import pandas as _pd
-        eq_pairs = summary.get("stitched_oos_equity") or []
-        if eq_pairs:
-            eq_series = _pd.Series({_pd.Timestamp(t): v for t, v in eq_pairs}).sort_index()
-        else:
-            eq_series = _pd.Series(dtype=float)
-        stats: Any
-        if len(eq_series) > 1:
-            stats = compute_stats(eq_series, eq_series.pct_change().fillna(0.0))
-        else:
-            stats = cast(
-                Any,
-                _SN(
-                cagr=0.0,
-                sharpe=0.0,
-                sortino=0.0,
-                calmar=0.0,
-                max_drawdown=0.0,
-                win_rate=0.0,
-                exposure=0.0,
-                total_return=0.0,
-                volatility=0.0,
-                trade_count=summary.get("oos_total_trades", 0),
-                total_commission=summary.get("oos_commission_approx", 0.0),
-                turnover=0.0,
-                win_rate_trades=0.0,
-                profit_factor=0.0,
-                expectancy=0.0,
-                var_95=0.0,
-                cvar_95=0.0,
-                current_underwater_days=0,
-                max_underwater_days=0,
-                ),
-            )
-        from ..backtest.engine import BacktestResult as _BT
-        br = _BT(eq_series, eq_series.pct_change().fillna(0.0), {}, [], stats)
-        lineage_sources = {}
-        for symb in s.universe.symbols:
-            meta = load_lineage(s.data.cache_dir, symb, s.engine.bar_size)
-            if meta is not None:
-                lineage_sources[symb] = meta.source or ""
-        susp = diagnose_suspicious(br, data, lineage_sources=lineage_sources)
-    except Exception:
-        susp = []
-    rprint(
-        _sanitize({
-            "symbol": sym,
-            "best_params": {"fast": wf.params[0], "slow": wf.params[1]},
-            "in_sample": wf.train_stats,
-            "validation": wf.val_stats,
-            "oos": wf.stitched_oos,
-            "buy_hold_oos": summary.get("buy_hold_oos"),
-            "folds": summary.get("folds"),
-            "oos_total_trades": summary.get("oos_total_trades"),
-            "tried_param_count": summary.get("tried_param_count"),
-            "suspicious": [f"{f.code}:{f.reason}" for f in susp],
-            "artifact": art_path,
-        })
+    import pandas as _pd
+    eq_pairs = summary.get("stitched_oos_equity") or []
+    eq_series = (
+        _pd.Series({_pd.Timestamp(t): v for t, v in eq_pairs}).sort_index()
+        if eq_pairs
+        else _pd.Series(dtype=float)
     )
+    from types import SimpleNamespace as _SN
+    stats_obj: Any
+    if len(eq_series) > 1:
+        stats_obj = compute_stats(eq_series, eq_series.pct_change().fillna(0.0))
+    else:
+        stats_obj = _SN(
+            cagr=None,
+            sharpe=None,
+            sortino=None,
+            calmar=None,
+            max_drawdown=None,
+            win_rate=None,
+            exposure=None,
+            total_return=None,
+            volatility=None,
+            trade_count=summary.get("oos_total_trades", 0),
+            total_commission=summary.get("oos_commission_approx", 0.0),
+            turnover=None,
+            win_rate_trades=None,
+            profit_factor=None,
+            expectancy=None,
+            var_95=None,
+            cvar_95=None,
+            current_underwater_days=None,
+            max_underwater_days=None,
+        )
+    br: Any = _SN(
+        equity_curve=eq_series,
+        returns=eq_series.pct_change().fillna(0.0),
+        positions={},
+        trades=[],
+        stats=stats_obj,
+    )
+    susp = diagnose_suspicious(br, data, lineage_sources=lineage_sources)
+    # Build payload as JSON with None for undefined values and include strategy_version from chosen params
+    import json as _json
+    payload = {
+        "symbol": sym,
+        "best_params": {"fast": wf.params[0], "slow": wf.params[1]},
+        "in_sample": wf.train_stats,
+        "validation": wf.val_stats,
+        "oos": wf.stitched_oos,
+        "buy_hold_oos": summary.get("buy_hold_oos"),
+        "folds": summary.get("folds"),
+        "oos_total_trades": summary.get("oos_total_trades"),
+        "tried_param_count": summary.get("tried_param_count"),
+        "suspicious": [f"{f.code}:{f.reason}" for f in susp],
+        "artifact": art_path,
+    }
+    typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
 
 if __name__ == "__main__":
     app()

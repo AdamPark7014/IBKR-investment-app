@@ -62,6 +62,12 @@ class RiskConfig(BaseModel):
         if v > 100.0:
             raise ValueError("Percent-like limits must be <= 100.")
         return v
+    @field_validator("max_position_pct", "max_total_exposure_pct")
+    @classmethod
+    def _pos_exposure_bounds(cls, v: float) -> float:
+        if v < 0.0 or v > 100.0:
+            raise ValueError("max_position_pct and max_total_exposure_pct must be in [0, 100].")
+        return v
 
     @field_validator("cooldown_bars")
     @classmethod

@@ -20,7 +20,8 @@ class BacktestResult:
     equity_curve: pd.Series
     returns: pd.Series
     positions: Dict[str, pd.Series]
-    trades: List[Tuple[str, str, int, float]]  # (date, symbol, qty, price)
+    # (date, symbol, qty, price, reason)
+    trades: List[Tuple[str, str, int, float, str]]
     stats: PerformanceStats
 
 
@@ -65,7 +66,7 @@ def backtest(
     cash = initial_equity
     holdings: Dict[str, int] = {sym: 0 for sym in data}
     avg_price: Dict[str, float] = {sym: 0.0 for sym in data}
-    trades: List[Tuple[str, str, int, float]] = []
+    trades: List[Tuple[str, str, int, float, str]] = []
     equity_curve = []
     returns = []
     prev_equity = initial_equity
@@ -83,9 +84,8 @@ def backtest(
     loss_trades = 0
     # Per-run cooldown (no cross-run contamination)
     cooldown_until: Dict[str, int] = {}
-    # Pending forced exits (stop-on-touch semantics): if a stop is breached intra-bar (e.g., gap at open),
-    # schedule a forced close on the next bar regardless of subsequent price recovery
-    pending_forced_exit: Dict[str, bool] = {sym: False for sym in data}
+    # Close-based stop scheduling: decide at bar close, execute at next open
+    stop_scheduled: Dict[str, bool] = {sym: False for sym in data}
     for i, dt in enumerate(all_dates):
         if i == 0:
             # No execution possible on first bar; mark-to-market at close
@@ -163,8 +163,8 @@ def backtest(
             if price is None:
                 continue
             pos = holdings.get(sym, 0)
-            # Handle a previously scheduled forced exit immediately at the open, before anything else
-            if risk_manager is not None and pending_forced_exit.get(sym, False) and pos != 0:
+            # Handle a previously scheduled stop-loss exit at the open, before anything else
+            if risk_manager is not None and stop_scheduled.get(sym, False) and pos != 0:
                 side_exit = -1 if pos > 0 else 1
                 fill_exit = _slip(slippage_cfg, price, side_exit)
                 comm_exit = _commission(commission_cfg, -pos, fill_exit)
@@ -191,8 +191,8 @@ def backtest(
                 cur_trade_pnl[sym] = 0.0
                 avg_price[sym] = 0.0
                 holdings[sym] = 0
-                pending_forced_exit[sym] = False
-                trades.append((str(dt), sym, int(-pos), float(fill_exit)))
+                stop_scheduled[sym] = False
+                trades.append((str(dt), sym, int(-pos), float(fill_exit), "stop_loss"))
                 last_targets[sym] = 0
                 # Enter cooldown if configured
                 if risk_manager.cfg.cooldown_bars > 0:
@@ -214,23 +214,7 @@ def backtest(
                             is_emergency = True
                 except Exception:
                     pass
-                # Per-position stop loss
-                stop_pct = float(risk_manager.cfg.stop_loss_per_position_pct or 0.0)
-                if stop_pct > 0.0:
-                    # Stop-on-touch semantics:
-                    # - If already holding, compare current open vs average price threshold
-                    if pos != 0 and avg_price.get(sym, 0.0) > 0.0:
-                        thresh = (
-                            avg_price[sym] * (1 - stop_pct / 100.0)
-                            if pos > 0
-                            else avg_price[sym] * (1 + stop_pct / 100.0)
-                        )
-                        if (pos > 0 and price <= thresh) or (pos < 0 and price >= thresh):
-                            force_close = True
-                    # - If a stop breach was recorded previously (e.g., gap at prior open), enforce close now
-                    if not force_close and pending_forced_exit.get(sym, False) and pos != 0:
-                        force_close = True
-                        pending_forced_exit[sym] = False
+                # (Open-time stop processing removed; stops are scheduled at prior close)
             if force_close:
                 target = 0
             delta = target - pos
@@ -238,6 +222,11 @@ def backtest(
             # Set cooldown on forced exit
             if force_close and risk_manager is not None and risk_manager.cfg.cooldown_bars > 0:
                 cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
+            # Hard gate: if daily-loss halt is active, block new opens/increases entirely
+            if risk_manager is not None and risk_manager.state.halted:
+                if (pos == 0 and delta != 0) or (pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))):
+                    delta = 0
+                    target = pos
             # Enforce cooldown gating for new opens
             if (
                 pos == 0
@@ -304,7 +293,15 @@ def backtest(
                     realized_trades += 1
                     cur_trade_pnl[sym] = 0.0
                     avg_price[sym] = 0.0
-                    trades.append((str(dt), sym, int(dclose), float(dfill)))
+                    trades.append(
+                        (
+                            str(dt),
+                            sym,
+                            int(dclose),
+                            float(dfill),
+                            "kill_switch" if is_emergency else "stop_loss",
+                        )
+                    )
                     last_targets[sym] = 0
                     if risk_manager is not None:
                         risk_manager.notify_order_sent()
@@ -360,7 +357,7 @@ def backtest(
                             realized_trades += 1
                             cur_trade_pnl[sym] = 0.0
                             avg_price[sym] = 0.0
-                            trades.append((str(dt), sym, int(delta_close), float(dfill)))
+                            trades.append((str(dt), sym, int(delta_close), float(dfill), "flip_close_only"))
                             last_targets[sym] = 0
                             if risk_manager is not None:
                                 risk_manager.notify_order_sent()
@@ -403,20 +400,6 @@ def backtest(
                         else fill_price
                     )
                 cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) - commission
-                # If we just opened a new position and a large gap vs yesterday's close breached the
-                # stop threshold, schedule a forced close for the next bar (stop-on-touch)
-                if (
-                    risk_manager is not None
-                    and float(risk_manager.cfg.stop_loss_per_position_pct or 0.0) > 0.0
-                    and pos == 0
-                    and new_qty != 0
-                ):
-                    prev_close = float(close_prev.get(sym, price))
-                    gap_drop = (prev_close - price) / prev_close if prev_close > 0 else 0.0
-                    gap_rise = (price - prev_close) / prev_close if prev_close > 0 else 0.0
-                    stop_frac = float(risk_manager.cfg.stop_loss_per_position_pct) / 100.0
-                    if (new_qty > 0 and gap_drop >= stop_frac) or (new_qty < 0 and gap_rise >= stop_frac):
-                        pending_forced_exit[sym] = True
             else:
                 reduce_qty = min(abs(delta), abs(pos))
                 if pos > 0 and delta < 0:
@@ -443,7 +426,7 @@ def backtest(
                     avg_price[sym] = 0.0
                 elif (pos > 0 and new_pos < 0) or (pos < 0 and new_pos > 0):
                     avg_price[sym] = fill_price
-            trades.append((str(dt), sym, int(delta), float(fill_price)))
+            trades.append((str(dt), sym, int(delta), float(fill_price), "signal"))
             # Update last target after execution
             last_targets[sym] = target
         # Mark-to-market at today's close
@@ -457,6 +440,21 @@ def backtest(
         ret = (equity / prev_equity - 1.0) if prev_equity else 0.0
         # Do not force zero returns; compute from equity curve directly
         returns.append((dt, ret))
+        # Decide close-based stop for next bar (schedule)
+        if risk_manager is not None and float(risk_manager.cfg.stop_loss_per_position_pct or 0.0) > 0.0:
+            stop_frac = float(risk_manager.cfg.stop_loss_per_position_pct) / 100.0
+            for sym in data.keys():
+                pos_now = holdings.get(sym, 0)
+                if pos_now == 0 or avg_price.get(sym, 0.0) <= 0.0:
+                    continue
+                thresh = (
+                    avg_price[sym] * (1 - stop_frac) if pos_now > 0 else avg_price[sym] * (1 + stop_frac)
+                )
+                px_close = close_today.get(sym, None)
+                if px_close is None:
+                    continue
+                if (pos_now > 0 and px_close <= thresh) or (pos_now < 0 and px_close >= thresh):
+                    stop_scheduled[sym] = True
         if risk_manager is not None:
             risk_manager.update_equity(float(equity))
         prev_equity = equity

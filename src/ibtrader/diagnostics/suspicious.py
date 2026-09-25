@@ -63,7 +63,7 @@ def diagnose(
     # Fill at signal price (naive heuristic): if any trade price equals previous day's close exactly
     for sym, df in datasets.items():
         closes = df["close"].astype(float)
-        for d, s, q, p in result.trades:
+        for d, s, q, p, _reason in result.trades:
             if s != sym:
                 continue
             ts = pd.Timestamp(d)

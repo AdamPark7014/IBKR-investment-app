@@ -78,7 +78,7 @@ def test_fill_at_signal_price_detected() -> None:
         equity_curve=df["close"].rename("eq"),
         returns=df["close"].pct_change().fillna(0.0),
         positions={},
-        trades=[("2024-01-03", "SPY", 10, 100.0)],
+        trades=[("2024-01-03", "SPY", 10, 100.0, "signal")],
         stats=stats,
     )
     flags = diagnose(res, {"SPY": df}, lineage_sources=None)

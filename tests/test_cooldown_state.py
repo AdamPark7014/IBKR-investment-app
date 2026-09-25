@@ -16,14 +16,16 @@ class AlwaysLong(Strategy):
 
 def _mk_with_stop_trigger(cooldown_after: int) -> pd.DataFrame:
     """
-    Day 1 opens at 100 -> entry.
-    Day 2 opens at 90 (10% drop) triggers stop (e.g., 5%).
+    Close-based stop: Day 2 closes at 90 (10% loss) after entry at 100 → schedule stop.
     Subsequent days at 100 to test cooldown re-entry timing.
     """
     idx = pd.bdate_range("2024-01-01", periods=5 + cooldown_after)
-    opens = [100.0, 90.0] + [100.0] * (len(idx) - 2)
-    px = pd.Series(opens, index=idx).astype(float)
-    df = pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
+    open_px = pd.Series([100.0, 100.0] + [100.0] * (len(idx) - 2), index=idx).astype(float)
+    close_px = open_px.copy()
+    close_px.iloc[1] = 90.0  # day 2 closes down 10% to trigger stop
+    high = open_px.combine(close_px, max)
+    low = open_px.combine(close_px, min)
+    df = pd.DataFrame({"open": open_px, "high": high, "low": low, "close": close_px, "volume": 1000.0}, index=idx)
     return df
 
 

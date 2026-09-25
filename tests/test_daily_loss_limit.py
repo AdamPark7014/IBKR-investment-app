@@ -37,7 +37,7 @@ def test_daily_loss_limit_blocks_new_opens_but_allows_exits() -> None:
         direction="long_only",
         risk_manager=rm,
     )
-    # No opens should be allowed on day 2 due to daily loss breach at the open
-    # Trade count may be zero or only exits; ensure no positive qty on day 2
-    day2 = idx[1]
-    assert all(not (pd.Timestamp(d) == day2 and int(q) > 0) for d, s, q, p in res.trades)
+    # No opens should be allowed on day 2 due to daily loss breach (evaluated on close, restricting next decision)
+    # Ensure no positive qty on day 2 open after breach
+    day3 = idx[2]
+    assert all(not (pd.Timestamp(d) == day3 and int(q) > 0) for d, s, q, p, r in res.trades)

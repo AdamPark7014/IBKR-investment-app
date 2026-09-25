@@ -34,6 +34,11 @@ def test_walk_forward_produces_trades(monkeypatch):
     res = runner.invoke(cli_mod.app, ["walk-forward", "--exp-id", "p9_wf_test"])
     assert res.exit_code == 0
     out = res.stdout
-    assert "'oos_total_trades':" in out
+    assert "oos_total_trades" in out
     # Ensure non-zero trades
-    assert "'oos_total_trades': 0" not in out
+    import json
+    import re
+    m = re.search(r"\{(.|\n)*\}$", out)
+    assert m
+    payload = json.loads(m.group(0))
+    assert int(payload.get("oos_total_trades", 0)) > 0

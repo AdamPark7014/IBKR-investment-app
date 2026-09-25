@@ -13,6 +13,7 @@ class RiskState:
     starting_equity_today: float
     orders_today: int = 0
     halted: bool = False
+    halt_next_day: bool = False
     current_date: str | None = None
     first_equity: float | None = None
     peak_equity: float | None = None
@@ -29,6 +30,15 @@ class RiskManager:
         if self.state.current_date != date_str:
             self.state.current_date = date_str
             self.state.starting_equity_today = float(starting_equity)
+            # Apply prior-day halt to today's permissions (restrict opens)
+            if self.state.halt_next_day:
+                self.state.halted = True
+                self.fsm.set_restricted()
+            else:
+                self.state.halted = False
+                self.fsm.set_normal()
+            # Clear one-shot flag
+            self.state.halt_next_day = False
             if self.state.first_equity is None:
                 self.state.first_equity = float(starting_equity)
                 self.state.peak_equity = float(starting_equity)
@@ -36,10 +46,6 @@ class RiskManager:
                 if self.state.peak_equity is None or starting_equity > self.state.peak_equity:
                     self.state.peak_equity = float(starting_equity)
             self.state.orders_today = 0
-            # Do not auto-clear halted; daily halt applies only to this day
-            self.state.halted = False
-            # Reset FSM to NORMAL at start of day; transitions may restrict later
-            self.fsm.set_normal()
 
     def check_killswitch(self, intent: Intent) -> Tuple[bool, str]:
         if os.path.exists(self.cfg.killswitch_file):
@@ -208,6 +214,13 @@ class RiskManager:
             self.state.first_equity = float(equity)
         if self.state.peak_equity is None or equity > self.state.peak_equity:
             self.state.peak_equity = float(equity)
+        # Evaluate daily loss at close; if breached, restrict next day's opens
+        try:
+            limit = self.state.starting_equity_today * (self.cfg.daily_loss_limit_pct / 100.0)
+            if equity < self.state.starting_equity_today - limit:
+                self.state.halt_next_day = True
+        except Exception:
+            pass
 
     def notify_order_sent(self) -> None:
         self.state.orders_today += 1

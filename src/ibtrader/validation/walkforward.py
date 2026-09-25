@@ -176,9 +176,24 @@ def walk_forward_sma(
         res_test_stats = _cs(test_eq, test_rets)
         # Count only trades whose date is inside the test window
         test_dates = set(test_idx)
-        oos_trades_this = sum(1 for d, s_, q_, p_ in res_test_span.trades if pd.Timestamp(d) in test_dates)
+        # Map trades and recompute commission for OOS trades
+        from typing import cast as _cast_t
+        oos_trades_list = []
+        for d, s, q, p, r in res_test_span.trades:
+            if pd.Timestamp(d) in test_dates:
+                oos_trades_list.append({"date": d, "symbol": s, "qty": int(q), "price": float(p), "reason": r})
+        oos_trades_this = len(oos_trades_list)
         total_oos_trades += int(oos_trades_this)
-        total_oos_commission += float(res_test_span.stats.total_commission)
+        # Commission per OOS trade
+        cc = settings.commission
+        comm_fold = 0.0
+        for tr in oos_trades_list:
+            per_sh = cc.per_share * abs(int(_cast_t(int, tr["qty"])))
+            adv = (cc.percent_of_value / 100.0) * abs(int(_cast_t(int, tr["qty"]))) * float(
+                _cast_t(float, tr["price"])
+            )
+            comm_fold += float(max(per_sh + adv, cc.min_per_order))
+        total_oos_commission += float(comm_fold)
         # Stitch OOS equity and B&H for this fold
         stitched_eq = pd.concat([stitched_eq, test_eq]) if not stitched_eq.empty else test_eq.copy()
         # B&H for same test window
@@ -202,17 +217,17 @@ def walk_forward_sma(
                 "chosen_params": {"fast": fast, "slow": slow},
                 "train": res_train_stats.__dict__,
                 "val": res_val_stats.__dict__,
-                "oos": res_test_stats.__dict__,
+                "oos": {
+                    **res_test_stats.__dict__,
+                    "trade_count": int(oos_trades_this),
+                    "commission": float(comm_fold),
+                },
                 "tried_combos": [
                     {"fast": a, "slow": b, "val_sharpe": s}
                     for (a, b), s in tried_all[-len(param_grid) :]
                 ],
                 "oos_equity": [[str(t), float(v)] for t, v in test_eq.items()],
-                "oos_trades": [
-                    {"date": d, "symbol": s, "qty": int(q), "price": float(p)}
-                    for d, s, q, p in res_test_span.trades
-                    if pd.Timestamp(d) in test_eq.index
-                ],
+                "oos_trades": oos_trades_list,
             }
         )
     # Aggregate stitched OOS stats: chain daily returns across folds
@@ -222,8 +237,10 @@ def walk_forward_sma(
         stitched_rets = pd.Series(dtype=float)
         for fd in folds_detail:
             oos_eq = pd.Series({pd.Timestamp(t): v for t, v in fd["oos_equity"]}).sort_index()
-            r = oos_eq.pct_change().dropna()
-            stitched_rets = pd.concat([stitched_rets, r]) if not stitched_rets.empty else r.copy()
+            rets_fold = oos_eq.pct_change().dropna()
+            stitched_rets = (
+                pd.concat([stitched_rets, rets_fold]) if not stitched_rets.empty else rets_fold.copy()
+            )
         if len(stitched_rets) > 0:
             eq0 = 100_000.0
             stitched_eq_chain = (1.0 + stitched_rets).cumprod() * eq0
@@ -255,8 +272,10 @@ def walk_forward_sma(
             if settings.universe.benchmark in data and len(test_idx) > 1:
                 px = data[settings.universe.benchmark]["close"].astype(float).reindex(test_idx)
                 bh_eq = (100_000.0 / float(px.iloc[0])) * px
-                r = bh_eq.pct_change().dropna()
-                stitched_bh_rets = pd.concat([stitched_bh_rets, r]) if not stitched_bh_rets.empty else r.copy()
+                rets_fold = bh_eq.pct_change().dropna()
+                stitched_bh_rets = (
+                    pd.concat([stitched_bh_rets, rets_fold]) if not stitched_bh_rets.empty else rets_fold
+                )
         if len(stitched_bh_rets) > 0:
             eq0 = 100_000.0
             bh_chain = (1.0 + stitched_bh_rets).cumprod() * eq0
@@ -273,8 +292,10 @@ def walk_forward_sma(
             cc = settings.commission
             # We only have qty and price; recompute commission per trade
             for tr in fd["oos_trades"]:
-                per_sh = cc.per_share * abs(int(tr["qty"]))
-                adv = (cc.percent_of_value / 100.0) * abs(int(tr["qty"])) * float(tr["price"])
+                per_sh = cc.per_share * abs(int(_cast_t(int, tr["qty"])))
+                adv = (cc.percent_of_value / 100.0) * abs(int(_cast_t(int, tr["qty"]))) * float(
+                    _cast_t(float, tr["price"])
+                )
                 oos_commission += float(max(per_sh + adv, cc.min_per_order))
     summary = {
         "buy_hold_oos": bh,

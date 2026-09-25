@@ -47,7 +47,7 @@ Corrección de ejecución (v1.1):
   - `ibtrader backtest-sample --exp-id baseline_v11`
   - `ibtrader compare-directions --exp-id p1p5_v11`
 
-Resultados v1.1 (se registrarán oficialmente en la PC del propietario; reproducibles con los comandos anteriores):
+Resultados v1.1 (PENDIENTES de registro oficial en la PC del propietario; reproducibles con los comandos anteriores):
 - Long only (v1.1): [registrar aquí]
 - Short only (v1.1): [registrar aquí]
 - Long+Short (v1.1): [registrar aquí]

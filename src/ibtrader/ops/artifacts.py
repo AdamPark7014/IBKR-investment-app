@@ -131,11 +131,31 @@ def save_run_artifact(
             "current_underwater_days": result.stats.current_underwater_days,
             "max_underwater_days": result.stats.max_underwater_days,
         },
-        "trades": [{"date": d, "symbol": s, "qty": int(q), "price": float(p)} for d, s, q, p in result.trades],
+        "trades": [
+            {
+                "date": d,
+                "symbol": s,
+                "qty": int(q),
+                "price": float(p),
+                "reason": (reason if isinstance(reason, str) else "signal"),
+            }
+            for d, s, q, p, reason in result.trades
+        ],
+        "trades_by_reason": (
+            lambda items: {k: int(v) for k, v in items}
+        )(
+            __import__("collections").Counter(
+                [r if isinstance(r, str) else "signal" for *_, r in result.trades]
+            ).items()
+        ),
         # Equity curve as pairs for reproducibility
         "equity_curve": [[str(idx), float(val)] for idx, val in result.equity_curve.items()],
     }
     if extra:
+        # Allow override of strategy_version when a procedure (e.g., walk-forward) chose different params
+        override = extra.get("strategy_version_override") if isinstance(extra, dict) else None
+        if override:
+            art["strategy_version"] = f"{override}-{git_commit()[:7]}-{_pkg_version('ibtrader')}"
         art["extra"] = extra
     out_path = os.path.join(out_dir, f"artifact_{exp_id}.json")
     with open(out_path, "w", encoding="utf-8") as f:

@@ -17,11 +17,16 @@ class AlwaysLong(Strategy):
 
 
 def _mk_prices_with_stop() -> pd.DataFrame:
-    # Day 1 open=100 -> enter; day 2 open=90 (stop 5%); then 100
+    # Close-based stop: enter at day 2 open=100; day 2 closes at 90 (10% loss) => stop scheduled; exit at day 3 open
     idx = pd.bdate_range("2024-03-01", periods=4)
-    opens = [100.0, 90.0, 100.0, 100.0]
-    px = pd.Series(opens, index=idx).astype(float)
-    return pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
+    open_px = pd.Series([100.0, 100.0, 100.0, 100.0], index=idx).astype(float)
+    close_px = pd.Series([100.0, 90.0, 100.0, 100.0], index=idx).astype(float)
+    high = open_px.combine(close_px, max)
+    low = open_px.combine(close_px, min)
+    return pd.DataFrame(
+        {"open": open_px, "high": high, "low": low, "close": close_px, "volume": 1000.0},
+        index=idx,
+    )
 
 
 def test_engine_stop_loss_forces_exit_and_cooldown() -> None:
@@ -37,7 +42,7 @@ def test_engine_stop_loss_forces_exit_and_cooldown() -> None:
         risk_manager=rm,
     )
     # Expect at least one negative delta (exit) due to stop on day 2
-    assert any(int(q) < 0 for *_, q, _ in res.trades)
+    assert any(int(q) < 0 for *_, q, _, _ in res.trades)
     # Position should be zero on stop day and next day due to cooldown
     pos = res.positions["SPY"].astype(int)
     assert pos.iloc[2] == 0
@@ -66,7 +71,7 @@ def test_engine_emergency_exit_flattens_and_blocks_reentry(tmp_path) -> None:
         risk_manager=rm,
     )
     # With kill active from start, opens are vetoed; ensure no positive qty trades
-    assert all(int(q) <= 0 for *_, q, _ in res.trades)
+    assert all(int(q) <= 0 for *_, q, _, _ in res.trades)
     # Positions remain flat through the series
     assert res.positions["SPY"].abs().sum() == 0
 
