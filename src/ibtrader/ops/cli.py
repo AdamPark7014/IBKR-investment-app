@@ -560,8 +560,8 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     # Build a BacktestResult-compatible object from stitched OOS series and trades across folds
-    from types import SimpleNamespace as _SN
     import pandas as _pd
+    from types import SimpleNamespace as _SN
     from ..backtest.metrics import compute_stats as _cs_bt
     # Stitched OOS equity curve
     eq_pairs = summary.get("stitched_oos_equity") or []
@@ -574,9 +574,13 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     oos_trades: list[tuple[str, str, int, float, str]] = []
     for fd in summary.get("folds", []) or []:
         for tr in fd.get("oos_trades", []):
-            oos_trades.append(
-                (str(tr["date"]), str(tr["symbol"]), int(tr["qty"]), float(tr["price"]), str(tr.get("reason", "signal")))
-            )
+            oos_trades.append((
+                str(tr["date"]),
+                str(tr["symbol"]),
+                int(tr["qty"]),
+                float(tr["price"]),
+                str(tr.get("reason", "signal")),
+            ))
     # Compute stitched stats if available
     if len(eq_series) > 1:
         rets = eq_series.pct_change().fillna(0.0)
@@ -618,7 +622,10 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     from ..backtest.engine import BacktestResult as _BTRes
     _mini = _BTResObj()
     # Strategy version override reflects multi-fold chosen params
-    chosen_params = [{"fast": fd["chosen_params"]["fast"], "slow": fd["chosen_params"]["slow"]} for fd in summary.get("folds", [])]
+    chosen_params = [
+        {"fast": fd["chosen_params"]["fast"], "slow": fd["chosen_params"]["slow"]}
+        for fd in summary.get("folds", [])
+    ]
     extra = {
         "walk_forward": summary,
         "per_fold_params": chosen_params,

@@ -60,12 +60,11 @@ def diagnose(
         years = max(n_days / 252.0, 1e-9)
         turnover_per_year = float(stats.turnover) / years if stats.turnover is not None else 0.0
         if turnover_per_year > 10.0:
-            flags.append(
-                Suspicion(
-                    "anomalous_turnover",
-                    f"Turnover anualizado inusualmente alto: {turnover_per_year:.2f}x/año (total {stats.turnover:.2f}x en {n_days} días)",
-                )
+            msg = (
+                f"Turnover anualizado inusualmente alto: {turnover_per_year:.2f}x/año "
+                f"(total {stats.turnover:.2f}x en {n_days} días)"
             )
+            flags.append(Suspicion("anomalous_turnover", msg))
     except Exception:
         pass
     # Too few trades on long period
