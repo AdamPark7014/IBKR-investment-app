@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Any
-from typing import cast as _cast
+from typing import Any, Optional, cast as _cast
 
 import numpy as np
 import typer
