@@ -81,6 +81,8 @@ def backtest(
     cur_trade_pnl: Dict[str, float] = {sym: 0.0 for sym in data}
     win_trades = 0
     loss_trades = 0
+    # Per-run cooldown (no cross-run contamination)
+    cooldown_until: Dict[str, int] = {}
     for i, dt in enumerate(all_dates):
         if i == 0:
             # No execution possible on first bar; mark-to-market at close
@@ -152,10 +154,7 @@ def backtest(
                     proposed = prev_target
                 targets[sym] = proposed
         # Execute at today's open
-        # Cooldown tracking: symbol -> bar index threshold to allow reopen
-        if not hasattr(backtest, "_cooldown_until"):
-            setattr(backtest, "_cooldown_until", {})
-        cooldown_until = getattr(backtest, "_cooldown_until")
+        # Cooldown tracking is per-run via local cooldown_until dict (no shared/module state)
         for sym, target in targets.items():
             price = open_now.get(sym)
             if price is None:
@@ -168,13 +167,11 @@ def backtest(
                 # Emergency flatten via killswitch if configured (apply only when holding)
                 try:
                     import os as _os
-                    if (
-                        risk_manager.cfg.emergency_flatten_on_kill
-                        and _os.path.exists(risk_manager.cfg.killswitch_file)
-                        and pos != 0
-                    ):
-                        force_close = True
-                        is_emergency = True
+                    if _os.path.exists(risk_manager.cfg.killswitch_file) and pos != 0:
+                        # Behavior depends on configured killswitch action
+                        if getattr(risk_manager.cfg, "killswitch_action", "flatten") == "flatten" and risk_manager.cfg.emergency_flatten_on_kill:
+                            force_close = True
+                            is_emergency = True
                 except Exception:
                     pass
                 # Per-position stop loss
@@ -193,7 +190,7 @@ def backtest(
             # After forced exit, respect cooldown before reopening
             # Set cooldown on forced exit
             if force_close and risk_manager is not None and risk_manager.cfg.cooldown_bars > 0:
-                cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars)
+                cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
             # Enforce cooldown gating for new opens
             if (
                 pos == 0
@@ -231,6 +228,8 @@ def backtest(
             # Risk manager veto (optional) with flip handling
             if risk_manager is not None:
                 eq_prev = nav_prev
+                # Value equity at current open to evaluate daily loss vs start-of-day
+                eq_open = cash + sum(holdings[s] * open_now.get(s, 0.0) for s in holdings)
                 cur_pos_val = sum(holdings[s] * close_prev.get(s, 0.0) for s in holdings)
                 # Detect flip
                 is_flip = pos != 0 and target != 0 and (pos > 0 > target or pos < 0 < target)
@@ -267,7 +266,7 @@ def backtest(
                     # Try full flip first
                     ok, msg = risk_manager.approve_order(
                         symbol=sym,
-                        equity=eq_prev,
+                        equity=eq_open,
                         price=fill_price,
                         quantity=int(delta),
                         current_positions_value=float(cur_pos_val),
@@ -326,7 +325,7 @@ def backtest(
                 else:
                     ok, msg = risk_manager.approve_order(
                         symbol=sym,
-                        equity=eq_prev,
+                        equity=eq_open,
                         price=fill_price,
                         quantity=int(delta),
                         current_positions_value=float(cur_pos_val),
@@ -344,6 +343,8 @@ def backtest(
             total_commission += commission
             if risk_manager is not None:
                 risk_manager.notify_order_sent()
+            if force_close:
+                log.info("forced_exit reason=%s sym=%s qty=%s", "kill_switch" if is_emergency else "stop_loss", sym, int(delta))
             if pos == 0 or (pos > 0 and delta > 0) or (pos < 0 and delta < 0):
                 # Opening/increasing: update average and include entry commission in trade bucket
                 new_qty = pos + delta

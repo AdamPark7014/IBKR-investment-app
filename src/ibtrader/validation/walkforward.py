@@ -48,7 +48,7 @@ def walk_forward_sma(
     warmup_bars: int = 100,
 ) -> Tuple[WFResult, dict]:
     if param_grid is None:
-        param_grid = [(3, 10), (5, 20), (10, 30), (20, 50), (50, 200)]
+        param_grid = [(5, 20), (10, 30), (20, 50), (50, 200)]
     df = data[symbol]
     n = len(df)
     idx = list(df.index)
@@ -126,7 +126,7 @@ def walk_forward_sma(
         fast, slow = best
         strat = SMACrossover(fast_window=fast, slow_window=slow, allow_short=True)
         # Train span and compute on train window
-        train_span_idx = idx[max(0, len(train_idx) - warmup_bars) : test_start]
+        train_span_idx = idx[:test_start]
         res_train_span = backtest(
             data=slice_data(train_span_idx),
             strategy=strat,
@@ -174,7 +174,10 @@ def walk_forward_sma(
         test_eq = res_test_span.equity_curve.reindex(test_idx).dropna()
         test_rets = res_test_span.returns.reindex(test_idx).dropna()
         res_test_stats = _cs(test_eq, test_rets)
-        total_oos_trades += int(res_test_span.stats.trade_count)
+        # Count only trades whose date is inside the test window
+        test_dates = set(test_idx)
+        oos_trades_this = sum(1 for d, s_, q_, p_ in res_test_span.trades if pd.Timestamp(d) in test_dates)
+        total_oos_trades += int(oos_trades_this)
         total_oos_commission += float(res_test_span.stats.total_commission)
         # Stitch OOS equity and B&H for this fold
         stitched_eq = pd.concat([stitched_eq, test_eq]) if not stitched_eq.empty else test_eq.copy()
@@ -263,11 +266,20 @@ def walk_forward_sma(
                 "sharpe": float((ret.mean() / (ret.std(ddof=0) or 1e-9)) * (252 ** 0.5)),
                 "max_dd": float((bh_chain / bh_chain.cummax() - 1.0).min()),
             }
+    # Approximate OOS commission using per-trade commission for test-window trades
+    oos_commission = 0.0
+    if folds_detail:
+        for fd in folds_detail:
+            td = [pd.Timestamp(t) for t, _ in fd["oos_equity"]]
+            cc = settings.commission  # type: ignore[assignment]
+            # We only have qty and price; recompute commission per trade
+            for tr in fd["oos_trades"]:
+                oos_commission += float(max(cc.per_share * abs(int(tr["qty"])) + (cc.percent_of_value / 100.0) * abs(int(tr["qty"])) * float(tr["price"]), cc.min_per_order))
     summary = {
         "buy_hold_oos": bh,
         "folds": folds_detail,
         "oos_total_trades": int(total_oos_trades),
-        "oos_commission_approx": float(total_oos_commission),
+        "oos_commission_approx": float(oos_commission),
         "tried_param_count": len(tried_all),
         "stitched_oos_equity": [[str(t), float(v)] for t, v in stitched_eq.items()],
         "stitched_bh_equity": [[str(t), float(v)] for t, v in stitched_bh.items()],

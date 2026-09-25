@@ -54,18 +54,10 @@ class FixtureProvider(MarketDataProvider):
                 break
         if df is None or df.empty:
             raise RuntimeError(f"Fixture no encontrado para {symbol} en {self.dir}")
-        # Ensure business-day index with at least 260 rows by forward-filling
-        last = pd.to_datetime(df.index.max())
+        # Ensure business-day index only (drop non-business days)
         if not pd.api.types.is_datetime64_any_dtype(df.index):
             df.index = pd.to_datetime(df.index)
-        # Reindex to business days from the first to last date
-        bidx = pd.bdate_range(start=pd.to_datetime(df.index.min()), end=last)
-        df = df.reindex(bidx).ffill()
-        if len(df) < 260:
-            # Extend backwards to reach 260 rows total
-            need = 260 - len(df)
-            ext_idx = pd.bdate_range(end=bidx.min() - pd.Timedelta(days=1), periods=need)
-            df = pd.concat([df.reindex(ext_idx).ffill(), df])
+        df = df[df.index.dayofweek < 5]
         ok, msg = validate_timeseries_strict(df)
         if not ok:
             raise RuntimeError(f"Fixture inválido: {msg}")

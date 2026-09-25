@@ -33,6 +33,37 @@ class RiskConfig(BaseModel):
         True, description="If killswitch is active, force emergency flatten at next open"
     )
     cooldown_bars: int = Field(0, description="After a forced exit, bars to wait before reopening")
+    killswitch_action: Literal["flatten", "block_new_only"] = Field(
+        "flatten",
+        description="Kill-switch behavior: 'flatten' liquidates positions; 'block_new_only' prevents new opens only.",
+    )
+
+    @field_validator(
+        "daily_loss_limit_pct",
+        "cumulative_loss_limit_pct",
+        "drawdown_limit_pct",
+        "target_vol_annual",
+        "stop_loss_per_position_pct",
+    )
+    @classmethod
+    def _non_negative_pct(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("Percent-like limits must be >= 0.")
+        return v
+
+    @field_validator("daily_loss_limit_pct", "cumulative_loss_limit_pct", "drawdown_limit_pct", "stop_loss_per_position_pct")
+    @classmethod
+    def _pct_le_100(cls, v: float) -> float:
+        if v > 100.0:
+            raise ValueError("Percent-like limits must be <= 100.")
+        return v
+
+    @field_validator("cooldown_bars")
+    @classmethod
+    def _cooldown_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("cooldown_bars must be >= 0")
+        return v
 
 
 class CommissionConfig(BaseModel):

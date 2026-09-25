@@ -48,6 +48,7 @@ class RiskManager:
             # Do not block close/reduce/stop/emergency
             if intent in {Intent.CLOSE, Intent.REDUCE, Intent.STOP, Intent.EMERGENCY_EXIT}:
                 return True, "OK"
+            # For opens/increases, if action is block_new_only, veto; if flatten, veto too (engine will flatten)
             return False, "Kill switch activado."
         return True, "OK"
 

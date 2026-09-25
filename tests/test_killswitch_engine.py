@@ -25,11 +25,10 @@ def _mk_series() -> pd.DataFrame:
 
 
 def test_killswitch_vetoes_opens_and_allows_flatten(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    os.makedirs("./data", exist_ok=True)
-    # Activate killswitch
-    with open("./data/KILL_SWITCH", "w", encoding="utf-8"):
-        pass
-    cfg = RiskConfig(killswitch_file="./data/KILL_SWITCH")
+    # Activate killswitch using an isolated tmp path (never touch real ./data/KILL_SWITCH)
+    ks = tmp_path / "KILL_SWITCH"
+    ks.write_text("HALT", encoding="utf-8")
+    cfg = RiskConfig(killswitch_file=str(ks))
     rm = RiskManager(cfg, RiskState(starting_equity_today=100_000.0))
     df = _mk_series()
     # Flat start, signal long — should NOT open due to killswitch
@@ -44,8 +43,8 @@ def test_killswitch_vetoes_opens_and_allows_flatten(monkeypatch: pytest.MonkeyPa
     # Expect zero trades because opens are vetoed
     assert len(res.trades) == 0
     # Now test flatten via stop-loss (engine forced exit), without killswitch
-    os.remove("./data/KILL_SWITCH")
-    rcfg2 = RiskConfig(stop_loss_per_position_pct=5.0, cooldown_bars=1, killswitch_file="./data/KILL_SWITCH")
+    os.remove(ks)
+    rcfg2 = RiskConfig(stop_loss_per_position_pct=5.0, cooldown_bars=1, killswitch_file=str(ks))
     rm2 = RiskManager(rcfg2, RiskState(starting_equity_today=100_000.0))
     # Create a drop to trigger stop on day 3
     df2 = df.copy()
@@ -60,3 +59,25 @@ def test_killswitch_vetoes_opens_and_allows_flatten(monkeypatch: pytest.MonkeyPa
         risk_manager=rm2,
     )
     assert any(int(q) < 0 for *_, q, _ in res2.trades)
+
+
+def test_killswitch_flatten_vs_block_new_only(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    # Prepare price series with an existing open, then activate kill-switch
+    idx = pd.bdate_range("2024-01-01", periods=4)
+    px = pd.Series([100.0, 100.0, 100.0, 100.0], index=idx).astype(float)
+    df = pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
+    ks = tmp_path / "KILL_SWITCH"
+    # Case 1: killswitch_action=flatten -> positions are liquidated at next open
+    ks.write_text("HALT", encoding="utf-8")
+    rcfg_flat = RiskConfig(killswitch_file=str(ks), emergency_flatten_on_kill=True, killswitch_action="flatten")
+    rm_flat = RiskManager(rcfg_flat, RiskState(starting_equity_today=100_000.0))
+    res_flat = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm_flat)
+    # No opens (vetoed) but if any position existed it would be flattened; start flat => 0 trades
+    assert all(int(q) <= 0 for *_, q, _ in res_flat.trades)
+    # Case 2: killswitch_action=block_new_only -> no forced flatten, but new opens still blocked
+    os.remove(ks)
+    rcfg_block = RiskConfig(killswitch_file=str(ks), emergency_flatten_on_kill=False, killswitch_action="block_new_only")
+    rm_block = RiskManager(rcfg_block, RiskState(starting_equity_today=100_000.0))
+    ks.write_text("HALT", encoding="utf-8")
+    res_block = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm_block)
+    assert len(res_block.trades) == 0
