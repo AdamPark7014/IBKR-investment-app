@@ -560,8 +560,8 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     # Build a BacktestResult-compatible object from stitched OOS series and trades across folds
-    import pandas as _pd
     from types import SimpleNamespace as _SN
+    import pandas as _pd
     from ..backtest.metrics import compute_stats as _cs_bt
     # Stitched OOS equity curve
     eq_pairs = summary.get("stitched_oos_equity") or []
