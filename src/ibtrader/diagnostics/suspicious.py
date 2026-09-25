@@ -54,9 +54,20 @@ def diagnose(
         for sym, src in lineage_sources.items():
             if str(src).lower() in {"fixture", "mock", "yahoo-mock"}:
                 flags.append(Suspicion("synthetic_source", f"Fuente sintética para {sym}: {src}"))
-    # Anomalous turnover (very high given band 0)
-    if stats.turnover > 20.0:
-        flags.append(Suspicion("anomalous_turnover", f"Turnover acumulado inusualmente alto: {stats.turnover:.2f}x"))
+    # Anomalous turnover normalized per year to avoid time-horizon bias
+    try:
+        n_days = int(len(result.equity_curve.index))
+        years = max(n_days / 252.0, 1e-9)
+        turnover_per_year = float(stats.turnover) / years if stats.turnover is not None else 0.0
+        if turnover_per_year > 10.0:
+            flags.append(
+                Suspicion(
+                    "anomalous_turnover",
+                    f"Turnover anualizado inusualmente alto: {turnover_per_year:.2f}x/año (total {stats.turnover:.2f}x en {n_days} días)",
+                )
+            )
+    except Exception:
+        pass
     # Too few trades on long period
     if len(result.equity_curve) >= 500 and stats.trade_count < 2:
         flags.append(Suspicion("too_few_trades", "Muy pocas operaciones en un horizonte amplio"))

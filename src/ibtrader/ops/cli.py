@@ -559,46 +559,71 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     # Save stitched OOS artifact from the last fold's params applied to the last test span equity (already in wf/test)
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    # Build a pseudo BacktestResult from last test metrics to capture artifact context
-    # We won't reconstruct trades/curve here; artifact focuses on configuration and summary
-    # For reproducibility, still save a minimal artifact shell
-    class _MiniRes:
+    # Build a BacktestResult-compatible object from stitched OOS series and trades across folds
+    from types import SimpleNamespace as _SN
+    import pandas as _pd
+    from ..backtest.metrics import compute_stats as _cs_bt
+    # Stitched OOS equity curve
+    eq_pairs = summary.get("stitched_oos_equity") or []
+    eq_series = (
+        _pd.Series({_pd.Timestamp(t): v for t, v in eq_pairs}).sort_index()
+        if eq_pairs
+        else _pd.Series(dtype=float)
+    )
+    # Concatenate OOS trades across folds (already carry reason)
+    oos_trades: list[tuple[str, str, int, float, str]] = []
+    for fd in summary.get("folds", []) or []:
+        for tr in fd.get("oos_trades", []):
+            oos_trades.append(
+                (str(tr["date"]), str(tr["symbol"]), int(tr["qty"]), float(tr["price"]), str(tr.get("reason", "signal")))
+            )
+    # Compute stitched stats if available
+    if len(eq_series) > 1:
+        rets = eq_series.pct_change().fillna(0.0)
+        stats_obj = _cs_bt(eq_series, rets)
+        trade_count = int(summary.get("oos_total_trades", 0) or 0)
+        total_commission = float(summary.get("oos_commission_approx", 0.0) or 0.0)
+        stats_obj.trade_count = trade_count
+        stats_obj.total_commission = total_commission
+    else:
+        stats_obj = _SN(
+            cagr=None,
+            sharpe=None,
+            sortino=None,
+            calmar=None,
+            max_drawdown=None,
+            win_rate=None,
+            exposure=None,
+            total_return=None,
+            volatility=None,
+            trade_count=summary.get("oos_total_trades"),
+            total_commission=summary.get("oos_commission_approx"),
+            turnover=None,
+            win_rate_trades=None,
+            profit_factor=None,
+            expectancy=None,
+            var_95=None,
+            cvar_95=None,
+            current_underwater_days=None,
+            max_underwater_days=None,
+        )
+    class _BTResObj:
         def __init__(self) -> None:
-            import pandas as _pd
-            self.equity_curve = _pd.Series(dtype=float)
-            self.returns = _pd.Series(dtype=float)
+            self.equity_curve = eq_series
+            self.returns = eq_series.pct_change().fillna(0.0)
             from pandas import Series as _Series
             self.positions: dict[str, _Series] = {}
-            self.trades: list[tuple[str, str, int, float]] = []
-            from types import SimpleNamespace as _SN
-            last = summary.get("folds", [])[-1] if summary.get("folds") else {}
-            stats = last.get("oos", {}) if last else {}
-            self.stats = _SN(
-                cagr=stats.get("cagr", 0.0),
-                sharpe=stats.get("sharpe", 0.0),
-                sortino=stats.get("sortino", 0.0),
-                calmar=stats.get("calmar", 0.0),
-                recovery_factor=stats.get("recovery_factor", 0.0),
-                max_drawdown=stats.get("max_drawdown", 0.0),
-                win_rate=stats.get("win_rate", 0.0),
-                exposure=0.0,
-                total_return=0.0,
-                volatility=0.0,
-                trade_count=stats.get("trade_count", 0),
-                total_commission=stats.get("commission", 0.0),
-                turnover=stats.get("turnover", 0.0),
-                win_rate_trades=0.0,
-                profit_factor=0.0,
-                expectancy=0.0,
-                var_95=0.0,
-                cvar_95=0.0,
-                current_underwater_days=0,
-                max_underwater_days=0,
-            )
-    # mypy: save artifact with a BacktestResult-compatible shell
+            self.trades: list[tuple[str, str, int, float, str]] = oos_trades
+            self.stats = stats_obj
     from ..backtest.engine import BacktestResult as _BTRes
-    _mini = _MiniRes()
-    extra = {"walk_forward": summary, "strategy_version_override": f"sma_{wf.params[0]}_{wf.params[1]}"}
+    _mini = _BTResObj()
+    # Strategy version override reflects multi-fold chosen params
+    chosen_params = [{"fast": fd["chosen_params"]["fast"], "slow": fd["chosen_params"]["slow"]} for fd in summary.get("folds", [])]
+    extra = {
+        "walk_forward": summary,
+        "per_fold_params": chosen_params,
+        "strategy_version_override": "sma_wf_multi",
+    }
     art_path = save_run_artifact(
         cast(_BTRes, _mini),
         s,
@@ -614,51 +639,12 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
         if meta is not None:
             lineage_sources[symb] = meta.source or ""
     import pandas as _pd
-    eq_pairs = summary.get("stitched_oos_equity") or []
-    eq_series = (
-        _pd.Series({_pd.Timestamp(t): v for t, v in eq_pairs}).sort_index()
-        if eq_pairs
-        else _pd.Series(dtype=float)
-    )
-    from types import SimpleNamespace as _SN
-    stats_obj: Any
-    if len(eq_series) > 1:
-        stats_obj = compute_stats(eq_series, eq_series.pct_change().fillna(0.0))
-    else:
-        stats_obj = _SN(
-            cagr=None,
-            sharpe=None,
-            sortino=None,
-            calmar=None,
-            max_drawdown=None,
-            win_rate=None,
-            exposure=None,
-            total_return=None,
-            volatility=None,
-            trade_count=summary.get("oos_total_trades", 0),
-            total_commission=summary.get("oos_commission_approx", 0.0),
-            turnover=None,
-            win_rate_trades=None,
-            profit_factor=None,
-            expectancy=None,
-            var_95=None,
-            cvar_95=None,
-            current_underwater_days=None,
-            max_underwater_days=None,
-        )
-    br: Any = _SN(
-        equity_curve=eq_series,
-        returns=eq_series.pct_change().fillna(0.0),
-        positions={},
-        trades=[],
-        stats=stats_obj,
-    )
-    susp = diagnose_suspicious(br, data, lineage_sources=lineage_sources)
+    susp = diagnose_suspicious(_mini, data, lineage_sources=lineage_sources)
     # Build payload as JSON with None for undefined values and include strategy_version from chosen params
     import json as _json
     payload = {
         "symbol": sym,
-        "best_params": {"fast": wf.params[0], "slow": wf.params[1]},
+        "best_params": None,
         "in_sample": wf.train_stats,
         "validation": wf.val_stats,
         "oos": wf.stitched_oos,
