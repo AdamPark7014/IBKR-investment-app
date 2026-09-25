@@ -76,7 +76,7 @@ def test_killswitch_vetoes_opens_and_allows_flatten(monkeypatch: pytest.MonkeyPa
         risk_manager=rm2,
     )
     # Expect at least one negative delta (flatten/exit) while kill is ACTIVE
-    assert any(int(q) < 0 for *_, q, _ in res2.trades)
+    assert any(int(q) < 0 for *_, q, _, _ in res2.trades)
 
 
 def test_killswitch_flatten_vs_block_new_only(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
