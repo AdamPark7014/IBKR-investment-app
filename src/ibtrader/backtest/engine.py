@@ -126,8 +126,9 @@ def backtest(
                 sig = min(sig, 0)
             # Risk-on veto
             if risk_on is not None:
-                ro = float(risk_on.reindex([dt_prev]).fillna(1.0).iloc[0])
-                if ro < risk_on_threshold:
+                ro_val = risk_on.reindex([dt_prev]).iloc[0]
+                # During warm-up (regime unknown / NaN), do not apply veto implicitly
+                if pd.notna(ro_val) and float(ro_val) < risk_on_threshold:
                     sig = 0
             raw_sign[sym] = sig
         actives = [sym for sym, sign in raw_sign.items() if sign != 0]
