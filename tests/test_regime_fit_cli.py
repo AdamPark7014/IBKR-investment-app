@@ -17,7 +17,9 @@ def _series(len_days: int = 400) -> pd.Series:
 
 def test_regime_fit_cli(monkeypatch):
     def fake_loader(settings):
-        df = pd.DataFrame({"close": _series(400), "open": 0, "high": 0, "low": 0, "volume": 1000.0})
+        df = pd.DataFrame(
+            {"close": _series(400), "open": 0, "high": 0, "low": 0, "volume": 1000.0}
+        )
         return {"SPY": df}
     monkeypatch.setattr(cli_mod, "load_universe_v2", fake_loader)
     runner = CliRunner()

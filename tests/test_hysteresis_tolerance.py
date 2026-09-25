@@ -19,7 +19,10 @@ class AlwaysLong(Strategy):
 def _mk(len_days: int = 60) -> dict[str, pd.DataFrame]:
     idx = pd.bdate_range("2024-01-01", periods=len_days)
     px = pd.Series(100.0 + 0.1 * np.arange(len_days), index=idx).astype(float)
-    df = pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
+    df = pd.DataFrame(
+        {"open": px, "high": px, "low": px, "close": px, "volume": 1000.0},
+        index=idx,
+    )
     return {"SPY": df}
 
 

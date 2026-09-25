@@ -9,9 +9,15 @@ from ibtrader.strategy.sma_crossover import SMACrossover
 def test_naive_same_bar_vs_next_open_diff() -> None:
     # Build simple price series
     idx = pd.bdate_range("2024-01-01", periods=120)
-    close = pd.Series(100.0 + (np.sin(np.linspace(0, 10, len(idx))) * 2.0) + 0.1 * np.arange(len(idx)), index=idx).astype(float)
+    close = pd.Series(
+        100.0 + (np.sin(np.linspace(0, 10, len(idx))) * 2.0) + 0.1 * np.arange(len(idx)),
+        index=idx,
+    ).astype(float)
     open_px = close.copy()
-    df = pd.DataFrame({"open": open_px, "high": close, "low": close, "close": close, "volume": 1000.0}, index=idx)
+    df = pd.DataFrame(
+        {"open": open_px, "high": close, "low": close, "close": close, "volume": 1000.0},
+        index=idx,
+    )
     base = SMACrossover(5, 20, allow_short=True)
     sig = base.generate_signals({"SPY": df})["SPY"].reindex(idx).fillna(0)
     # Proper next-open returns

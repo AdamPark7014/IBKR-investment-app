@@ -13,7 +13,10 @@ def test_rebalance_band_pct_out_of_range_raises() -> None:
     import pandas as pd
     idx = pd.bdate_range("2024-01-01", periods=30)
     px = pd.Series(100.0 + range(30), index=idx).astype(float)
-    df = pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
+    df = pd.DataFrame(
+        {"open": px, "high": px, "low": px, "close": px, "volume": 1000.0},
+        index=idx,
+    )
     with pytest.raises(ValueError):
         backtest({"SPY": df}, SMACrossover(5, 10, False), CommissionConfig(), SlippageConfig(), rebalance_band_pct=1.2)
 
