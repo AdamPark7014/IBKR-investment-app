@@ -71,13 +71,31 @@ def test_killswitch_flatten_vs_block_new_only(monkeypatch: pytest.MonkeyPatch, t
     ks.write_text("HALT", encoding="utf-8")
     rcfg_flat = RiskConfig(killswitch_file=str(ks), emergency_flatten_on_kill=True, killswitch_action="flatten")
     rm_flat = RiskManager(rcfg_flat, RiskState(starting_equity_today=100_000.0))
-    res_flat = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm_flat)
+    res_flat = backtest(
+        {"SPY": df},
+        AlwaysLong(),
+        CommissionConfig(),
+        SlippageConfig(),
+        direction="long_only",
+        risk_manager=rm_flat,
+    )
     # No opens (vetoed) but if any position existed it would be flattened; start flat => 0 trades
     assert all(int(q) <= 0 for *_, q, _ in res_flat.trades)
     # Case 2: killswitch_action=block_new_only -> no forced flatten, but new opens still blocked
     os.remove(ks)
-    rcfg_block = RiskConfig(killswitch_file=str(ks), emergency_flatten_on_kill=False, killswitch_action="block_new_only")
+    rcfg_block = RiskConfig(
+        killswitch_file=str(ks),
+        emergency_flatten_on_kill=False,
+        killswitch_action="block_new_only",
+    )
     rm_block = RiskManager(rcfg_block, RiskState(starting_equity_today=100_000.0))
     ks.write_text("HALT", encoding="utf-8")
-    res_block = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm_block)
+    res_block = backtest(
+        {"SPY": df},
+        AlwaysLong(),
+        CommissionConfig(),
+        SlippageConfig(),
+        direction="long_only",
+        risk_manager=rm_block,
+    )
     assert len(res_block.trades) == 0
