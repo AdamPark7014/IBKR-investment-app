@@ -27,6 +27,18 @@ from .artifacts import save_run_artifact
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
 
+def _sanitize(obj: Any) -> Any:
+    import math as _math
+    if isinstance(obj, float):
+        if _math.isnan(obj) or _math.isinf(obj):
+            return 0.0
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
 KNOWN_TRADING_VARS = {
     "TRADING__ALLOW_SHORT",
     "TRADING__REBALANCE_BAND_PCT",
@@ -650,7 +662,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     except Exception:
         susp = []
     rprint(
-        {
+        _sanitize({
             "symbol": sym,
             "best_params": {"fast": wf.params[0], "slow": wf.params[1]},
             "in_sample": wf.train_stats,
@@ -662,7 +674,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
             "tried_param_count": summary.get("tried_param_count"),
             "suspicious": [f"{f.code}:{f.reason}" for f in susp],
             "artifact": art_path,
-        }
+        })
     )
 
 if __name__ == "__main__":

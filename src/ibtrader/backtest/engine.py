@@ -83,6 +83,9 @@ def backtest(
     loss_trades = 0
     # Per-run cooldown (no cross-run contamination)
     cooldown_until: Dict[str, int] = {}
+    # Pending forced exits (stop-on-touch semantics): if a stop is breached intra-bar (e.g., gap at open),
+    # schedule a forced close on the next bar regardless of subsequent price recovery
+    pending_forced_exit: Dict[str, bool] = {sym: False for sym in data}
     for i, dt in enumerate(all_dates):
         if i == 0:
             # No execution possible on first bar; mark-to-market at close
@@ -160,6 +163,42 @@ def backtest(
             if price is None:
                 continue
             pos = holdings.get(sym, 0)
+            # Handle a previously scheduled forced exit immediately at the open, before anything else
+            if risk_manager is not None and pending_forced_exit.get(sym, False) and pos != 0:
+                side_exit = -1 if pos > 0 else 1
+                fill_exit = _slip(slippage_cfg, price, side_exit)
+                comm_exit = _commission(commission_cfg, -pos, fill_exit)
+                cash -= (-pos) * fill_exit + comm_exit
+                turnover_notional += abs(pos) * fill_exit
+                total_commission += comm_exit
+                # Book realized P&L for full close
+                reduce_qty = abs(pos)
+                pnl = (
+                    reduce_qty * (fill_exit - avg_price[sym]) - comm_exit
+                    if pos > 0
+                    else reduce_qty * (avg_price[sym] - fill_exit) - comm_exit
+                )
+                cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) + pnl
+                total_trade_pnl = cur_trade_pnl.get(sym, 0.0)
+                realized_pnl += total_trade_pnl
+                if total_trade_pnl > 0:
+                    realized_wins += total_trade_pnl
+                    win_trades += 1
+                elif total_trade_pnl < 0:
+                    realized_losses += -total_trade_pnl
+                    loss_trades += 1
+                realized_trades += 1
+                cur_trade_pnl[sym] = 0.0
+                avg_price[sym] = 0.0
+                holdings[sym] = 0
+                pending_forced_exit[sym] = False
+                trades.append((str(dt), sym, int(-pos), float(fill_exit)))
+                last_targets[sym] = 0
+                # Enter cooldown if configured
+                if risk_manager.cfg.cooldown_bars > 0:
+                    cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
+                # Do not attempt any other action on this symbol today
+                continue
             # Forced exits (stop/emergency) must run even if target==pos
             force_close = False
             is_emergency = False
@@ -177,14 +216,21 @@ def backtest(
                     pass
                 # Per-position stop loss
                 stop_pct = float(risk_manager.cfg.stop_loss_per_position_pct or 0.0)
-                if stop_pct > 0.0 and pos != 0 and avg_price.get(sym, 0.0) > 0.0:
-                    thresh = (
-                        avg_price[sym] * (1 - stop_pct / 100.0)
-                        if pos > 0
-                        else avg_price[sym] * (1 + stop_pct / 100.0)
-                    )
-                    if (pos > 0 and price <= thresh) or (pos < 0 and price >= thresh):
+                if stop_pct > 0.0:
+                    # Stop-on-touch semantics:
+                    # - If already holding, compare current open vs average price threshold
+                    if pos != 0 and avg_price.get(sym, 0.0) > 0.0:
+                        thresh = (
+                            avg_price[sym] * (1 - stop_pct / 100.0)
+                            if pos > 0
+                            else avg_price[sym] * (1 + stop_pct / 100.0)
+                        )
+                        if (pos > 0 and price <= thresh) or (pos < 0 and price >= thresh):
+                            force_close = True
+                    # - If a stop breach was recorded previously (e.g., gap at prior open), enforce close now
+                    if not force_close and pending_forced_exit.get(sym, False) and pos != 0:
                         force_close = True
+                        pending_forced_exit[sym] = False
             if force_close:
                 target = 0
             delta = target - pos
@@ -357,6 +403,20 @@ def backtest(
                         else fill_price
                     )
                 cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) - commission
+                # If we just opened a new position and a large gap vs yesterday's close breached the
+                # stop threshold, schedule a forced close for the next bar (stop-on-touch)
+                if (
+                    risk_manager is not None
+                    and float(risk_manager.cfg.stop_loss_per_position_pct or 0.0) > 0.0
+                    and pos == 0
+                    and new_qty != 0
+                ):
+                    prev_close = float(close_prev.get(sym, price))
+                    gap_drop = (prev_close - price) / prev_close if prev_close > 0 else 0.0
+                    gap_rise = (price - prev_close) / prev_close if prev_close > 0 else 0.0
+                    stop_frac = float(risk_manager.cfg.stop_loss_per_position_pct) / 100.0
+                    if (new_qty > 0 and gap_drop >= stop_frac) or (new_qty < 0 and gap_rise >= stop_frac):
+                        pending_forced_exit[sym] = True
             else:
                 reduce_qty = min(abs(delta), abs(pos))
                 if pos > 0 and delta < 0:
