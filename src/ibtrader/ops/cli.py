@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Optional, cast
+from types import SimpleNamespace as _SN
 
 import numpy as np
+import pandas as _pd
 import typer
 from rich import print as rprint
 
@@ -560,9 +562,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     from datetime import datetime as _dt
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     # Build a BacktestResult-compatible object from stitched OOS series and trades across folds
-    from types import SimpleNamespace as _SN
-    import pandas as _pd
-    from ..backtest.metrics import compute_stats as _cs_bt
+    # imports moved to module scope to satisfy linting
     # Stitched OOS equity curve
     eq_pairs = summary.get("stitched_oos_equity") or []
     eq_series = (
@@ -584,7 +584,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     # Compute stitched stats if available
     if len(eq_series) > 1:
         rets = eq_series.pct_change().fillna(0.0)
-        stats_obj = _cs_bt(eq_series, rets)
+        stats_obj = compute_stats(eq_series, rets)
         trade_count = int(summary.get("oos_total_trades", 0) or 0)
         total_commission = float(summary.get("oos_commission_approx", 0.0) or 0.0)
         stats_obj.trade_count = trade_count
