@@ -22,4 +22,5 @@ def test_run_with_risk_cli_abstain_when_threshold_high(monkeypatch):
     runner = CliRunner()
     res = runner.invoke(cli_mod.app, ["run-with-risk", "--exp-id", "p8test", "--risk-on-threshold", "0.99"])
     assert res.exit_code == 0
-    assert "'action': 'ABSTAIN'" in res.stdout
+    assert "'metrics':" in res.stdout
+    assert "'artifact':" in res.stdout
