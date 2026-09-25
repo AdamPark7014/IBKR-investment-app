@@ -247,6 +247,9 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
             idxs = list(feats_all.index)
             for i in range(len(idxs)):
                 tr_idx = idxs[: i + 1]
+                if len(tr_idx) < 60:
+                    probs.append(0.0)
+                    continue
                 model, _ = fit_gmm_regime(bench_close.reindex(tr_idx), n_components=2, train_slice=slice(None))
                 p = model.predict_proba(feats_all.iloc[[i]])
                 probs.append(float(p[0, model.risk_on_label]))
