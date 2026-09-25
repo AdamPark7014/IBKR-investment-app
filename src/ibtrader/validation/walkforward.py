@@ -270,7 +270,7 @@ def walk_forward_sma(
     oos_commission = 0.0
     if folds_detail:
         for fd in folds_detail:
-            cc = settings.commission  # type: ignore[assignment]
+            cc = settings.commission
             # We only have qty and price; recompute commission per trade
             for tr in fd["oos_trades"]:
                 per_sh = cc.per_share * abs(int(tr["qty"]))

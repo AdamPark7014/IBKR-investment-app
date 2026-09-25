@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Any
 from typing import cast as _cast
 
 import numpy as np
@@ -612,10 +612,13 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
             eq_series = _pd.Series({_pd.Timestamp(t): v for t, v in eq_pairs}).sort_index()
         else:
             eq_series = _pd.Series(dtype=float)
+        stats: Any
         if len(eq_series) > 1:
             stats = compute_stats(eq_series, eq_series.pct_change().fillna(0.0))
         else:
-            stats = _SN(
+            stats = _cast(
+                Any,
+                _SN(
                 cagr=0.0,
                 sharpe=0.0,
                 sortino=0.0,
@@ -635,6 +638,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
                 cvar_95=0.0,
                 current_underwater_days=0,
                 max_underwater_days=0,
+                ),
             )
         from ..backtest.engine import BacktestResult as _BT
         br = _BT(eq_series, eq_series.pct_change().fillna(0.0), {}, [], stats)
