@@ -16,4 +16,5 @@ htmlcov/
 data/cache/
 data/journal.sqlite
 reports/
+data/KILL_SWITCH
 

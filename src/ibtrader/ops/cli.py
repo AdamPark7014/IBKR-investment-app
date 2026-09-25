@@ -510,6 +510,13 @@ def run_with_risk(
         f"risk_{run_id}",
         extra={"risk_on_threshold": thr},
     )
+    # Suspicious diagnostics
+    lineage_sources = {}
+    for symb in s.universe.symbols:
+        meta = load_lineage(s.data.cache_dir, symb, s.engine.bar_size)
+        if meta is not None:
+            lineage_sources[symb] = meta.source or ""
+    susp = diagnose_suspicious(res, data, lineage_sources=lineage_sources)
     rprint(
         {
             "symbol": sym,
@@ -522,6 +529,7 @@ def run_with_risk(
                 "trade_count": res.stats.trade_count,
                 "fees": res.stats.total_commission,
             },
+            "suspicious": [f"{f.code}:{f.reason}" for f in susp],
             "artifact": art_path,
         }
     )
@@ -587,6 +595,12 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
         f"wf_{run_id}",
         extra={"walk_forward": summary},
     )
+    # Suspicious diagnostics using stitched series (best-effort via last fold)
+    lineage_sources = {}
+    for symb in s.universe.symbols:
+        meta = load_lineage(s.data.cache_dir, symb, s.engine.bar_size)
+        if meta is not None:
+            lineage_sources[symb] = meta.source or ""
     rprint(
         {
             "symbol": sym,

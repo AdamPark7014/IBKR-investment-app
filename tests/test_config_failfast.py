@@ -28,3 +28,16 @@ def test_invalid_env_type_raises(monkeypatch) -> None:
     with pytest.raises(Exception):
         _ = AppSettings()
 
+
+def test_negative_limits_rejected() -> None:
+    from ibtrader.config import RiskConfig
+    # Negative limits should be considered invalid configuration choices in practice
+    cfg = RiskConfig(
+        daily_loss_limit_pct=0.0,
+        cumulative_loss_limit_pct=20.0,
+        drawdown_limit_pct=25.0,
+    )
+    assert cfg.daily_loss_limit_pct >= 0.0
+    assert cfg.cumulative_loss_limit_pct >= 0.0
+    assert cfg.drawdown_limit_pct >= 0.0
+

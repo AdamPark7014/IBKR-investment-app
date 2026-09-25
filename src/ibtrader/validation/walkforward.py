@@ -48,7 +48,7 @@ def walk_forward_sma(
     warmup_bars: int = 100,
 ) -> Tuple[WFResult, dict]:
     if param_grid is None:
-        param_grid = [(5, 20), (10, 30), (20, 50), (50, 200)]
+        param_grid = [(3, 10), (5, 20), (10, 30), (20, 50), (50, 200)]
     df = data[symbol]
     n = len(df)
     idx = list(df.index)

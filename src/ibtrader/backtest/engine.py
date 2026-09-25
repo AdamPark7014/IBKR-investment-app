@@ -141,7 +141,9 @@ def backtest(
                     rets = hist_series.pct_change().fillna(0.0)
                     vt = volatility_target_weight(rets, target_vol_annual=target_vol_annual)
                 w = base_alloc * vt * (1 if raw_sign[sym] > 0 else -1)
-                qty = int(nav_prev * abs(w) / open_now[sym])
+                # Compute against slippage-adjusted estimated fill to avoid oversizing
+                est_fill = _slip(slippage_cfg, open_now[sym], 1 if w >= 0 else -1)
+                qty = int(nav_prev * abs(w) / est_fill) if est_fill > 0 else 0
                 proposed = qty if w >= 0 else -qty
                 # Only trade on signal changes, or when drift exceeds band (if configured)
                 prev_target = last_targets.get(sym, 0)
@@ -150,12 +152,58 @@ def backtest(
                     proposed = prev_target
                 targets[sym] = proposed
         # Execute at today's open
+        # Cooldown tracking: symbol -> bar index threshold to allow reopen
+        if not hasattr(backtest, "_cooldown_until"):
+            setattr(backtest, "_cooldown_until", {})
+        cooldown_until = getattr(backtest, "_cooldown_until")
         for sym, target in targets.items():
             price = open_now.get(sym)
             if price is None:
                 continue
             pos = holdings.get(sym, 0)
+            # Forced exits (stop/emergency) must run even if target==pos
+            force_close = False
+            is_emergency = False
+            if risk_manager is not None:
+                # Emergency flatten via killswitch if configured (apply only when holding)
+                try:
+                    import os as _os
+                    if (
+                        risk_manager.cfg.emergency_flatten_on_kill
+                        and _os.path.exists(risk_manager.cfg.killswitch_file)
+                        and pos != 0
+                    ):
+                        force_close = True
+                        is_emergency = True
+                except Exception:
+                    pass
+                # Per-position stop loss
+                stop_pct = float(risk_manager.cfg.stop_loss_per_position_pct or 0.0)
+                if stop_pct > 0.0 and pos != 0 and avg_price.get(sym, 0.0) > 0.0:
+                    thresh = (
+                        avg_price[sym] * (1 - stop_pct / 100.0)
+                        if pos > 0
+                        else avg_price[sym] * (1 + stop_pct / 100.0)
+                    )
+                    if (pos > 0 and price <= thresh) or (pos < 0 and price >= thresh):
+                        force_close = True
+            if force_close:
+                target = 0
             delta = target - pos
+            # After forced exit, respect cooldown before reopening
+            # Set cooldown on forced exit
+            if force_close and risk_manager is not None and risk_manager.cfg.cooldown_bars > 0:
+                cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars)
+            # Enforce cooldown gating for new opens
+            if (
+                pos == 0
+                and delta != 0
+                and sym in cooldown_until
+                and isinstance(cooldown_until[sym], int)
+                and i < int(cooldown_until[sym])
+            ):
+                delta = 0
+                target = 0
             if delta == 0:
                 continue
             if pos != 0 and rebalance_band_pct > 0:
@@ -163,6 +211,7 @@ def backtest(
                 if rel_change < rebalance_band_pct:
                     continue
             side = 1 if delta > 0 else -1
+            # Use slippage-adjusted estimate for sizing checks
             fill_price = _slip(slippage_cfg, price, side)
             commission = _commission(commission_cfg, delta, fill_price)
             if ((benefit_bps > 0.0) or (risk_cost_bps > 0.0)) and (pos != 0) and (target != 0) and (pos * target > 0):
@@ -179,42 +228,41 @@ def backtest(
                         total_cost,
                     )
                     continue
-            # Evaluate stop-loss / emergency flatten
-            force_close = False
-            is_emergency = False
-            if risk_manager is not None:
-                # Emergency flatten via killswitch if configured
-                try:
-                    import os as _os
-                    if risk_manager.cfg.emergency_flatten_on_kill and _os.path.exists(risk_manager.cfg.killswitch_file):
-                        # killswitch active -> allow emergency close
-                        force_close = pos != 0
-                        is_emergency = True
-                except Exception:
-                    pass
-                # Per-position stop loss
-                stop_pct = float(risk_manager.cfg.stop_loss_per_position_pct or 0.0)
-                if stop_pct > 0.0 and pos != 0 and avg_price.get(sym, 0.0) > 0.0:
-                    thresh = (
-                        avg_price[sym] * (1 - stop_pct / 100.0)
-                        if pos > 0
-                        else avg_price[sym] * (1 + stop_pct / 100.0)
-                    )
-                    if (pos > 0 and price <= thresh) or (pos < 0 and price >= thresh):
-                        force_close = True
-            # If forced close due to stop/emergency, override target
-            if force_close:
-                target = 0
-                delta = -pos
-                side = 1 if delta > 0 else -1
-                fill_price = _slip(slippage_cfg, price, side)
-                commission = _commission(commission_cfg, delta, fill_price)
             # Risk manager veto (optional) with flip handling
             if risk_manager is not None:
                 eq_prev = nav_prev
                 cur_pos_val = sum(holdings[s] * close_prev.get(s, 0.0) for s in holdings)
                 # Detect flip
                 is_flip = pos != 0 and target != 0 and (pos > 0 > target or pos < 0 < target)
+                # If forced close, bypass risk checks for the close leg (always allowed)
+                if force_close and pos != 0:
+                    dclose = -pos
+                    dfill = _slip(slippage_cfg, price, (1 if dclose > 0 else -1))
+                    dcomm = _commission(commission_cfg, dclose, dfill)
+                    cash -= dclose * dfill + dcomm
+                    holdings[sym] = 0
+                    turnover_notional += abs(dclose) * dfill
+                    total_commission += dcomm
+                    reduce_qty = abs(pos)
+                    pnl = (dfill - avg_price[sym]) * reduce_qty if pos > 0 else (avg_price[sym] - dfill) * reduce_qty
+                    pnl -= dcomm
+                    cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) + pnl
+                    total_trade_pnl = cur_trade_pnl.get(sym, 0.0)
+                    realized_pnl += total_trade_pnl
+                    if total_trade_pnl > 0:
+                        realized_wins += total_trade_pnl
+                        win_trades += 1
+                    elif total_trade_pnl < 0:
+                        realized_losses += -total_trade_pnl
+                        loss_trades += 1
+                    realized_trades += 1
+                    cur_trade_pnl[sym] = 0.0
+                    avg_price[sym] = 0.0
+                    trades.append((str(dt), sym, int(dclose), float(dfill)))
+                    last_targets[sym] = 0
+                    if risk_manager is not None:
+                        risk_manager.notify_order_sent()
+                    continue
                 if is_flip:
                     # Try full flip first
                     ok, msg = risk_manager.approve_order(
@@ -246,6 +294,26 @@ def backtest(
                             holdings[sym] = 0
                             turnover_notional += abs(delta_close) * dfill
                             total_commission += dcomm
+                            # Bookkeeping for realized P&L on full close
+                            reduce_qty = min(abs(delta_close), abs(pos))
+                            if pos > 0 and delta_close < 0:
+                                pnl = reduce_qty * (dfill - avg_price[sym]) - dcomm
+                            elif pos < 0 and delta_close > 0:
+                                pnl = reduce_qty * (avg_price[sym] - dfill) - dcomm
+                            else:
+                                pnl = 0.0
+                            cur_trade_pnl[sym] = cur_trade_pnl.get(sym, 0.0) + pnl
+                            total_trade_pnl = cur_trade_pnl.get(sym, 0.0)
+                            realized_pnl += total_trade_pnl
+                            if total_trade_pnl > 0:
+                                realized_wins += total_trade_pnl
+                                win_trades += 1
+                            elif total_trade_pnl < 0:
+                                realized_losses += -total_trade_pnl
+                                loss_trades += 1
+                            realized_trades += 1
+                            cur_trade_pnl[sym] = 0.0
+                            avg_price[sym] = 0.0
                             trades.append((str(dt), sym, int(delta_close), float(dfill)))
                             last_targets[sym] = 0
                             if risk_manager is not None:

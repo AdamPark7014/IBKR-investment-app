@@ -26,11 +26,7 @@ def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
         fac = prov_map.get(name.lower())
         if fac is not None:
             provider_chain.append((name.lower(), fac()))
-    # Lower gate for fixtures to accommodate smaller synthetic datasets
-    gate_min = min(252, settings.engine.history_days)
-    if "fixture" in [n.lower() for n in settings.data.providers]:
-        gate_min = min(gate_min, 200)
-    gate = DataQualityGate(min_rows=gate_min)
+    gate = DataQualityGate(min_rows=min(252, settings.engine.history_days))
     out: Dict[str, pd.DataFrame] = {}
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=settings.engine.history_days)

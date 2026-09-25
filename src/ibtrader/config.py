@@ -32,6 +32,7 @@ class RiskConfig(BaseModel):
     emergency_flatten_on_kill: bool = Field(
         True, description="If killswitch is active, force emergency flatten at next open"
     )
+    cooldown_bars: int = Field(0, description="After a forced exit, bars to wait before reopening")
 
 
 class CommissionConfig(BaseModel):
