@@ -293,6 +293,20 @@ def backtest(
                             target = pos
                 except Exception:
                     pass
+            # Hard gate: if drawdown restriction is active, block exposure-increasing orders
+            if risk_manager is not None and delta != 0:
+                try:
+                    # Evaluate drawdown at open-equity
+                    eq_open_now = cash + sum(holdings[s] * open_now.get(s, 0.0) for s in holdings)
+                    ok_dd, _ = risk_manager.check_drawdown(float(eq_open_now))
+                    exposure_increasing = (pos == 0 and delta != 0) or (
+                        pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))
+                    )
+                    if (not ok_dd) and exposure_increasing:
+                        delta = 0
+                        target = pos
+                except Exception:
+                    pass
             if delta == 0:
                 continue
             if pos != 0 and rebalance_band_pct > 0:
