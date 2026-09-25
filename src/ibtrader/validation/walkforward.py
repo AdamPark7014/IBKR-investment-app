@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, cast as _cast
+from typing import Any, Dict, List, Tuple
+from typing import cast as _cast
 
 import pandas as pd
 
