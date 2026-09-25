@@ -35,7 +35,9 @@ def test_drawdown_persistence_blocks_opens_across_days() -> None:
         risk_manager=rm,
     )
     # Expect either zero opens or an initial open followed by blocks; in any case, after breach, no increases/open
-    # Concretely assert no positive qty occurs after the second date (breach happens early)
+    # Concretely assert no positive position delta occurs after the second date (breach happens early)
     breach_day = idx[2]
-    assert all(not (pd.Timestamp(d) >= breach_day and int(q) > 0) for d, s, q, p, r in res.trades)
+    pos = res.positions["SPY"].astype(int)
+    dpos = pos.diff().fillna(0).astype(int)
+    assert all(not (pd.Timestamp(d) >= breach_day and int(dp) > 0) for d, dp in dpos.items())
 
