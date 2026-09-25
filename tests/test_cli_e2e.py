@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 import pandas as pd
-import typer
 from typer.testing import CliRunner
 
 import ibtrader.ops.cli as cli_mod
