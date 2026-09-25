@@ -5,8 +5,8 @@ from typing import Any, Optional, cast
 
 import numpy as np
 import pandas as _pd
-from rich import print as rprint
 import typer
+from rich import print as rprint
 
 from ..backtest.engine import backtest
 from ..backtest.metrics import compute_stats
