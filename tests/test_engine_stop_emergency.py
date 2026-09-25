@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -29,7 +28,14 @@ def test_engine_stop_loss_forces_exit_and_cooldown() -> None:
     df = _mk_prices_with_stop()
     rcfg = RiskConfig(stop_loss_per_position_pct=5.0, cooldown_bars=1, killswitch_file="./data/NO_KILL")
     rm = RiskManager(rcfg, RiskState(starting_equity_today=100_000.0))
-    res = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm)
+    res = backtest(
+        {"SPY": df},
+        AlwaysLong(),
+        CommissionConfig(),
+        SlippageConfig(),
+        direction="long_only",
+        risk_manager=rm,
+    )
     # Expect at least one negative delta (exit) due to stop on day 2
     assert any(int(q) < 0 for *_, q, _ in res.trades)
     # Position should be zero on stop day and next day due to cooldown
@@ -44,9 +50,21 @@ def test_engine_emergency_exit_flattens_and_blocks_reentry(tmp_path) -> None:
     df = pd.DataFrame({"open": px, "high": px, "low": px, "close": px, "volume": 1000.0}, index=idx)
     ks = Path(tmp_path) / "KILL_SWITCH"
     ks.write_text("HALT", encoding="utf-8")
-    rcfg = RiskConfig(killswitch_file=str(ks), emergency_flatten_on_kill=True, killswitch_action="flatten", cooldown_bars=2)
+    rcfg = RiskConfig(
+        killswitch_file=str(ks),
+        emergency_flatten_on_kill=True,
+        killswitch_action="flatten",
+        cooldown_bars=2,
+    )
     rm = RiskManager(rcfg, RiskState(starting_equity_today=100_000.0))
-    res = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm)
+    res = backtest(
+        {"SPY": df},
+        AlwaysLong(),
+        CommissionConfig(),
+        SlippageConfig(),
+        direction="long_only",
+        risk_manager=rm,
+    )
     # With kill active from start, opens are vetoed; ensure no positive qty trades
     assert all(int(q) <= 0 for *_, q, _ in res.trades)
     # Positions remain flat through the series

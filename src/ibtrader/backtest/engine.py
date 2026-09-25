@@ -169,7 +169,8 @@ def backtest(
                     import os as _os
                     if _os.path.exists(risk_manager.cfg.killswitch_file) and pos != 0:
                         # Behavior depends on configured killswitch action
-                        if getattr(risk_manager.cfg, "killswitch_action", "flatten") == "flatten" and risk_manager.cfg.emergency_flatten_on_kill:
+                        ks_action = getattr(risk_manager.cfg, "killswitch_action", "flatten")
+                        if ks_action == "flatten" and risk_manager.cfg.emergency_flatten_on_kill:
                             force_close = True
                             is_emergency = True
                 except Exception:
@@ -344,7 +345,8 @@ def backtest(
             if risk_manager is not None:
                 risk_manager.notify_order_sent()
             if force_close:
-                log.info("forced_exit reason=%s sym=%s qty=%s", "kill_switch" if is_emergency else "stop_loss", sym, int(delta))
+                reason = "kill_switch" if is_emergency else "stop_loss"
+                log.info("forced_exit reason=%s sym=%s qty=%s", reason, sym, int(delta))
             if pos == 0 or (pos > 0 and delta > 0) or (pos < 0 and delta < 0):
                 # Opening/increasing: update average and include entry commission in trade bucket
                 new_qty = pos + delta

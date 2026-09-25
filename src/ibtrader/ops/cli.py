@@ -608,8 +608,34 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
 
         import pandas as _pd
         eq_pairs = summary.get("stitched_oos_equity") or []
-        eq_series = _pd.Series({ _pd.Timestamp(t): v for t, v in eq_pairs}).sort_index() if eq_pairs else _pd.Series(dtype=float)
-        stats = compute_stats(eq_series, eq_series.pct_change().fillna(0.0)) if len(eq_series)>1 else _SN(cagr=0.0, sharpe=0.0, sortino=0.0, calmar=0.0, max_drawdown=0.0, win_rate=0.0, exposure=0.0, total_return=0.0, volatility=0.0, trade_count=summary.get("oos_total_trades",0), total_commission=summary.get("oos_commission_approx",0.0), turnover=0.0, win_rate_trades=0.0, profit_factor=0.0, expectancy=0.0, var_95=0.0, cvar_95=0.0, current_underwater_days=0, max_underwater_days=0)
+        if eq_pairs:
+            eq_series = _pd.Series({_pd.Timestamp(t): v for t, v in eq_pairs}).sort_index()
+        else:
+            eq_series = _pd.Series(dtype=float)
+        if len(eq_series) > 1:
+            stats = compute_stats(eq_series, eq_series.pct_change().fillna(0.0))
+        else:
+            stats = _SN(
+                cagr=0.0,
+                sharpe=0.0,
+                sortino=0.0,
+                calmar=0.0,
+                max_drawdown=0.0,
+                win_rate=0.0,
+                exposure=0.0,
+                total_return=0.0,
+                volatility=0.0,
+                trade_count=summary.get("oos_total_trades", 0),
+                total_commission=summary.get("oos_commission_approx", 0.0),
+                turnover=0.0,
+                win_rate_trades=0.0,
+                profit_factor=0.0,
+                expectancy=0.0,
+                var_95=0.0,
+                cvar_95=0.0,
+                current_underwater_days=0,
+                max_underwater_days=0,
+            )
         from ..backtest.engine import BacktestResult as _BT
         br = _BT(eq_series, eq_series.pct_change().fillna(0.0), {}, [], stats)
         lineage_sources = {}

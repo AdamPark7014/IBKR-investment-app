@@ -51,7 +51,12 @@ class RiskConfig(BaseModel):
             raise ValueError("Percent-like limits must be >= 0.")
         return v
 
-    @field_validator("daily_loss_limit_pct", "cumulative_loss_limit_pct", "drawdown_limit_pct", "stop_loss_per_position_pct")
+    @field_validator(
+        "daily_loss_limit_pct",
+        "cumulative_loss_limit_pct",
+        "drawdown_limit_pct",
+        "stop_loss_per_position_pct",
+    )
     @classmethod
     def _pct_le_100(cls, v: float) -> float:
         if v > 100.0:

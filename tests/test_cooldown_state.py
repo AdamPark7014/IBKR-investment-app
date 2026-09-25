@@ -32,7 +32,14 @@ def test_cooldown_off_by_one() -> None:
     df = _mk_with_stop_trigger(cooldown_after=2)
     rcfg = RiskConfig(stop_loss_per_position_pct=5.0, cooldown_bars=1)
     rm = RiskManager(rcfg, RiskState(starting_equity_today=100_000.0))
-    res = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm)
+    res = backtest(
+        {"SPY": df},
+        AlwaysLong(),
+        CommissionConfig(),
+        SlippageConfig(),
+        direction="long_only",
+        risk_manager=rm,
+    )
     # Extract positions per day to check re-entry timing
     pos = list(res.positions["SPY"].astype(int).values)
     # Day 1: enter > 0; Day 2: stop -> 0; Day 3: cooldown active -> still 0; Day 4+: allowed to re-enter
@@ -56,8 +63,22 @@ def test_two_backtests_in_one_process_are_identical() -> None:
     rcfg = RiskConfig(stop_loss_per_position_pct=0.0, cooldown_bars=0)
     rm1 = RiskManager(rcfg, RiskState(starting_equity_today=100_000.0))
     rm2 = RiskManager(rcfg, RiskState(starting_equity_today=100_000.0))
-    r1 = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm1)
-    r2 = backtest({"SPY": df}, AlwaysLong(), CommissionConfig(), SlippageConfig(), direction="long_only", risk_manager=rm2)
+    r1 = backtest(
+        {"SPY": df},
+        AlwaysLong(),
+        CommissionConfig(),
+        SlippageConfig(),
+        direction="long_only",
+        risk_manager=rm1,
+    )
+    r2 = backtest(
+        {"SPY": df},
+        AlwaysLong(),
+        CommissionConfig(),
+        SlippageConfig(),
+        direction="long_only",
+        risk_manager=rm2,
+    )
     assert list(r1.equity_curve.values) == list(r2.equity_curve.values)
     assert r1.stats.trade_count == r2.stats.trade_count
     assert r1.stats.total_commission == r2.stats.total_commission

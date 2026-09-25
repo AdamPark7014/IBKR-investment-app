@@ -270,11 +270,12 @@ def walk_forward_sma(
     oos_commission = 0.0
     if folds_detail:
         for fd in folds_detail:
-            td = [pd.Timestamp(t) for t, _ in fd["oos_equity"]]
             cc = settings.commission  # type: ignore[assignment]
             # We only have qty and price; recompute commission per trade
             for tr in fd["oos_trades"]:
-                oos_commission += float(max(cc.per_share * abs(int(tr["qty"])) + (cc.percent_of_value / 100.0) * abs(int(tr["qty"])) * float(tr["price"]), cc.min_per_order))
+                per_sh = cc.per_share * abs(int(tr["qty"]))
+                adv = (cc.percent_of_value / 100.0) * abs(int(tr["qty"])) * float(tr["price"])
+                oos_commission += float(max(per_sh + adv, cc.min_per_order))
     summary = {
         "buy_hold_oos": bh,
         "folds": folds_detail,
