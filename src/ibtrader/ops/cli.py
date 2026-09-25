@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Optional, cast
 from types import SimpleNamespace as _SN
+from typing import Any, Optional, cast
 
 import numpy as np
 import pandas as _pd
