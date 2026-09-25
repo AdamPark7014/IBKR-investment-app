@@ -19,7 +19,6 @@ from ..ops.status import status_summary
 from ..strategy.sma_crossover import SMACrossover
 from ..regime.gmm import fit_gmm_regime, build_regime_features
 from ..validation.signal import validate_sma_signal
-from ..risk.sizing import volatility_target_weight
 from ..validation.walkforward import walk_forward_sma
 from .artifacts import save_run_artifact
 from ..data.cache import load_lineage
