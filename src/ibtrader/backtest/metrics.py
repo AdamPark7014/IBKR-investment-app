@@ -45,9 +45,17 @@ def compute_stats(
     cagr = (1 + total_return) ** (periods_per_year / n_periods) - 1 if n_periods > 0 else 0.0
     vol = float(returns.std(ddof=0) * np.sqrt(periods_per_year))
     downside = returns[returns < 0]
-    downside_vol = float(downside.std(ddof=0) * np.sqrt(periods_per_year)) or 1e-9
-    sharpe = 0.0 if vol == 0 else float((returns.mean() * periods_per_year - rf) / vol)
-    sortino = float((returns.mean() * periods_per_year - rf) / downside_vol)
+    downside_vol = float(downside.std(ddof=0) * np.sqrt(periods_per_year)) if len(downside) else 0.0
+    # Undefined risk-adjusted ratios must stay NaN (not 0.0) so reporters can emit null.
+    _nan = float("nan")
+    if vol == 0.0 or not np.isfinite(vol):
+        sharpe = _nan
+    else:
+        sharpe = float((returns.mean() * periods_per_year - rf) / vol)
+    if len(downside) == 0 or downside_vol <= 0.0 or not np.isfinite(downside_vol):
+        sortino = _nan
+    else:
+        sortino = float((returns.mean() * periods_per_year - rf) / downside_vol)
     # drawdown
     roll_max = equity_curve.cummax()
     dd = equity_curve / roll_max - 1.0
@@ -74,8 +82,8 @@ def compute_stats(
     var_95 = float(np.percentile(returns.dropna().values, 5)) if len(returns.dropna()) else 0.0
     cvar_95 = float(returns[returns <= var_95].mean()) if len(returns.dropna()) else 0.0
     # calmar & recovery
-    calmar = float(cagr / abs(max_drawdown)) if max_drawdown < 0 else 0.0
-    recovery_factor = float(total_return / abs(max_drawdown)) if max_drawdown < 0 else 0.0
+    calmar = float(cagr / abs(max_drawdown)) if max_drawdown < 0 else _nan
+    recovery_factor = float(total_return / abs(max_drawdown)) if max_drawdown < 0 else _nan
     return PerformanceStats(
         cagr=float(cagr),
         sharpe=float(sharpe),

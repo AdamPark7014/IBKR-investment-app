@@ -12,7 +12,27 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from ..backtest.engine import BacktestResult
+from ..backtest.reasons import TradeReason
 from ..config import AppSettings
+
+
+def _coerce_reason(value: object) -> str:
+    return TradeReason.coerce(value)
+
+
+def _json_safe(obj: Any) -> Any:
+    """Recursively convert NaN/Inf floats to None for JSON null emission."""
+    import math
+
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    return obj
 
 
 def _hash_series(s: pd.Series) -> str:
@@ -137,7 +157,9 @@ def save_run_artifact(
                 "symbol": s,
                 "qty": int(q),
                 "price": float(p),
-                "reason": (reason if isinstance(reason, str) else "signal"),
+                # Dual keys for compatibility: reason (legacy) + exit_reason (spec §10)
+                "reason": _coerce_reason(reason),
+                "exit_reason": _coerce_reason(reason),
             }
             for d, s, q, p, reason in result.trades
         ],
@@ -145,7 +167,7 @@ def save_run_artifact(
             lambda items: {k: int(v) for k, v in items}
         )(
             __import__("collections").Counter(
-                [r if isinstance(r, str) else "signal" for *_, r in result.trades]
+                [_coerce_reason(r) for *_, r in result.trades]
             ).items()
         ),
         # Equity curve as pairs for reproducibility
@@ -159,6 +181,7 @@ def save_run_artifact(
         art["extra"] = extra
     out_path = os.path.join(out_dir, f"artifact_{exp_id}.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(art, f, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        # Convert NaN/Inf to null so flat-equity undefined ratios are honest
+        json.dump(_json_safe(art), f, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return out_path
 

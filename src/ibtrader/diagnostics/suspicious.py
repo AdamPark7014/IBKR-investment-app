@@ -54,17 +54,46 @@ def diagnose(
         for sym, src in lineage_sources.items():
             if str(src).lower() in {"fixture", "mock", "yahoo-mock"}:
                 flags.append(Suspicion("synthetic_source", f"Fuente sintética para {sym}: {src}"))
-    # Anomalous turnover normalized per year to avoid time-horizon bias
+    # Anomalous turnover: flag inconsistency with trade activity, not honest SMA churn.
+    # Annualized turnover alone fires on every normal SMA run; require turnover-per-trade
+    # that is absurd relative to equity (each fill contributing many× equity).
     try:
         n_days = int(len(result.equity_curve.index))
         years = max(n_days / 252.0, 1e-9)
-        turnover_per_year = float(stats.turnover) / years if stats.turnover is not None else 0.0
-        if turnover_per_year > 10.0:
-            msg = (
-                f"Turnover anualizado inusualmente alto: {turnover_per_year:.2f}x/año "
-                f"(total {stats.turnover:.2f}x en {n_days} días)"
+        turnover = float(stats.turnover) if stats.turnover is not None else 0.0
+        trade_count = int(stats.trade_count or 0)
+        turnover_per_year = turnover / years
+        trades_per_year = trade_count / years
+        if trade_count == 0 and turnover_per_year > 1.0:
+            flags.append(
+                Suspicion(
+                    "anomalous_turnover",
+                    f"Turnover anualizado {turnover_per_year:.2f}x/año con 0 trades",
+                )
             )
-            flags.append(Suspicion("anomalous_turnover", msg))
+        elif trade_count > 0:
+            # Expected: each fill contributes ~notional/equity ≪ multi-× on average
+            ratio = turnover_per_year / max(trades_per_year, 1e-9)
+            if ratio > 15.0 and turnover_per_year > 5.0:
+                msg = (
+                    f"Turnover inconsistente con actividad: {turnover_per_year:.2f}x/año "
+                    f"vs {trades_per_year:.1f} trades/año (ratio {ratio:.1f})"
+                )
+                flags.append(Suspicion("anomalous_turnover", msg))
+    except Exception:
+        pass
+    # Run spent most of its time flat/restricted (proxy: long horizon, tiny exposure)
+    try:
+        n_days = int(len(result.equity_curve.index))
+        exposure = float(getattr(stats, "exposure", 0.0) or 0.0)
+        if n_days >= 252 and exposure < 0.15 and int(stats.trade_count or 0) < 20:
+            flags.append(
+                Suspicion(
+                    "mostly_restricted_or_flat",
+                    f"Exposición {exposure:.1%} en {n_days} días con {stats.trade_count} trades "
+                    "(posible lock de riesgo o régimen flat prolongado)",
+                )
+            )
     except Exception:
         pass
     # Too few trades on long period

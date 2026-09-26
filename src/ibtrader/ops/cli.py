@@ -649,13 +649,20 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     import json as _json
     payload = {
         "symbol": sym,
+        # Never present a single fold as 'the' best; picks live under per_fold_params / folds
         "best_params": None,
-        "in_sample": wf.train_stats,
-        "validation": wf.val_stats,
-        "oos": wf.stitched_oos,
+        "per_fold_params": summary.get("per_fold_params"),
+        "in_sample": None,
+        "validation": None,
+        "oos": {
+            **(wf.stitched_oos or {}),
+            "commission": summary.get("oos_commission_approx"),
+            "total_commission": summary.get("oos_commission_approx"),
+        },
         "buy_hold_oos": summary.get("buy_hold_oos"),
         "folds": summary.get("folds"),
         "oos_total_trades": summary.get("oos_total_trades"),
+        "oos_commission_approx": summary.get("oos_commission_approx"),
         "tried_param_count": summary.get("tried_param_count"),
         "suspicious": [f"{f.code}:{f.reason}" for f in susp],
         "artifact": art_path,

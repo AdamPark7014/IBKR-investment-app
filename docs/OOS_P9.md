@@ -11,6 +11,7 @@ Resultados con el motor actual (v1.1, next‑open, multi‑fold WFO):
   - `ibtrader download-data`
   - `ibtrader walk-forward --exp-id p9_wf`
 - Este archivo se actualizará con los resultados por fold (fechas, parámetros elegidos, combos probados y métricas) y el agregado OOS vs B&H, todos fechados. (Pendiente de la corrida oficial en la PC del propietario.)
+- **NO hay cifras CAGR/Sharpe “actuales” aquí** hasta esa re-ejecución. Cualquier número abajo es histórico o v1.0.
 
 Números v1.0 (mismo-bar) — superados:
 - SMA 10/30 (long+short): OOS CAGR -12.4%, Sharpe -1.02
@@ -21,9 +22,15 @@ Estos provienen del motor v1.0 con ejecución “mismo bar”; se mantienen aqu�
 Conclusión honesta (a la fecha):
 - Con la evidencia disponible, no hay edge OOS robusto frente a B&H. La respuesta a §49 permanece: NO — INSUFFICIENT EVIDENCE.
 
-Resultados OOS históricos (v1.1, reportados en la R6 desde commit 4c4acb9; stitched 2024‑09‑23..2026‑09‑23; PENDIENTE de re-ejecutar en este head):
+### HISTÓRICO — NO USAR COMO RESULTADO ACTUAL
+Resultados OOS históricos (v1.1, reportados en la R6 desde commit `4c4acb9`; stitched 2024‑09‑23..2026‑09‑23; **NO reproducen en heads posteriores**; PENDIENTE de re-ejecutar):
 - Long only: CAGR 5.9%, Sharpe 0.74
 - Long+Short: CAGR 7.7%, Sharpe 0.93
 - Buy & Hold SPY: CAGR 16.2%, Sharpe 0.99
+
+Baseline owner-PC en `a54f7bd` (también histórico; re-run pendiente en el head final):
+- Long only: CAGR 4.8%, Sharpe 0.72, MaxDD -4.5%
+- Long+Short: CAGR 2.7%, Sharpe 0.35, MaxDD -9.4%
+- B&H: CAGR 16.5%, Sharpe 1.01, MaxDD -19.0%
 
 Estos números serán verificados y regenerados con `ibtrader walk-forward --exp-id p9_wf` sobre la máquina del propietario.

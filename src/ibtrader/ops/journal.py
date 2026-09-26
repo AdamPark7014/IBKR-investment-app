@@ -20,6 +20,7 @@ trades_table = Table(
     Column("price", Float, nullable=False),
     Column("commission", Float, default=0.0),
     Column("client_tag", String, nullable=True),
+    Column("exit_reason", String, nullable=True),
 )
 
 decisions_table = Table(
@@ -52,6 +53,7 @@ def record_trade(
     price: float,
     commission: float = 0.0,
     client_tag: Optional[str] = None,
+    exit_reason: Optional[str] = None,
 ) -> None:
     with engine.begin() as conn:
         stmt = insert(trades_table).values(
@@ -62,6 +64,7 @@ def record_trade(
             price=price,
             commission=commission,
             client_tag=client_tag,
+            exit_reason=exit_reason,
         )
         conn.execute(stmt)
 

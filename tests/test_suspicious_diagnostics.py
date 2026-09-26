@@ -21,7 +21,7 @@ def test_suspicious_flags_detect_extremes() -> None:
         exposure=1.0,
         total_return=eq.iloc[-1] / eq.iloc[0] - 1.0,
         volatility=0.5,
-        trade_count=10,
+        trade_count=1,  # low trades + huge turnover → inconsistent
         total_commission=0.0,
         turnover=25.0,
         win_rate_trades=1.0,

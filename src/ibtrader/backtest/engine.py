@@ -11,6 +11,7 @@ from ..risk.manager import RiskManager
 from ..risk.sizing import volatility_target_weight
 from ..strategy.base import Strategy
 from .metrics import PerformanceStats, compute_stats
+from .reasons import TradeReason
 
 log = setup_logging()
 
@@ -20,7 +21,7 @@ class BacktestResult:
     equity_curve: pd.Series
     returns: pd.Series
     positions: Dict[str, pd.Series]
-    # (date, symbol, qty, price, reason)
+    # (date, symbol, qty, price, exit_reason)
     trades: List[Tuple[str, str, int, float, str]]
     stats: PerformanceStats
 
@@ -193,7 +194,9 @@ def backtest(
                 avg_price[sym] = 0.0
                 holdings[sym] = 0
                 stop_scheduled[sym] = False
-                trades.append((str(dt), sym, int(-pos), float(fill_exit), "stop_loss"))
+                trades.append(
+                    (str(dt), sym, int(-pos), float(fill_exit), TradeReason.STOP_LOSS.value)
+                )
                 last_targets[sym] = 0
                 # Enter cooldown if configured
                 if risk_manager.cfg.cooldown_bars > 0:
@@ -233,7 +236,15 @@ def backtest(
                             avg_price[sym] = 0.0
                             holdings[sym] = 0
                             log.info("forced_exit reason=kill_switch sym=%s qty=%s", sym, int(-pos))
-                            trades.append((str(dt), sym, int(-pos), float(fill_exit), "kill_switch"))
+                            trades.append(
+                                (
+                                    str(dt),
+                                    sym,
+                                    int(-pos),
+                                    float(fill_exit),
+                                    TradeReason.KILL_SWITCH.value,
+                                )
+                            )
                             last_targets[sym] = 0
                             if risk_manager.cfg.cooldown_bars > 0:
                                 cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
@@ -370,7 +381,11 @@ def backtest(
                             sym,
                             int(dclose),
                             float(dfill),
-                            "kill_switch" if is_emergency else "stop_loss",
+                            (
+                                TradeReason.KILL_SWITCH.value
+                                if is_emergency
+                                else TradeReason.STOP_LOSS.value
+                            ),
                         )
                     )
                     last_targets[sym] = 0
@@ -428,7 +443,15 @@ def backtest(
                             realized_trades += 1
                             cur_trade_pnl[sym] = 0.0
                             avg_price[sym] = 0.0
-                            trades.append((str(dt), sym, int(delta_close), float(dfill), "flip_close_only"))
+                            trades.append(
+                                (
+                                    str(dt),
+                                    sym,
+                                    int(delta_close),
+                                    float(dfill),
+                                    TradeReason.FLIP_CLOSE_ONLY.value,
+                                )
+                            )
                             last_targets[sym] = 0
                             if risk_manager is not None:
                                 risk_manager.notify_order_sent()
@@ -514,7 +537,9 @@ def backtest(
                     avg_price[sym] = 0.0
                 elif (pos > 0 and new_pos < 0) or (pos < 0 and new_pos > 0):
                     avg_price[sym] = fill_price
-            trades.append((str(dt), sym, int(delta), float(fill_price), "signal"))
+            trades.append(
+                (str(dt), sym, int(delta), float(fill_price), TradeReason.SIGNAL.value)
+            )
             # Update last target after execution
             last_targets[sym] = target
         # Mark-to-market at today's close

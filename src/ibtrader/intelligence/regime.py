@@ -54,7 +54,7 @@ def detect_regime(
         vix = universe_data["^VIX"]
         risk_on = vix_risk_on_off(vix).reindex(breadth.index).ffill().fillna(0)
     else:
-        risk_on = pd.Series(1, index=breadth.index, dtype=int)  # fallback conservador
+        risk_on = pd.Series(0, index=breadth.index, dtype=int)  # no VIX → neutral (not risk-on)
     # Trend proxy: when rolling std of returns is rising and price above 100d MA => trend
     bench = universe.benchmark or "SPY"
     bench_df = universe_data.get(bench)
