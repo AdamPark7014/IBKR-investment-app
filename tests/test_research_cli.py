@@ -40,15 +40,22 @@ def test_research_run_cli_full_suite(monkeypatch, tmp_path):
     m = re.search(r"\{(.|\n)*\}$", res.stdout)
     assert m, res.stdout
     payload = json.loads(m.group(0))
-    # sma(3) + regime(2) + cost_ladder(3) + tsmom(3) + multi_asset(5) = 16
-    assert payload.get("n_candidates") == 16
-    assert payload.get("suite") == "sma+regime+cost_ladder+tsmom+embargo+pbo+multi_asset"
+    # sma(3)+regime(2)+cost(3)+tsmom(3)+mean_rev(2)+multi_asset(5) = 18
+    assert payload.get("n_candidates") == 18
+    assert "mean_reversion" in (payload.get("suite") or "")
+    assert "cpcv" in (payload.get("suite") or "")
+    assert "dsr" in (payload.get("suite") or "")
     assert "embargo_sensitivity" in payload
     assert "pbo" in payload
     assert payload["embargo_sensitivity"] is not None
     assert "pbo" in (payload.get("pbo") or {})
     assert payload.get("cross_section") is not None
     assert payload["cross_section"]["n_rows"] == 5
+    assert payload.get("cpcv") is not None
+    assert payload.get("dsr") is not None
+    assert payload.get("turnover") is not None
+    assert payload.get("honest_report") is not None
+    assert "verdict" in payload["honest_report"]
     assert len(payload.get("symbols") or []) == 5
     for c in payload["candidates"]:
         assert c.get("gate") in {"PASS", "FAIL"}
@@ -59,4 +66,4 @@ def test_research_run_cli_full_suite(monkeypatch, tmp_path):
     assert art.endswith("research_v3_research_smoke.json")
     with open(art, encoding="utf-8") as fh:
         on_disk = json.load(fh)
-    assert on_disk["n_candidates"] == 16
+    assert on_disk["n_candidates"] == 18

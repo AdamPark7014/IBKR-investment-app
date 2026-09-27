@@ -688,8 +688,8 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
 @app.command("research-run")
 def research_run(exp_id: Optional[str] = None) -> None:
     """
-    V3 research suite: SMA grid + regime + cost-ladder + TSMOM + multi-asset +
-    embargo/PBO diagnostics with OOS gates.
+    V3 research suite: SMA/regime/cost/TSMOM/mean-rev/multi-asset gated tracks
+    plus embargo, PBO, CPCV, DSR, turnover diagnostics and an honest report.
     Does not change production strategy defaults. Most candidates are expected to FAIL gates.
     """
     import json as _json
@@ -723,12 +723,13 @@ def research_run(exp_id: Optional[str] = None) -> None:
         save_experiment(registry_path, rec)
     n_pass = int(suite.get("n_pass") or 0)
     n_fail = int(suite.get("n_fail") or 0)
+    suite_label = "sma+regime+cost_ladder+tsmom+mean_reversion+embargo+pbo+" "multi_asset+cpcv+dsr+turnover"
     payload = {
         "exp_id": run_id,
         "symbol": sym,
         "symbols": list(s.universe.symbols),
         "phase": "V3-research",
-        "suite": "sma+regime+cost_ladder+tsmom+embargo+pbo+multi_asset",
+        "suite": suite_label,
         "n_candidates": int(suite.get("n_candidates") or len(results)),
         "n_pass": n_pass,
         "n_fail": n_fail,
@@ -736,6 +737,10 @@ def research_run(exp_id: Optional[str] = None) -> None:
         "embargo_sensitivity": suite.get("embargo_sensitivity"),
         "pbo": suite.get("pbo"),
         "cross_section": suite.get("cross_section"),
+        "cpcv": suite.get("cpcv"),
+        "dsr": suite.get("dsr"),
+        "turnover": suite.get("turnover"),
+        "honest_report": suite.get("honest_report"),
         "tracks": {
             k: [
                 {
@@ -747,7 +752,14 @@ def research_run(exp_id: Optional[str] = None) -> None:
                 }
                 for r in (suite.get("tracks") or {}).get(k) or []
             ]
-            for k in ("sma_grid", "sma_regime", "cost_ladder", "tsmom", "multi_asset")
+            for k in (
+                "sma_grid",
+                "sma_regime",
+                "cost_ladder",
+                "tsmom",
+                "mean_reversion",
+                "multi_asset",
+            )
         },
         "candidates": [
             {

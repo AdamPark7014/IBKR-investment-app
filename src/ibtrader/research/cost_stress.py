@@ -81,9 +81,7 @@ def summarize_cost_fragility(ladder_rows: List[Dict[str, Any]]) -> List[Dict[str
             entry["fail_at_mults"].append(m)
     out = []
     for entry in by_pair.values():
-        entry["fragile"] = bool(entry["pass_at_mults"]) and any(
-            m > 1.0 for m in entry["fail_at_mults"]
-        )
+        entry["fragile"] = bool(entry["pass_at_mults"]) and any(m > 1.0 for m in entry["fail_at_mults"])
         entry["robust_to_3x"] = 3.0 in entry["pass_at_mults"] or 3 in entry["pass_at_mults"]
         out.append(entry)
     return out

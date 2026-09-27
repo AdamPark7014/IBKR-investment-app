@@ -96,7 +96,7 @@ V3 success = **lab that can reject honestly**, plus any candidate that clears SP
 
 ---
 
-## 7. Next research slices (status)
+## 7. Research slices (status)
 
 | Slice | Status |
 |-------|--------|
@@ -104,6 +104,18 @@ V3 success = **lab that can reject honestly**, plus any candidate that clears SP
 | Embargo width sensitivity report | **DONE** — `research.embargo_sensitivity` |
 | Multi-asset universe (not only SPY) | **DONE** — `research.multi_asset` (SPY/QQQ/IWM/EFA/TLT) |
 | Time-series momentum candidate (TSMOM) | **DONE** — `strategy.tsmom` + `research.tsmom_runner` |
+| Mean-reversion (Bollinger) family | **DONE** — `research.mean_reversion_runner` |
 | PBO estimate across the logged trial grid | **DONE** — CSCV-lite `research.pbo` + `pbo_sma` |
+| CPCV-lite OOS Sharpe path distribution | **DONE** — `research.cpcv` + `cpcv_sma` |
+| Deflated Sharpe Ratio (DSR) | **DONE** — `research.dsr` + `dsr_sma` |
+| Turnover fragility diagnostic | **DONE** — `research.turnover_diag` |
+| Honest PASS/FAIL report aggregator | **DONE** — `research.report` → `honest_report` |
 
 Do not skip to “live large size” without paper evidence.
+
+### Phase-2 reading notes
+
+* **PBO** asks whether the *selected* trial underperforms peers OOS (selection risk).
+* **DSR** asks whether the selected Sharpe beats what multiple-testing luck alone would produce.
+* **CPCV-lite** asks whether OOS Sharpe is stable across combinatorial fold paths.
+* A candidate can PASS §3 gates and still be `PASS_GATES_BUT_DIAGNOSTICS_SKEPTICAL` in `honest_report`.

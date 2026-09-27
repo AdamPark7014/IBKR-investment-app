@@ -8,11 +8,16 @@ import pandas as pd
 
 from ..config import AppSettings
 from .cost_stress import run_cost_ladder_research, summarize_cost_fragility
+from .cpcv_sma import run_sma_cpcv
+from .dsr_sma import run_sma_grid_dsr
 from .embargo_sensitivity import run_embargo_sensitivity
+from .mean_reversion_runner import DEFAULT_MR_CANDIDATES, run_mean_reversion_research
 from .multi_asset import run_multi_asset_sma_research, summarize_cross_section
 from .pbo_sma import run_sma_grid_pbo
+from .report import build_honest_report
 from .runner import SMA_GRID_CANDIDATES, TREND_REGIME_CANDIDATES, run_sma_research, run_trend_regime_research
 from .tsmom_runner import DEFAULT_TSMOM_LOOKBACKS, run_tsmom_research
+from .turnover_diag import diagnose_turnover
 
 
 def run_research_suite(
@@ -27,8 +32,12 @@ def run_research_suite(
     include_embargo: bool = True,
     include_pbo: bool = True,
     include_multi_asset: bool = True,
+    include_mean_reversion: bool = True,
+    include_cpcv: bool = True,
+    include_dsr: bool = True,
+    include_turnover: bool = True,
 ) -> Dict[str, Any]:
-    """Run SMA grid + optional regime / cost / TSMOM / embargo / PBO / multi-asset tracks."""
+    """Run full V3 research tracks + institutional diagnostics."""
     direction = direction or settings.trading.direction
     sma = run_sma_research(
         settings,
@@ -71,6 +80,17 @@ def run_research_suite(
             n_folds=n_folds,
         )
 
+    mean_rev: List[Dict[str, Any]] = []
+    if include_mean_reversion:
+        mean_rev = run_mean_reversion_research(
+            settings,
+            data,
+            symbol,
+            candidates=DEFAULT_MR_CANDIDATES,
+            direction=direction,
+            n_folds=n_folds,
+        )
+
     embargo_report: Dict[str, Any] | None = None
     if include_embargo:
         embargo_report = run_embargo_sensitivity(
@@ -95,7 +115,6 @@ def run_research_suite(
     xasset: List[Dict[str, Any]] = []
     xasset_summary: Dict[str, Any] | None = None
     if include_multi_asset:
-        # Cross-section over every symbol present in ``data`` (caller controls load).
         xasset = run_multi_asset_sma_research(
             settings,
             data,
@@ -105,9 +124,37 @@ def run_research_suite(
         )
         xasset_summary = summarize_cross_section(xasset)
 
-    all_rows = list(sma) + list(regime) + list(ladder) + list(tsmom) + list(xasset)
+    cpcv_report: Dict[str, Any] | None = None
+    if include_cpcv:
+        cpcv_report = run_sma_cpcv(
+            settings,
+            data,
+            symbol,
+            fast=10,
+            slow=30,
+            direction=direction,
+            n_folds=max(6, n_folds * 2),
+        )
+
+    all_rows = list(sma) + list(regime) + list(ladder) + list(tsmom) + list(mean_rev) + list(xasset)
+
+    dsr_report: Dict[str, Any] | None = None
+    if include_dsr:
+        dsr_report = run_sma_grid_dsr(
+            settings,
+            data,
+            symbol,
+            precomputed=sma,
+            direction=direction,
+            n_folds=n_folds,
+        )
+
+    turnover_report: Dict[str, Any] | None = None
+    if include_turnover:
+        turnover_report = diagnose_turnover(all_rows)
+
     n_pass = sum(1 for r in all_rows if r.get("gate_passed"))
-    return {
+    out: Dict[str, Any] = {
         "symbol": symbol,
         "direction": direction,
         "tracks": {
@@ -115,15 +162,21 @@ def run_research_suite(
             "sma_regime": regime,
             "cost_ladder": ladder,
             "tsmom": tsmom,
+            "mean_reversion": mean_rev,
             "multi_asset": xasset,
         },
         "cost_fragility": fragility,
         "embargo_sensitivity": embargo_report,
         "pbo": pbo_report,
         "cross_section": xasset_summary,
+        "cpcv": cpcv_report,
+        "dsr": dsr_report,
+        "turnover": turnover_report,
         "candidates": all_rows,
         "n_candidates": len(all_rows),
         "n_pass": n_pass,
         "n_fail": len(all_rows) - n_pass,
         "any_gate_passed": n_pass > 0,
     }
+    out["honest_report"] = build_honest_report(out)
+    return out

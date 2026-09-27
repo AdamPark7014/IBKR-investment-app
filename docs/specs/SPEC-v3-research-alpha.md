@@ -57,16 +57,12 @@ Implement process, not mythology:
 * `docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md` — synthesis of institutional practices (sourced)
 * This SPEC
 
-### Code (minimum)
+### Code (phase-2 diagnostics — also on this branch)
 
-* `src/ibtrader/research/` package:
-  * experiment runner
-  * candidate registry
-  * OOS gate helpers
-* At least **two** research candidates beyond baseline SMA 10/30 (e.g. dual-SMA grid research report + trend+regime gated variant) evaluated via existing walk-forward / backtest APIs
-* CLI: `ibtrader research-run` (fixture-safe)
-* Tests for registry, gates, and CLI smoke
-* No committed `data/KILL_SWITCH`; no real-cache mutation
+* Deflated Sharpe Ratio (`research.dsr` / `dsr_sma`)
+* CPCV-lite OOS Sharpe path distribution (`research.cpcv` / `cpcv_sma`)
+* Mean-reversion research track (`research.mean_reversion_runner`)
+* Turnover fragility + honest report aggregator (`turnover_diag`, `report`)
 
 ### Gates to mark a candidate “interesting”
 

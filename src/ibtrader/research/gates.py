@@ -71,9 +71,7 @@ def evaluate_candidate_gates(
             checks["candidate_max_dd"] = cand_dd
             checks["bh_max_dd"] = bh_dd
             if not dd_ok:
-                reasons.append(
-                    f"max_dd {cand_dd:.4f} worse than B&H {bh_dd:.4f} by >5pp"
-                )
+                reasons.append(f"max_dd {cand_dd:.4f} worse than B&H {bh_dd:.4f} by >5pp")
     checks["dd_ok"] = dd_ok
 
     frac = float(restricted_bar_frac or 0.0)

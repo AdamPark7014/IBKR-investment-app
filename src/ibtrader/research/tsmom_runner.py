@@ -71,9 +71,7 @@ def run_tsmom_research(
                 commission_cfg=settings.commission,
                 slippage_cfg=settings.slippage,
                 direction=direction,
-                risk_manager=RiskManager(
-                    settings.risk, RiskState(starting_equity_today=initial_equity)
-                ),
+                risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=initial_equity)),
                 target_vol_annual=float(settings.risk.target_vol_annual),
             )
             test_dates = set(test_idx)
@@ -89,9 +87,7 @@ def run_tsmom_research(
             if len(eq) < 2:
                 continue
             rets = eq.pct_change().dropna()
-            stitched_rets = (
-                pd.concat([stitched_rets, rets]) if not stitched_rets.empty else rets.copy()
-            )
+            stitched_rets = pd.concat([stitched_rets, rets]) if not stitched_rets.empty else rets.copy()
         oos: Dict[str, Any] = {}
         if len(stitched_rets) > 0:
             chain = (1.0 + stitched_rets).cumprod() * initial_equity
@@ -133,12 +129,8 @@ def run_tsmom_research(
             bh_chain = (1.0 + bh_rets).cumprod() * initial_equity
             vol = float(bh_rets.std(ddof=0))
             bh = {
-                "cagr": float(
-                    (bh_chain.iloc[-1] / bh_chain.iloc[0]) ** (252 / max(len(bh_chain), 1)) - 1.0
-                ),
-                "sharpe": (
-                    float((bh_rets.mean() / vol) * (252 ** 0.5)) if vol > 0 else float("nan")
-                ),
+                "cagr": float((bh_chain.iloc[-1] / bh_chain.iloc[0]) ** (252 / max(len(bh_chain), 1)) - 1.0),
+                "sharpe": (float((bh_rets.mean() / vol) * (252**0.5)) if vol > 0 else float("nan")),
                 "max_dd": float((bh_chain / bh_chain.cummax() - 1.0).min()),
             }
 
