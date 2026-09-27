@@ -102,7 +102,7 @@ V3 success = **lab that can reject honestly**, plus any candidate that clears SP
 |-------|--------|
 | Cost-ladder stress (1× / 2× / 3× slippage) | **DONE** — `research.cost_stress` + suite track |
 | Embargo width sensitivity report | **DONE** — `research.embargo_sensitivity` |
-| Multi-asset universe (not only SPY) | pending |
+| Multi-asset universe (not only SPY) | **DONE** — `research.multi_asset` (SPY/QQQ/IWM/EFA/TLT) |
 | Time-series momentum candidate (TSMOM) | **DONE** — `strategy.tsmom` + `research.tsmom_runner` |
 | PBO estimate across the logged trial grid | **DONE** — CSCV-lite `research.pbo` + `pbo_sma` |
 

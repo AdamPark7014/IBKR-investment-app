@@ -25,7 +25,8 @@ def _mk(len_days: int = 600) -> pd.DataFrame:
 
 def test_research_run_cli_full_suite(monkeypatch, tmp_path):
     def fake_loader(settings):
-        return {"SPY": _mk()}
+        # Mirror whatever universe research-run requested (multi-asset expand).
+        return {sym: _mk() for sym in settings.universe.symbols}
 
     monkeypatch.setattr(cli_mod, "load_universe_v2", fake_loader)
     monkeypatch.setenv("RISK__MAX_POSITION_PCT", "100.0")
@@ -39,13 +40,16 @@ def test_research_run_cli_full_suite(monkeypatch, tmp_path):
     m = re.search(r"\{(.|\n)*\}$", res.stdout)
     assert m, res.stdout
     payload = json.loads(m.group(0))
-    # sma(3) + regime(2) + cost_ladder(3) + tsmom(3) = 11
-    assert payload.get("n_candidates") == 11
-    assert payload.get("suite") == "sma+regime+cost_ladder+tsmom+embargo+pbo"
+    # sma(3) + regime(2) + cost_ladder(3) + tsmom(3) + multi_asset(5) = 16
+    assert payload.get("n_candidates") == 16
+    assert payload.get("suite") == "sma+regime+cost_ladder+tsmom+embargo+pbo+multi_asset"
     assert "embargo_sensitivity" in payload
     assert "pbo" in payload
     assert payload["embargo_sensitivity"] is not None
     assert "pbo" in (payload.get("pbo") or {})
+    assert payload.get("cross_section") is not None
+    assert payload["cross_section"]["n_rows"] == 5
+    assert len(payload.get("symbols") or []) == 5
     for c in payload["candidates"]:
         assert c.get("gate") in {"PASS", "FAIL"}
         assert "gate_detail" in c
@@ -55,4 +59,4 @@ def test_research_run_cli_full_suite(monkeypatch, tmp_path):
     assert art.endswith("research_v3_research_smoke.json")
     with open(art, encoding="utf-8") as fh:
         on_disk = json.load(fh)
-    assert on_disk["n_candidates"] == 11
+    assert on_disk["n_candidates"] == 16

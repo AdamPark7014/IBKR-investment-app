@@ -9,6 +9,7 @@ import pandas as pd
 from ..config import AppSettings
 from .cost_stress import run_cost_ladder_research, summarize_cost_fragility
 from .embargo_sensitivity import run_embargo_sensitivity
+from .multi_asset import run_multi_asset_sma_research, summarize_cross_section
 from .pbo_sma import run_sma_grid_pbo
 from .runner import SMA_GRID_CANDIDATES, TREND_REGIME_CANDIDATES, run_sma_research, run_trend_regime_research
 from .tsmom_runner import DEFAULT_TSMOM_LOOKBACKS, run_tsmom_research
@@ -25,8 +26,9 @@ def run_research_suite(
     include_regime: bool = True,
     include_embargo: bool = True,
     include_pbo: bool = True,
+    include_multi_asset: bool = True,
 ) -> Dict[str, Any]:
-    """Run SMA grid + optional regime / cost-ladder / TSMOM / embargo / PBO tracks."""
+    """Run SMA grid + optional regime / cost / TSMOM / embargo / PBO / multi-asset tracks."""
     direction = direction or settings.trading.direction
     sma = run_sma_research(
         settings,
@@ -90,7 +92,20 @@ def run_research_suite(
             direction=direction,
         )
 
-    all_rows = list(sma) + list(regime) + list(ladder) + list(tsmom)
+    xasset: List[Dict[str, Any]] = []
+    xasset_summary: Dict[str, Any] | None = None
+    if include_multi_asset:
+        # Cross-section over every symbol present in ``data`` (caller controls load).
+        xasset = run_multi_asset_sma_research(
+            settings,
+            data,
+            symbols=list(data.keys()),
+            direction=direction,
+            n_folds=n_folds,
+        )
+        xasset_summary = summarize_cross_section(xasset)
+
+    all_rows = list(sma) + list(regime) + list(ladder) + list(tsmom) + list(xasset)
     n_pass = sum(1 for r in all_rows if r.get("gate_passed"))
     return {
         "symbol": symbol,
@@ -100,10 +115,12 @@ def run_research_suite(
             "sma_regime": regime,
             "cost_ladder": ladder,
             "tsmom": tsmom,
+            "multi_asset": xasset,
         },
         "cost_fragility": fragility,
         "embargo_sensitivity": embargo_report,
         "pbo": pbo_report,
+        "cross_section": xasset_summary,
         "candidates": all_rows,
         "n_candidates": len(all_rows),
         "n_pass": n_pass,

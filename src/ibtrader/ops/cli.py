@@ -30,8 +30,10 @@ from .artifacts import git_commit, save_run_artifact
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
 
+
 def _noneify(obj: Any) -> Any:
     import math as _math
+
     if isinstance(obj, float):
         if _math.isnan(obj) or _math.isinf(obj):
             return None
@@ -42,6 +44,7 @@ def _noneify(obj: Any) -> Any:
         return [_noneify(v) for v in obj]
     return obj
 
+
 KNOWN_TRADING_VARS = {
     "TRADING__ALLOW_SHORT",
     "TRADING__REBALANCE_BAND_PCT",
@@ -50,19 +53,16 @@ KNOWN_TRADING_VARS = {
     "TRADING__RISK_COST_BPS",
 }
 
+
 def warn_unknown_trading_env() -> None:
     import os as _os
 
-    unknown = [
-        k for k in _os.environ.keys() if k.startswith("TRADING__") and k not in KNOWN_TRADING_VARS
-    ]
+    unknown = [k for k in _os.environ.keys() if k.startswith("TRADING__") and k not in KNOWN_TRADING_VARS]
     if unknown:
         log.warning("unknown_trading_env_vars %s", unknown)
     # Warn loudly on deprecated ALLOW_SHORT usage
     if _os.environ.get("TRADING__ALLOW_SHORT", "").strip().lower() in {"true", "1", "yes"}:
-        log.warning(
-            "deprecated_trading_allow_short set=true; usa TRADING__DIRECTION=long_only|short_only|long_short"
-        )
+        log.warning("deprecated_trading_allow_short set=true; usa TRADING__DIRECTION=long_only|short_only|long_short")
 
 
 @app.command()
@@ -112,6 +112,7 @@ def backtest_sample(
     if with_risk:
         # Expanding fit per date (walk-forward regime probabilities)
         from ..regime.gmm import build_regime_features, fit_gmm_regime
+
         bench = s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0]
         bench_close = data[bench]["close"].astype(float)
         feats_all = build_regime_features(bench_close)
@@ -137,9 +138,7 @@ def backtest_sample(
         direction=s.trading.direction,
         risk_on=risk_on_series,
         risk_on_threshold=(
-            float(risk_on_threshold)
-            if risk_on_threshold is not None
-            else float(s.risk.risk_on_threshold)
+            float(risk_on_threshold) if risk_on_threshold is not None else float(s.risk.risk_on_threshold)
         ),
         target_vol_annual=float(s.risk.target_vol_annual),
     )
@@ -175,6 +174,7 @@ def backtest_sample(
     else:
         bh = None
     from datetime import datetime as _dt
+
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     out = save_equity_report(result, s.data.reports_dir, name=f"backtest_{run_id}")
     # Suspicious-performance diagnostics (pass lineage source)
@@ -215,9 +215,7 @@ def backtest_sample(
             "turnover": result.stats.turnover,
             "win_rate_trades": result.stats.win_rate_trades,
             "pnl_win_share": (
-                result.stats.profit_factor / (1 + result.stats.profit_factor)
-                if result.stats.profit_factor > 0
-                else 0.0
+                result.stats.profit_factor / (1 + result.stats.profit_factor) if result.stats.profit_factor > 0 else 0.0
             ),
             "profit_factor": result.stats.profit_factor,
             "expectancy": result.stats.expectancy,
@@ -264,11 +262,13 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
         strat = _DirectionWrapper(base, m)
         # Optional simple risk veto via flag env COMPARE_WITH_RISK (expanding WFO labeling)
         import os
+
         with_risk = os.environ.get("COMPARE_WITH_RISK", "").strip().lower() in {"1", "true", "yes"}
         risk_on_series = None
         rot = float(s.risk.risk_on_threshold)
         if with_risk:
             from ..regime.gmm import build_regime_features, fit_gmm_regime
+
             bench = s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0]
             bench_close = data[bench]["close"].astype(float)
             feats_all = build_regime_features(bench_close)
@@ -398,9 +398,11 @@ def regime_fit(symbol: Optional[str] = None, n_components: int = 2, exp_id: Opti
     bench = s.universe.benchmark if s.universe.benchmark in data else next(iter(data.keys()))
     model, rep = fit_gmm_regime(data[bench]["close"], n_components=n_components)
     from datetime import datetime as _dt
+
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     # Save CSV report
     import os
+
     out_csv = os.path.join(s.data.reports_dir, f"regime_{run_id}.csv")
     rep.to_csv(out_csv, index=True)
     # Summary
@@ -415,6 +417,7 @@ def regime_fit(symbol: Optional[str] = None, n_components: int = 2, exp_id: Opti
             "means": means,
         }
     )
+
 
 @app.command("signal-validate")
 def signal_validate(
@@ -459,6 +462,7 @@ def signal_validate(
         }
     )
 
+
 @app.command("run-with-risk")
 def run_with_risk(
     symbol: Optional[str] = None,
@@ -498,6 +502,7 @@ def run_with_risk(
         allow_short=True,
     )
     from ..backtest.engine import backtest as _bt
+
     thr = float(risk_on_threshold) if risk_on_threshold is not None else float(s.risk.risk_on_threshold)
     res = _bt(
         data=data,
@@ -512,6 +517,7 @@ def run_with_risk(
     )
     # Save artifact
     from datetime import datetime as _dt
+
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     art_path = save_run_artifact(
         res,
@@ -545,6 +551,7 @@ def run_with_risk(
         }
     )
 
+
 @app.command("walk-forward")
 def walk_forward(exp_id: Optional[str] = None) -> None:
     """
@@ -558,27 +565,28 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     wf, summary = walk_forward_sma(s, data, sym, direction=s.trading.direction)
     # Save stitched OOS artifact from the last fold's params applied to the last test span equity (already in wf/test)
     from datetime import datetime as _dt
+
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
     # Build a BacktestResult-compatible object from stitched OOS series and trades across folds
     # imports moved to module scope to satisfy linting
     # Stitched OOS equity curve
     eq_pairs = summary.get("stitched_oos_equity") or []
     eq_series = (
-        _pd.Series({_pd.Timestamp(t): v for t, v in eq_pairs}).sort_index()
-        if eq_pairs
-        else _pd.Series(dtype=float)
+        _pd.Series({_pd.Timestamp(t): v for t, v in eq_pairs}).sort_index() if eq_pairs else _pd.Series(dtype=float)
     )
     # Concatenate OOS trades across folds (already carry reason)
     oos_trades: list[tuple[str, str, int, float, str]] = []
     for fd in summary.get("folds", []) or []:
         for tr in fd.get("oos_trades", []):
-            oos_trades.append((
-                str(tr["date"]),
-                str(tr["symbol"]),
-                int(tr["qty"]),
-                float(tr["price"]),
-                str(tr.get("reason", "signal")),
-            ))
+            oos_trades.append(
+                (
+                    str(tr["date"]),
+                    str(tr["symbol"]),
+                    int(tr["qty"]),
+                    float(tr["price"]),
+                    str(tr.get("reason", "signal")),
+                )
+            )
     # Compute stitched stats if available
     if len(eq_series) > 1:
         rets = eq_series.pct_change().fillna(0.0)
@@ -589,6 +597,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
         stats_obj.total_commission = total_commission
     else:
         from ..backtest.metrics import PerformanceStats as _PS
+
         _nan = float("nan")
         stats_obj = _PS(
             cagr=_nan,
@@ -612,20 +621,23 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
             current_underwater_days=0,
             max_underwater_days=0,
         )
+
     class _BTResObj:
         def __init__(self) -> None:
             self.equity_curve = eq_series
             self.returns = eq_series.pct_change().fillna(0.0)
             from pandas import Series as _Series
+
             self.positions: dict[str, _Series] = {}
             self.trades: list[tuple[str, str, int, float, str]] = oos_trades
             self.stats = stats_obj
+
     from ..backtest.engine import BacktestResult as _BTRes
+
     _mini = _BTResObj()
     # Strategy version override reflects multi-fold chosen params
     chosen_params = [
-        {"fast": fd["chosen_params"]["fast"], "slow": fd["chosen_params"]["slow"]}
-        for fd in summary.get("folds", [])
+        {"fast": fd["chosen_params"]["fast"], "slow": fd["chosen_params"]["slow"]} for fd in summary.get("folds", [])
     ]
     extra = {
         "walk_forward": summary,
@@ -649,6 +661,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     susp = diagnose_suspicious(cast(_BTRes, _mini), data, lineage_sources=lineage_sources)
     # Build payload as JSON with None for undefined values and include strategy_version from chosen params
     import json as _json
+
     payload = {
         "symbol": sym,
         # Never present a single fold as 'the' best; picks live under per_fold_params / folds
@@ -675,16 +688,22 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
 @app.command("research-run")
 def research_run(exp_id: Optional[str] = None) -> None:
     """
-    V3 research suite: SMA grid + regime + cost-ladder + TSMOM with OOS gates.
+    V3 research suite: SMA grid + regime + cost-ladder + TSMOM + multi-asset +
+    embargo/PBO diagnostics with OOS gates.
     Does not change production strategy defaults. Most candidates are expected to FAIL gates.
     """
     import json as _json
     from datetime import datetime as _dt
     from pathlib import Path as _Path
 
+    from ..research.multi_asset import DEFAULT_RESEARCH_SYMBOLS
+
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
+    # Expand single-name default to the research ETF cross-section.
+    if list(s.universe.symbols) == ["SPY"]:
+        s.universe.symbols = list(DEFAULT_RESEARCH_SYMBOLS)
     data = load_universe_v2(s)
     sym = s.universe.symbols[0]
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
@@ -699,9 +718,7 @@ def research_run(exp_id: Optional[str] = None) -> None:
     research_dir = _Path(s.data.reports_dir) / "research"
     research_dir.mkdir(parents=True, exist_ok=True)
     registry_path = research_dir / f"experiments_{run_id}.jsonl"
-    records = build_experiment_records(
-        results, exp_id=run_id, git_commit=git_commit()
-    )
+    records = build_experiment_records(results, exp_id=run_id, git_commit=git_commit())
     for rec in records:
         save_experiment(registry_path, rec)
     n_pass = int(suite.get("n_pass") or 0)
@@ -709,14 +726,16 @@ def research_run(exp_id: Optional[str] = None) -> None:
     payload = {
         "exp_id": run_id,
         "symbol": sym,
+        "symbols": list(s.universe.symbols),
         "phase": "V3-research",
-        "suite": "sma+regime+cost_ladder+tsmom+embargo+pbo",
+        "suite": "sma+regime+cost_ladder+tsmom+embargo+pbo+multi_asset",
         "n_candidates": int(suite.get("n_candidates") or len(results)),
         "n_pass": n_pass,
         "n_fail": n_fail,
         "cost_fragility": suite.get("cost_fragility"),
         "embargo_sensitivity": suite.get("embargo_sensitivity"),
         "pbo": suite.get("pbo"),
+        "cross_section": suite.get("cross_section"),
         "tracks": {
             k: [
                 {
@@ -728,7 +747,7 @@ def research_run(exp_id: Optional[str] = None) -> None:
                 }
                 for r in (suite.get("tracks") or {}).get(k) or []
             ]
-            for k in ("sma_grid", "sma_regime", "cost_ladder", "tsmom")
+            for k in ("sma_grid", "sma_regime", "cost_ladder", "tsmom", "multi_asset")
         },
         "candidates": [
             {
@@ -767,4 +786,3 @@ def research_run(exp_id: Optional[str] = None) -> None:
 
 if __name__ == "__main__":
     app()
-
