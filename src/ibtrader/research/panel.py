@@ -69,21 +69,26 @@ def render_warden_panel(
             "WATCH": "act-watch",
             "RESEARCH_CANDIDATE": "act-cand",
         }.get(action, "act-watch")
+        engine_keys = list(eng.keys()) or [
+            "trend",
+            "relative_strength",
+            "risk_quality",
+            "momentum_quality",
+            "volume_thrust",
+            "bench_decoupling",
+            "mean_reversion_pressure",
+            "horizon_alignment",
+            "vol_regime_stability",
+            "path_recovery",
+            "gap_stability",
+            "trend_acceleration",
+        ]
         engine_bars = "".join(
             f'<div class="ebar" title="{_esc(k)}">'
-            f'<span class="ek">{_esc(k[:3].upper())}</span>'
+            f'<span class="ek">{_esc(k.replace("_", " ")[:10].upper())}</span>'
             f'<i style="--v:{float(eng.get(k) or 0):.4f}"></i>'
             f"</div>"
-            for k in (
-                "trend",
-                "relative_strength",
-                "risk_quality",
-                "momentum_quality",
-                "volume_thrust",
-                "bench_decoupling",
-                "mean_reversion_pressure",
-            )
-            if k in eng or True
+            for k in engine_keys
         )
         flag_html = (
             "".join(f'<span class="flag">{_esc(f)}</span>' for f in flags)
@@ -97,13 +102,15 @@ def render_warden_panel(
     <span class="rank">{i + 1:02d}</span>
     <span class="sym">{_esc(r.get("symbol"))}</span>
     <span class="px">{_esc(_num(r.get("last_close"), 2))}</span>
-    <span class="comp">{_esc(_num(scores.get("composite"), 3))}</span>
+    <span class="comp" title="opportunity">{_esc(_num(scores.get("opportunity"), 3))}</span>
     <span class="conf">{_esc(_num(scores.get("confidence"), 2))}</span>
     <span class="pill {_esc(action_cls)}">{_esc(action.replace("_", " "))}</span>
   </button>
   <div class="sym-body" hidden>
     <div class="engine-grid">{engine_bars}</div>
     <div class="meta-line">
+      <span>Opp {_esc(_num(scores.get("opportunity"), 3))}</span>
+      <span>Comp {_esc(_num(scores.get("composite"), 3))}</span>
       <span>RS {_esc(_num(r.get("rs_percentile"), 2))}</span>
       <span>Vol {_esc(_num(r.get("vol_21_ann"), 2))}</span>
       <span>DD63 {_esc(_pct(r.get("max_dd_63")))}</span>
@@ -117,6 +124,18 @@ def render_warden_panel(
         )
 
     engines_strip = "".join(f"<li>{_esc(e)}</li>" for e in engines)
+    intensity = (model.get("search_intensity") or {}) if isinstance(model, dict) else {}
+    top_opp = list(report.get("top_opportunity") or [])
+    top_opp_html = "".join(
+        f"<li><strong>{_esc(t.get('symbol'))}</strong> "
+        f"opp {_esc(_num(t.get('opportunity'), 3))} · {_esc(t.get('action'))}</li>"
+        for t in top_opp
+    ) or "<li>None</li>"
+    sat_names = list(sleeve.get("satellite_names") or [])
+    sat_html = "".join(
+        f"<li>{_esc(s.get('symbol'))} · {_esc(_pct(s.get('weight_in_satellite')))} of satellite</li>"
+        for s in sat_names
+    ) or "<li>No satellite names promoted</li>"
     payload_json = json.dumps(dict(report), default=str, ensure_ascii=False)
 
     return f"""<!DOCTYPE html>
@@ -344,11 +363,11 @@ section {{ margin-top: 2.5rem; animation: rise 0.8s ease-out both; animation-del
 .sym-body {{ padding: 0 0.85rem 0.95rem; }}
 .engine-grid {{
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 0.35rem;
   margin-bottom: 0.65rem;
 }}
-@media (max-width: 800px) {{ .engine-grid {{ grid-template-columns: repeat(4, 1fr); }} }}
+@media (max-width: 800px) {{ .engine-grid {{ grid-template-columns: repeat(3, 1fr); }} }}
 .ebar {{
   display: grid; gap: 0.2rem;
 }}
@@ -399,8 +418,9 @@ section {{ margin-top: 2.5rem; animation: rise 0.8s ease-out both; animation-del
     <p class="led"><i></i> Systems nominal · research mode</p>
     <h1 class="brand">{_esc(title)}</h1>
     <p class="tagline">
-      Multi-engine market command surface. Ranks where <em>not</em> to bleed first,
-      then which names deserve walk-forward re-runs — never a promise of mega returns.
+      Twelve-engine meta-ensemble. Presses as hard as process allows toward
+      finding whatever survives walk-forward — ranks opportunity without
+      promising mega returns.
     </p>
     <div class="status-row">
       <span class="posture">{_esc(posture.get("code") or "NEUTRAL")}</span>
@@ -411,13 +431,21 @@ section {{ margin-top: 2.5rem; animation: rise 0.8s ease-out both; animation-del
       <a class="cta" href="#engines">Inspect engines</a>
       <a class="cta" href="#sleeve">Sleeve hypothesis</a>
     </div>
-    <p class="foot">Model {_esc(model.get("name") or "WARDEN")} v{_esc(model.get("version") or "—")} · {_esc(ts)} · {_esc(report.get("n_symbols"))} names</p>
+    <p class="foot">Model {_esc(model.get("name") or "WARDEN")} v{_esc(model.get("version") or "—")} · {_esc(ts)} · {_esc(report.get("n_symbols"))} names · intensity opp {_esc(_num(intensity.get("mean_opportunity"), 3))} / conf {_esc(_num(intensity.get("mean_confidence"), 2))}</p>
   </header>
 
   <section id="engines">
     <h2 class="sec-h">Engine matrix</h2>
-    <p class="sec-p">Seven concurrent scorers + disagreement-aware confidence. Complexity is process power, not claimed edge.</p>
+    <p class="sec-p">Twelve concurrent scorers + regime-conditional weights + disagreement shrinkage. Max process power; zero return claims.</p>
     <div class="matrix"><ul>{engines_strip}</ul></div>
+  </section>
+
+  <section id="hunt">
+    <h2 class="sec-h">Opportunity hunt</h2>
+    <p class="sec-p">Highest opportunity ranks for walk-forward re-runs — not expected PnL.</p>
+    <ul class="matrix" style="display:grid;gap:0.45rem;padding:0;margin:0;list-style:none">{top_opp_html}</ul>
+    <p class="sec-p" style="margin-top:1rem">Satellite sleeve names (paper hypothesis):</p>
+    <ul class="matrix" style="display:grid;gap:0.45rem;padding:0;margin:0;list-style:none">{sat_html}</ul>
   </section>
 
   <section id="regime">

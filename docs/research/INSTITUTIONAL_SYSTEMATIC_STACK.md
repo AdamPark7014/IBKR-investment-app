@@ -110,7 +110,7 @@ V3 success = **lab that can reject honestly**, plus any candidate that clears SP
 | Deflated Sharpe Ratio (DSR) | **DONE** — `research.dsr` + `dsr_sma` |
 | Turnover fragility diagnostic | **DONE** — `research.turnover_diag` |
 | Honest PASS/FAIL report aggregator | **DONE** — `research.report` → `honest_report` |
-| Multi-factor market analyzer (triage) | **DONE** — `research.market_analyzer` (WARDEN-X7 multi-engine) + CLI `market-analyze` |
+| Multi-factor market analyzer (triage) | **DONE** — `research.market_analyzer` (WARDEN-X9, 12 engines + meta-ensemble) + CLI `market-analyze` |
 | WARDEN research command panel | **DONE** — `research.panel` + CLI `research-panel` (HTML mission surface) |
 | Loss-mitigation overlays (trend / stop / DD / vol) | **DONE** — `research.loss_mitigation` |
 | Cross-sectional momentum rotation | **DONE** — `research.xsection_runner` |

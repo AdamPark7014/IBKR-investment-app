@@ -26,13 +26,17 @@ def _mk(len_days: int = 450, seed: float = 0.0) -> pd.DataFrame:
 def test_warden_model_has_engines_and_confidence() -> None:
     data = {"SPY": _mk(seed=0), "QQQ": _mk(seed=4), "IWM": _mk(seed=-2)}
     rep = analyze_market(data, benchmark="SPY")
-    assert rep["model"]["name"] == "WARDEN-X7"
-    assert len(rep["model"]["engines"]) >= 7
+    assert rep["model"]["name"] == "WARDEN-X9"
+    assert len(rep["model"]["engines"]) >= 12
+    assert "search_intensity" in rep["model"]
     assert "posture" in rep
     assert "sleeve_hypothesis" in rep
+    assert "top_opportunity" in rep
     row = rep["ranked"][0]
     assert "engines" in row
+    assert len(row["engines"]) >= 12
     assert "confidence" in row["scores"]
+    assert "opportunity" in row["scores"]
     assert "disagreement" in row["scores"]
 
 

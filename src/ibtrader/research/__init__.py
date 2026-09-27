@@ -35,6 +35,7 @@ from .runner import (
 from .suite import run_research_suite
 from .tsmom_runner import DEFAULT_TSMOM_LOOKBACKS, run_tsmom_research
 from .turnover_diag import diagnose_turnover
+from .warden_engines import ENGINE_NAMES, meta_ensemble, run_engines
 from .xsection_runner import DEFAULT_XSECTION_CANDIDATES, run_xsection_research
 
 DEFAULT_SMA_CANDIDATES = SMA_GRID_CANDIDATES
@@ -47,6 +48,7 @@ __all__ = [
     "DEFAULT_SMA_CANDIDATES",
     "DEFAULT_TSMOM_LOOKBACKS",
     "DEFAULT_XSECTION_CANDIDATES",
+    "ENGINE_NAMES",
     "SMA_GRID_CANDIDATES",
     "TREND_REGIME_CANDIDATES",
     "OOSGateResult",
@@ -60,11 +62,13 @@ __all__ = [
     "evaluate_candidate_gates",
     "expected_max_sharpe",
     "load_experiments",
+    "meta_ensemble",
     "pbo_from_fold_sharpe_rows",
     "probability_of_backtest_overfitting",
     "render_warden_panel",
     "run_cost_ladder_research",
     "run_embargo_sensitivity",
+    "run_engines",
     "run_loss_mitigation_research",
     "run_mean_reversion_research",
     "run_multi_asset_sma_research",
