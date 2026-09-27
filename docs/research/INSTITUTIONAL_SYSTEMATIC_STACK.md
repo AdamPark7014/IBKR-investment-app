@@ -96,12 +96,14 @@ V3 success = **lab that can reject honestly**, plus any candidate that clears SP
 
 ---
 
-## 7. Next research slices (after this harness)
+## 7. Next research slices (status)
 
-1. Cost-ladder stress (1× / 2× / 3× slippage) in registry  
-2. Embargo width sensitivity report  
-3. Multi-asset universe (not only SPY)  
-4. Time-series momentum candidate (Moskowitz–Ooi–Pedersen style) with costs  
-5. PBO estimate across the logged trial grid  
+| Slice | Status |
+|-------|--------|
+| Cost-ladder stress (1× / 2× / 3× slippage) | **DONE** — `research.cost_stress` + suite track |
+| Embargo width sensitivity report | pending |
+| Multi-asset universe (not only SPY) | pending |
+| Time-series momentum candidate (TSMOM) | **DONE** — `strategy.tsmom` + `research.tsmom_runner` |
+| PBO estimate across the logged trial grid | pending |
 
 Do not skip to “live large size” without paper evidence.

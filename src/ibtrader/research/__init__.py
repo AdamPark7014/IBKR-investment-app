@@ -1,16 +1,8 @@
 """V3 research laboratory: experiment runner, OOS gates, candidate registry."""
 
-from __future__ import annotations
-
+from .cost_stress import run_cost_ladder_research, summarize_cost_fragility
 from .gates import OOSGateResult, evaluate_candidate_gates
-from .registry import (
-    DEFAULT_REGISTRY_DIR,
-    DEFAULT_REGISTRY_FILE,
-    ExperimentRecord,
-    default_registry_path,
-    load_experiments,
-    save_experiment,
-)
+from .registry import ExperimentRecord, load_experiments, save_experiment
 from .runner import (
     SMA_GRID_CANDIDATES,
     TREND_REGIME_CANDIDATES,
@@ -18,27 +10,27 @@ from .runner import (
     run_sma_research,
     run_trend_regime_research,
 )
+from .suite import run_research_suite
+from .tsmom_runner import DEFAULT_TSMOM_LOOKBACKS, run_tsmom_research
 
-# Aliases for CLI / draft names
+# Aliases used by CLI / older drafts
 DEFAULT_SMA_CANDIDATES = SMA_GRID_CANDIDATES
-evaluate_oos_gates = evaluate_candidate_gates
-run_sma_grid_research = run_sma_research
 
 __all__ = [
-    "DEFAULT_REGISTRY_DIR",
-    "DEFAULT_REGISTRY_FILE",
     "DEFAULT_SMA_CANDIDATES",
+    "DEFAULT_TSMOM_LOOKBACKS",
     "SMA_GRID_CANDIDATES",
     "TREND_REGIME_CANDIDATES",
     "OOSGateResult",
     "ExperimentRecord",
     "build_experiment_records",
-    "default_registry_path",
     "evaluate_candidate_gates",
-    "evaluate_oos_gates",
     "load_experiments",
-    "run_sma_grid_research",
+    "run_cost_ladder_research",
+    "run_research_suite",
     "run_sma_research",
     "run_trend_regime_research",
+    "run_tsmom_research",
     "save_experiment",
+    "summarize_cost_fragility",
 ]

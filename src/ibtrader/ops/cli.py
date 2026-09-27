@@ -19,7 +19,7 @@ from ..logging import setup_logging
 from ..ops.killswitch import activate_killswitch, clear_killswitch
 from ..ops.status import status_summary
 from ..regime.gmm import build_regime_features, fit_gmm_regime
-from ..research import SMA_GRID_CANDIDATES, build_experiment_records, run_sma_research
+from ..research import build_experiment_records, run_research_suite
 from ..research.registry import save_experiment
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.sma_crossover import SMACrossover
@@ -675,7 +675,7 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
 @app.command("research-run")
 def research_run(exp_id: Optional[str] = None) -> None:
     """
-    V3 research lab: evaluate SMA candidates via walk-forward + institutional OOS gates.
+    V3 research suite: SMA grid + regime + cost-ladder + TSMOM with OOS gates.
     Does not change production strategy defaults. Most candidates are expected to FAIL gates.
     """
     import json as _json
@@ -688,14 +688,14 @@ def research_run(exp_id: Optional[str] = None) -> None:
     data = load_universe_v2(s)
     sym = s.universe.symbols[0]
     run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    results = run_sma_research(
+    suite = run_research_suite(
         s,
         data,
         sym,
-        candidates=SMA_GRID_CANDIDATES,
         direction=s.trading.direction,
         n_folds=3,
     )
+    results = list(suite.get("candidates") or [])
     research_dir = _Path(s.data.reports_dir) / "research"
     research_dir.mkdir(parents=True, exist_ok=True)
     registry_path = research_dir / f"experiments_{run_id}.jsonl"
@@ -704,15 +704,30 @@ def research_run(exp_id: Optional[str] = None) -> None:
     )
     for rec in records:
         save_experiment(registry_path, rec)
-    n_pass = sum(1 for r in results if r.get("gate_passed"))
-    n_fail = len(results) - n_pass
+    n_pass = int(suite.get("n_pass") or 0)
+    n_fail = int(suite.get("n_fail") or 0)
     payload = {
         "exp_id": run_id,
         "symbol": sym,
         "phase": "V3-research",
-        "n_candidates": len(results),
+        "suite": "sma+regime+cost_ladder+tsmom",
+        "n_candidates": int(suite.get("n_candidates") or len(results)),
         "n_pass": n_pass,
         "n_fail": n_fail,
+        "cost_fragility": suite.get("cost_fragility"),
+        "tracks": {
+            k: [
+                {
+                    "candidate_id": r["candidate_id"],
+                    "params": r["params"],
+                    "gate": "PASS" if r.get("gate_passed") else "FAIL",
+                    "gate_reasons": r.get("gate_reasons") or [],
+                    "oos": r.get("oos"),
+                }
+                for r in (suite.get("tracks") or {}).get(k) or []
+            ]
+            for k in ("sma_grid", "sma_regime", "cost_ladder", "tsmom")
+        },
         "candidates": [
             {
                 "candidate_id": r["candidate_id"],
@@ -732,10 +747,10 @@ def research_run(exp_id: Optional[str] = None) -> None:
             for r in results
         ],
         "registry": str(registry_path),
-        "any_gate_passed": n_pass > 0,
+        "any_gate_passed": bool(suite.get("any_gate_passed")),
         "note": (
-            "Passing gates ≠ deploy. Failing gates is the normal institutional outcome. "
-            "See docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md"
+            "Passing gates ≠ deploy. Failing gates / cost fragility is the normal "
+            "institutional outcome. See docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md"
         ),
     }
     summary_path = research_dir / f"research_{run_id}.json"
