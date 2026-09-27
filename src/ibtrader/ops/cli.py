@@ -19,11 +19,13 @@ from ..logging import setup_logging
 from ..ops.killswitch import activate_killswitch, clear_killswitch
 from ..ops.status import status_summary
 from ..regime.gmm import build_regime_features, fit_gmm_regime
+from ..research import SMA_GRID_CANDIDATES, build_experiment_records, run_sma_research
+from ..research.registry import save_experiment
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.sma_crossover import SMACrossover
 from ..validation.signal import validate_sma_signal
 from ..validation.walkforward import walk_forward_sma
-from .artifacts import save_run_artifact
+from .artifacts import git_commit, save_run_artifact
 
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
@@ -668,6 +670,83 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
         "artifact": art_path,
     }
     typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
+
+
+@app.command("research-run")
+def research_run(exp_id: Optional[str] = None) -> None:
+    """
+    V3 research lab: evaluate SMA candidates via walk-forward + institutional OOS gates.
+    Does not change production strategy defaults. Most candidates are expected to FAIL gates.
+    """
+    import json as _json
+    from datetime import datetime as _dt
+    from pathlib import Path as _Path
+
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    data = load_universe_v2(s)
+    sym = s.universe.symbols[0]
+    run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    results = run_sma_research(
+        s,
+        data,
+        sym,
+        candidates=SMA_GRID_CANDIDATES,
+        direction=s.trading.direction,
+        n_folds=3,
+    )
+    research_dir = _Path(s.data.reports_dir) / "research"
+    research_dir.mkdir(parents=True, exist_ok=True)
+    registry_path = research_dir / f"experiments_{run_id}.jsonl"
+    records = build_experiment_records(
+        results, exp_id=run_id, git_commit=git_commit()
+    )
+    for rec in records:
+        save_experiment(registry_path, rec)
+    n_pass = sum(1 for r in results if r.get("gate_passed"))
+    n_fail = len(results) - n_pass
+    payload = {
+        "exp_id": run_id,
+        "symbol": sym,
+        "phase": "V3-research",
+        "n_candidates": len(results),
+        "n_pass": n_pass,
+        "n_fail": n_fail,
+        "candidates": [
+            {
+                "candidate_id": r["candidate_id"],
+                "params": r["params"],
+                "oos": r["oos"],
+                "buy_hold_oos": r.get("buy_hold_oos"),
+                "gate": "PASS" if r.get("gate_passed") else "FAIL",
+                "gate_passed": bool(r.get("gate_passed")),
+                "gate_detail": {
+                    "checks": r.get("gate_checks") or {},
+                    "reasons": r.get("gate_reasons") or [],
+                },
+                "gate_reasons": r.get("gate_reasons") or [],
+                "oos_total_trades": r.get("oos_total_trades"),
+                "oos_commission_approx": r.get("oos_commission_approx"),
+            }
+            for r in results
+        ],
+        "registry": str(registry_path),
+        "any_gate_passed": n_pass > 0,
+        "note": (
+            "Passing gates ≠ deploy. Failing gates is the normal institutional outcome. "
+            "See docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md"
+        ),
+    }
+    summary_path = research_dir / f"research_{run_id}.json"
+    summary_path.write_text(
+        _json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":"), indent=2),
+        encoding="utf-8",
+    )
+    payload["artifact"] = str(summary_path)
+    payload["summary_artifact"] = str(summary_path)
+    typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
+
 
 if __name__ == "__main__":
     app()
