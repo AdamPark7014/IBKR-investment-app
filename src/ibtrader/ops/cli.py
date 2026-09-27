@@ -685,6 +685,57 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("research-panel")
+def research_panel(exp_id: Optional[str] = None) -> None:
+    """
+    Generate the WARDEN research command panel (self-contained HTML).
+
+    Multi-engine triage surface — NOT a profit promise / buy list.
+    """
+    import json as _json
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+    from pathlib import Path as _Path
+
+    from ..research.market_analyzer import analyze_market
+    from ..research.multi_asset import DEFAULT_RESEARCH_SYMBOLS
+    from ..research.panel import write_warden_panel
+
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    if list(s.universe.symbols) == ["SPY"]:
+        s.universe.symbols = list(DEFAULT_RESEARCH_SYMBOLS)
+    data = load_universe_v2(s)
+    report = analyze_market(
+        data,
+        symbols=list(s.universe.symbols),
+        benchmark=s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0],
+    )
+    research_dir = _Path(s.data.reports_dir) / "research"
+    research_dir.mkdir(parents=True, exist_ok=True)
+    run_id = exp_id or _dt.now(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    html_path = research_dir / f"warden_panel_{run_id}.html"
+    write_warden_panel(report, str(html_path), generated_at=run_id)
+    payload = {
+        "exp_id": run_id,
+        "phase": "V3-warden-panel",
+        "model": report.get("model"),
+        "posture": report.get("posture"),
+        "action_counts": report.get("action_counts"),
+        "panel": str(html_path),
+        "artifact": str(html_path),
+        "disclaimer": report.get("disclaimer"),
+    }
+    meta = research_dir / f"warden_panel_{run_id}.json"
+    meta.write_text(
+        _json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":"), indent=2),
+        encoding="utf-8",
+    )
+    payload["meta"] = str(meta)
+    typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
+
+
 @app.command("market-analyze")
 def market_analyze() -> None:
     """
@@ -713,7 +764,7 @@ def market_analyze() -> None:
     )
     research_dir = _Path(s.data.reports_dir) / "research"
     research_dir.mkdir(parents=True, exist_ok=True)
-    run_id = _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    run_id = _dt.now(_dt.UTC).strftime("%Y%m%dT%H%M%SZ")
     art = research_dir / f"market_analyze_{run_id}.json"
     payload = {
         "exp_id": run_id,

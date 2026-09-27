@@ -20,6 +20,7 @@ from .multi_asset import (
     run_multi_asset_sma_research,
     summarize_cross_section,
 )
+from .panel import render_warden_panel, write_warden_panel
 from .pbo import pbo_from_fold_sharpe_rows, probability_of_backtest_overfitting
 from .pbo_sma import run_sma_grid_pbo
 from .registry import ExperimentRecord, load_experiments, save_experiment
@@ -61,6 +62,7 @@ __all__ = [
     "load_experiments",
     "pbo_from_fold_sharpe_rows",
     "probability_of_backtest_overfitting",
+    "render_warden_panel",
     "run_cost_ladder_research",
     "run_embargo_sensitivity",
     "run_loss_mitigation_research",
@@ -79,4 +81,5 @@ __all__ = [
     "summarize_cost_fragility",
     "summarize_cross_section",
     "summarize_loss_mitigation",
+    "write_warden_panel",
 ]

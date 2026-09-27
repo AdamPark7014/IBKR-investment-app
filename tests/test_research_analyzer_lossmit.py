@@ -43,11 +43,15 @@ def test_market_analyzer_ranks_and_actions() -> None:
     assert rep["n_symbols"] == 3
     assert "regime" in rep
     assert "ranked" in rep
+    assert "model" in rep
+    assert rep["model"]["name"].startswith("WARDEN")
     assert set(rep["action_counts"]) >= {"AVOID", "WATCH", "RESEARCH_CANDIDATE"}
     assert "disclaimer" in rep
     assert "NOT" in rep["disclaimer"]
     actions = {r["symbol"]: r["action"] for r in rep["ranked"]}
     assert all(a in {"AVOID", "WATCH", "RESEARCH_CANDIDATE"} for a in actions.values())
+    assert "engines" in rep["ranked"][0]
+    assert "confidence" in rep["ranked"][0]["scores"]
 
 
 def test_loss_mitigation_runs_overlays() -> None:
