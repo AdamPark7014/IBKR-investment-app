@@ -710,11 +710,13 @@ def research_run(exp_id: Optional[str] = None) -> None:
         "exp_id": run_id,
         "symbol": sym,
         "phase": "V3-research",
-        "suite": "sma+regime+cost_ladder+tsmom",
+        "suite": "sma+regime+cost_ladder+tsmom+embargo+pbo",
         "n_candidates": int(suite.get("n_candidates") or len(results)),
         "n_pass": n_pass,
         "n_fail": n_fail,
         "cost_fragility": suite.get("cost_fragility"),
+        "embargo_sensitivity": suite.get("embargo_sensitivity"),
+        "pbo": suite.get("pbo"),
         "tracks": {
             k: [
                 {

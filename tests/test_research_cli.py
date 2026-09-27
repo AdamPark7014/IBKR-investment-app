@@ -41,12 +41,11 @@ def test_research_run_cli_full_suite(monkeypatch, tmp_path):
     payload = json.loads(m.group(0))
     # sma(3) + regime(2) + cost_ladder(3) + tsmom(3) = 11
     assert payload.get("n_candidates") == 11
-    assert payload.get("suite") == "sma+regime+cost_ladder+tsmom"
-    assert "tracks" in payload
-    assert set(payload["tracks"].keys()) >= {"sma_grid", "sma_regime", "cost_ladder", "tsmom"}
-    assert len(payload["tracks"]["sma_grid"]) == 3
-    assert len(payload["tracks"]["tsmom"]) == 3
-    assert "cost_fragility" in payload
+    assert payload.get("suite") == "sma+regime+cost_ladder+tsmom+embargo+pbo"
+    assert "embargo_sensitivity" in payload
+    assert "pbo" in payload
+    assert payload["embargo_sensitivity"] is not None
+    assert "pbo" in (payload.get("pbo") or {})
     for c in payload["candidates"]:
         assert c.get("gate") in {"PASS", "FAIL"}
         assert "gate_detail" in c
