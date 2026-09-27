@@ -23,7 +23,7 @@ class CrossSectionalMomentum(Strategy):
         for sym, df in data.items():
             close = df["close"].astype(float)
             rets = close.pct_change(self.lookback)
-            returns[sym] = rets.reindex(all_idx).fillna(method="ffill")
+            returns[sym] = rets.reindex(all_idx).ffill()
         out: Dict[str, pd.Series] = {}
         for dt in all_idx:
             ranks = sorted(

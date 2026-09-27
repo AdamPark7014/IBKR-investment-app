@@ -63,6 +63,8 @@ Implement process, not mythology:
 * CPCV-lite OOS Sharpe path distribution (`research.cpcv` / `cpcv_sma`)
 * Mean-reversion research track (`research.mean_reversion_runner`)
 * Turnover fragility + honest report aggregator (`turnover_diag`, `report`)
+* Multi-factor market analyzer triage (`research.market_analyzer`, CLI `market-analyze`)
+* Loss-mitigation overlays + cross-sectional momentum (`loss_mitigation`, `xsection_runner`)
 
 ### Gates to mark a candidate “interesting”
 

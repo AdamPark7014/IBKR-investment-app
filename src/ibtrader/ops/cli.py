@@ -685,11 +685,55 @@ def walk_forward(exp_id: Optional[str] = None) -> None:
     typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("market-analyze")
+def market_analyze() -> None:
+    """
+    Multi-factor market scorecard (trend / RS / risk / breadth).
+
+    Research triage only — ranks AVOID / WATCH / RESEARCH_CANDIDATE.
+    Does NOT promise profits or 'almost never lose'.
+    """
+    import json as _json
+    from datetime import datetime as _dt
+    from pathlib import Path as _Path
+
+    from ..research.market_analyzer import analyze_market
+    from ..research.multi_asset import DEFAULT_RESEARCH_SYMBOLS
+
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    if list(s.universe.symbols) == ["SPY"]:
+        s.universe.symbols = list(DEFAULT_RESEARCH_SYMBOLS)
+    data = load_universe_v2(s)
+    report = analyze_market(
+        data,
+        symbols=list(s.universe.symbols),
+        benchmark=s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0],
+    )
+    research_dir = _Path(s.data.reports_dir) / "research"
+    research_dir.mkdir(parents=True, exist_ok=True)
+    run_id = _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    art = research_dir / f"market_analyze_{run_id}.json"
+    payload = {
+        "exp_id": run_id,
+        "phase": "V3-market-analyzer",
+        "report": report,
+        "artifact": str(art),
+        "note": report.get("disclaimer"),
+    }
+    art.write_text(
+        _json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":"), indent=2),
+        encoding="utf-8",
+    )
+    typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
+
+
 @app.command("research-run")
 def research_run(exp_id: Optional[str] = None) -> None:
     """
-    V3 research suite: SMA/regime/cost/TSMOM/mean-rev/multi-asset gated tracks
-    plus embargo, PBO, CPCV, DSR, turnover diagnostics and an honest report.
+    V3 research suite: gated strategy tracks + loss-mitigation overlays +
+    multi-factor market analyzer + overfitting/cost diagnostics.
     Does not change production strategy defaults. Most candidates are expected to FAIL gates.
     """
     import json as _json
@@ -723,7 +767,10 @@ def research_run(exp_id: Optional[str] = None) -> None:
         save_experiment(registry_path, rec)
     n_pass = int(suite.get("n_pass") or 0)
     n_fail = int(suite.get("n_fail") or 0)
-    suite_label = "sma+regime+cost_ladder+tsmom+mean_reversion+embargo+pbo+" "multi_asset+cpcv+dsr+turnover"
+    suite_label = (
+        "sma+regime+cost_ladder+tsmom+mean_reversion+loss_mitigation+xsection+"
+        "embargo+pbo+multi_asset+cpcv+dsr+turnover+market_analyzer"
+    )
     payload = {
         "exp_id": run_id,
         "symbol": sym,
@@ -734,12 +781,14 @@ def research_run(exp_id: Optional[str] = None) -> None:
         "n_pass": n_pass,
         "n_fail": n_fail,
         "cost_fragility": suite.get("cost_fragility"),
+        "loss_mitigation_summary": suite.get("loss_mitigation_summary"),
         "embargo_sensitivity": suite.get("embargo_sensitivity"),
         "pbo": suite.get("pbo"),
         "cross_section": suite.get("cross_section"),
         "cpcv": suite.get("cpcv"),
         "dsr": suite.get("dsr"),
         "turnover": suite.get("turnover"),
+        "market_analyzer": suite.get("market_analyzer"),
         "honest_report": suite.get("honest_report"),
         "tracks": {
             k: [
@@ -758,6 +807,8 @@ def research_run(exp_id: Optional[str] = None) -> None:
                 "cost_ladder",
                 "tsmom",
                 "mean_reversion",
+                "loss_mitigation",
+                "xsection",
                 "multi_asset",
             )
         },
@@ -782,8 +833,8 @@ def research_run(exp_id: Optional[str] = None) -> None:
         "registry": str(registry_path),
         "any_gate_passed": bool(suite.get("any_gate_passed")),
         "note": (
-            "Passing gates ≠ deploy. Failing gates / cost fragility is the normal "
-            "institutional outcome. See docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md"
+            "Passing gates ≠ deploy. Loss mitigation + analyzer are triage tools, "
+            "not profit guarantees. See docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md"
         ),
     }
     summary_path = research_dir / f"research_{run_id}.json"

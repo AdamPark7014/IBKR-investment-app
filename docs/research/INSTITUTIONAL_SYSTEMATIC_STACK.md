@@ -110,6 +110,9 @@ V3 success = **lab that can reject honestly**, plus any candidate that clears SP
 | Deflated Sharpe Ratio (DSR) | **DONE** — `research.dsr` + `dsr_sma` |
 | Turnover fragility diagnostic | **DONE** — `research.turnover_diag` |
 | Honest PASS/FAIL report aggregator | **DONE** — `research.report` → `honest_report` |
+| Multi-factor market analyzer (triage) | **DONE** — `research.market_analyzer` + CLI `market-analyze` |
+| Loss-mitigation overlays (trend / stop / DD / vol) | **DONE** — `research.loss_mitigation` |
+| Cross-sectional momentum rotation | **DONE** — `research.xsection_runner` |
 
 Do not skip to “live large size” without paper evidence.
 
@@ -119,3 +122,10 @@ Do not skip to “live large size” without paper evidence.
 * **DSR** asks whether the selected Sharpe beats what multiple-testing luck alone would produce.
 * **CPCV-lite** asks whether OOS Sharpe is stable across combinatorial fold paths.
 * A candidate can PASS §3 gates and still be `PASS_GATES_BUT_DIAGNOSTICS_SKEPTICAL` in `honest_report`.
+
+### Loss mitigation & market analyzer (honest charter)
+
+* Goal: **lose less / avoid hostile regimes first** — not “ganar muchísimo.”
+* `market-analyze` emits AVOID / WATCH / RESEARCH_CANDIDATE only.
+* `RESEARCH_CANDIDATE` ≠ buy order. It means: worth owner-PC walk-forward re-run.
+* Overlays that improve max DD but kill Sharpe are still useful research outcomes.

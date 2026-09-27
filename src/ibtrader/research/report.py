@@ -29,12 +29,14 @@ def build_honest_report(suite: Mapping[str, Any]) -> Dict[str, Any]:
 
     diagnostics: Dict[str, Any] = {
         "cost_fragility": suite.get("cost_fragility"),
+        "loss_mitigation_summary": suite.get("loss_mitigation_summary"),
         "embargo_sensitivity": _slim_embargo(suite.get("embargo_sensitivity")),
         "pbo": _slim_pbo(suite.get("pbo")),
         "cross_section": suite.get("cross_section"),
         "cpcv": _slim_cpcv(suite.get("cpcv")),
         "dsr": _slim_dsr(suite.get("dsr")),
         "turnover": suite.get("turnover"),
+        "market_analyzer": _slim_analyzer(suite.get("market_analyzer")),
     }
 
     reject_reasons: List[str] = []
@@ -121,4 +123,15 @@ def _slim_dsr(rep: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
         "sr0_benchmark": rep.get("sr0_benchmark"),
         "high_conviction": rep.get("high_conviction"),
         "n_trials": rep.get("n_trials"),
+    }
+
+
+def _slim_analyzer(rep: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not rep:
+        return None
+    return {
+        "regime": rep.get("regime"),
+        "action_counts": rep.get("action_counts"),
+        "top_research": rep.get("top_research"),
+        "avoid": rep.get("avoid"),
     }
