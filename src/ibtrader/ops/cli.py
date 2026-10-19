@@ -364,8 +364,10 @@ def paper_run() -> None:
     data = load_universe_v2(s)
     engine = DecisionEngine(s)
     decisions = engine.generate(data)
-    # Fase 1: sólo imprimir/registrar (NO_TRADE)
-    rprint([d.__dict__ for d in decisions])
+    counts: dict[str, int] = {}
+    for d in decisions:
+        counts[d.action] = counts.get(d.action, 0) + 1
+    rprint({"orders_sent": 0, "counts": counts, "decisions": [d.__dict__ for d in decisions]})
 
 
 @app.command()

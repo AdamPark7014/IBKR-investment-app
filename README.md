@@ -34,7 +34,7 @@ Requisitos (Windows 11, Python 3.12):
    - Backtest de muestra (SMA crossover): `ibtrader backtest-sample`
      - Puedes generar un ID de experimento: `ibtrader backtest-sample --exp-id p1p5_check`
      - Comparar modos (P5): `ibtrader compare-directions --exp-id p1p5_compare`
-   - Motor de decisiones (fase 1, NO_TRADE): `ibtrader paper-run`
+   - Motor de papel (BUY/SELL/WATCH/NO_TRADE, sin órdenes): `ibtrader paper-run`
    - Kill switch: `ibtrader kill` / limpiar: `ibtrader clear-kill`
 
 Ejecución LIVE (deshabilitada por defecto):

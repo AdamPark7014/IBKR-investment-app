@@ -2,14 +2,14 @@
 
 Meta: producir decisiones explicadas, no sólo BUY/SELL. Cada decisión incluye: ACTIVO, TESIS (evidencia), FUNDAMENTALS, VALUATION, QUANT, TECHNICAL, MACRO, SENTIMENT, RIESGO, CATALYSTS, INVALIDACIÓN, HORIZONTE, EXPECTED RETURN/DOWNSIDE, CONFIDENCE, POSITION SIZE, ACTION (BUY/HOLD/SELL/WATCH/NO_TRADE).
 
-Fase 1 (esqueleto, “NO_TRADE”):
+Papel (recomendación, sin órdenes):
 - Flujo:
   1) Ingesta de datos (con linaje y validación).
   2) Features técnicas y detección de régimen (trend vs range, risk-on/off).
   3) Ensemble de señales: combinación de estrategias técnicas/quant con pesos configurables.
-  4) Portfolio sizing preliminar (target de volatilidad / límites de concentración).
-  5) Risk Manager: aplica límites y “circuit breaker”.
-  6) Decisión resultante: en esta fase se fuerza “NO_TRADE”; se registra la tesis y se evalúa la calidad del proceso.
+  4) Portfolio sizing por volatilidad objetivo, con tope por nombre y por exposición bruta.
+  5) Risk Manager: kill switch, lista de símbolos y stop ATR vetan aperturas.
+  6) Acción de papel: BUY / SELL / WATCH / NO_TRADE. `paper-run` no envía órdenes. NO_TRADE si faltan datos, hay kill switch, el símbolo no está permitido o el stop ATR anula la entrada. Sin VIX el régimen no es risk-on y los largos se apagan.
 - Journal: se persiste cada decisión en `decisions` (SQLite) con:
   - `timestamp`, `symbol`, `action`, `score`, `confidence`, `regime`, `risk_flags`, `position_size`, `source_metadata` (JSON con fuentes/timestamps/metodologías).
 

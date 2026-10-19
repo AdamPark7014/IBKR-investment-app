@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import Dict, List
 
@@ -18,8 +19,11 @@ from ..intelligence.features import build_features
 from ..intelligence.regime import detect_regime
 from ..logging import setup_logging
 from ..ops.journal import get_engine as get_journal_engine
+from ..portfolio.sizing import volatility_target_weights
+from ..risk.manager import RiskManager
 from ..strategy.mean_reversion import MeanReversion
 from ..strategy.sma_crossover import SMACrossover
+from .paper_policy import apply_stop_veto, classify_paper_action, size_paper_positions
 
 log = setup_logging()
 
@@ -37,8 +41,8 @@ class Decision:
 
 class DecisionEngine:
     """
-    Phase-1 skeleton: compute signals and scores, but always output NO_TRADE.
-    Records decisions into the journal with full context for post-mortem.
+    Recomendaciones de papel (BUY/SELL/WATCH/NO_TRADE) con filtro de régimen,
+    tamaño por volatilidad y vetos de riesgo. No envía órdenes al broker.
     """
 
     def __init__(self, settings: AppSettings) -> None:
@@ -46,12 +50,10 @@ class DecisionEngine:
         self.journal = get_journal_engine(settings.data.journal_db)
 
     def generate(self, prices: Dict[str, pd.DataFrame]) -> List[Decision]:
-        # Features/regime
         feats = build_features(prices)
         regime = detect_regime(
             self.settings.universe, self.settings.engine, self.settings.data, prices
         )
-        # Strategies
         sma = SMACrossover(
             fast_window=int(self.settings.strategy.params.get("fast_window", 10)),
             slow_window=int(self.settings.strategy.params.get("slow_window", 30)),
@@ -63,30 +65,90 @@ class DecisionEngine:
         weights = EnsembleWeights(strategy_weights={"sma": 0.6, "mr": 0.4})
         scores = score_strategies(combined, weights)
         scores = apply_regime_filter(scores, regime)
-        # Convert to desired positions with stops (but do not place orders in phase 1)
-        decisions: List[Decision] = []
+
+        risk = RiskManager(self.settings.risk)
+        killswitch = risk.killswitch_active()
+        vol_w = volatility_target_weights(
+            prices, target_annual_vol=float(self.settings.risk.target_vol_annual)
+        )
+        direction = self.settings.trading.direction
+
+        staged: list[dict] = []
+        actions: dict[str, str] = {}
         for sym, df in prices.items():
-            sc = float(scores[sym].iloc[-1]) if not scores[sym].empty else 0.0
-            pos_series = score_to_position(scores[sym])
-            _ = enforce_stops(pos_series, df["close"], feats[sym]["atr_14"])
-            # Phase-1: force NO_TRADE; set confidence modestly based on |score|
+            series = scores.get(sym)
+            data_ok = (
+                isinstance(df, pd.DataFrame)
+                and not df.empty
+                and "close" in df.columns
+                and series is not None
+                and not series.empty
+            )
+            score = float(series.iloc[-1]) if data_ok and series is not None else float("nan")
+            allowed, _msg = risk.check_symbol_allowed(sym)
+            action, reason = classify_paper_action(
+                score=score,
+                direction=direction,
+                killswitch=killswitch,
+                symbol_allowed=allowed,
+                data_ok=data_ok,
+            )
+            desired_sign = 0
+            effective_sign = 0
+            if data_ok and series is not None:
+                pos_series = score_to_position(series)
+                desired_sign = int(pos_series.iloc[-1]) if not pos_series.empty else 0
+                atr_s = feats.get(sym, {}).get("atr_14")
+                if isinstance(atr_s, pd.Series) and not atr_s.empty:
+                    effective = enforce_stops(pos_series, df["close"].astype(float), atr_s)
+                    effective_sign = int(effective.iloc[-1])
+                else:
+                    effective_sign = desired_sign
+                action, veto_reason = apply_stop_veto(action, desired_sign, effective_sign)
+                if veto_reason:
+                    reason = veto_reason
+            actions[sym] = action
+            staged.append(
+                {
+                    "symbol": sym,
+                    "action": action,
+                    "score": score,
+                    "reason": reason,
+                }
+            )
+
+        sizes = size_paper_positions(
+            actions,
+            vol_w,
+            max_position_pct=float(self.settings.risk.max_position_pct),
+            max_total_exposure_pct=float(self.settings.risk.max_total_exposure_pct),
+        )
+        decisions: List[Decision] = []
+        for row in staged:
+            sym = str(row["symbol"])
+            score = float(row["score"])
+            action = str(row["action"])
+            size = float(sizes.get(sym, 0.0))
+            if action not in {"BUY", "SELL"}:
+                size = 0.0
+            confidence = 0.0 if not math.isfinite(score) else float(min(0.9, abs(score)))
+            regime_dict = {
+                "risk_on": int(regime["risk_on"].iloc[-1]) if not regime.empty else 0,
+                "breadth": float(regime["breadth"].iloc[-1]) if not regime.empty else 0.0,
+                "trend": int(regime["trend"].iloc[-1]) if not regime.empty else 0,
+            }
             dec = Decision(
                 symbol=sym,
-                action="NO_TRADE",
-                score=sc,
-                confidence=float(min(0.8, max(0.0, abs(sc)))),
-                position_size=0.0,
-                reason="Fase 1: política NO_TRADE. Decisión registrada para post-mortem.",
-                regime={
-                    "risk_on": int(regime["risk_on"].iloc[-1]) if not regime.empty else 0,
-                    "breadth": float(regime["breadth"].iloc[-1]) if not regime.empty else 0.0,
-                    "trend": int(regime["trend"].iloc[-1]) if not regime.empty else 0,
-                },
+                action=action,
+                score=0.0 if not math.isfinite(score) else score,
+                confidence=confidence,
+                position_size=size,
+                reason=str(row["reason"]),
+                regime=regime_dict,
             )
             decisions.append(dec)
-            # Journal (fase 1)
             try:
-                from ..ops.journal import record_decision  # local import to avoid cycles
+                from ..ops.journal import record_decision
 
                 record_decision(
                     self.journal,
@@ -101,10 +163,10 @@ class DecisionEngine:
                         {
                             "features": "technical (SMA/EMA/ATR/RSI/breadth)",
                             "regime_method": "VIX<MA50 + breadth + trend proxy",
+                            "methodology": "paper_policy v1; no broker orders",
                         }
                     ),
                 )
             except Exception as e:
                 log.error("journal_write_failed %s", str(e))
         return decisions
-
