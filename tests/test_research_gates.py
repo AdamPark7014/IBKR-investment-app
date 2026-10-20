@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import math
 
-from ibtrader.research.gates import OOSGateResult, evaluate_candidate_gates
+from ibtrader.research.gates import (
+    OOSGateResult,
+    evaluate_candidate_gates,
+    evaluate_strict_gates,
+)
 
 
 def _pass_stats(**overrides):
@@ -126,10 +130,94 @@ def test_gates_restricted_bar_frac_half_passes():
     assert res.passed is True
 
 
-def test_gates_missing_bh_skips_dd_check():
+def test_gates_missing_bh_fails_dd_check():
     res = evaluate_candidate_gates(
         stitched_oos_stats=_pass_stats(max_dd=-0.50),
         bh_stats=None,
     )
-    assert res.checks["dd_ok"] is True
+    assert res.checks["dd_ok"] is False
+    assert res.passed is False
+    assert any("bh_missing" in r for r in res.reasons)
+
+
+def test_gates_min_oos_sharpe_threshold():
+    res = evaluate_candidate_gates(
+        stitched_oos_stats=_pass_stats(sharpe=0.1),
+        bh_stats={"max_dd": -0.20},
+        min_oos_sharpe=0.25,
+    )
+    assert res.passed is False
+    assert res.checks["oos_sharpe_ok"] is False
+    assert any("0.25" in r for r in res.reasons)
+
+
+def test_strict_gates_without_diagnostics_matches_base_threshold():
+    stats = _pass_stats(sharpe=0.3)
+    res = evaluate_strict_gates(
+        stitched_oos_stats=stats,
+        bh_stats={"max_dd": -0.20},
+        diagnostics=None,
+    )
     assert res.passed is True
+    assert res.checks["min_oos_sharpe"] == 0.25
+
+
+def test_strict_gates_fail_low_sharpe():
+    res = evaluate_strict_gates(
+        stitched_oos_stats=_pass_stats(sharpe=0.1),
+        bh_stats={"max_dd": -0.20},
+        diagnostics={},
+    )
+    assert res.passed is False
+    assert any("0.25" in r for r in res.reasons)
+
+
+def test_strict_gates_fail_pbo_high_overfit():
+    res = evaluate_strict_gates(
+        stitched_oos_stats=_pass_stats(),
+        bh_stats={"max_dd": -0.20},
+        diagnostics={"pbo": {"high_overfit_risk": True, "pbo": 0.6}},
+    )
+    assert res.passed is False
+    assert any("pbo.high_overfit_risk" in r for r in res.reasons)
+
+
+def test_strict_gates_fail_dsr_below_threshold():
+    res = evaluate_strict_gates(
+        stitched_oos_stats=_pass_stats(),
+        bh_stats={"max_dd": -0.20},
+        diagnostics={"dsr": {"dsr": 0.80, "n_trials": 3}},
+    )
+    assert res.passed is False
+    assert res.checks["dsr_ok"] is False
+    assert any("dsr=" in r for r in res.reasons)
+
+
+def test_strict_gates_dsr_at_threshold_passes_dsr_check():
+    res = evaluate_strict_gates(
+        stitched_oos_stats=_pass_stats(),
+        bh_stats={"max_dd": -0.20},
+        diagnostics={"dsr": {"dsr": 0.95}},
+    )
+    assert res.passed is True
+    assert res.checks.get("dsr_ok") is True
+
+
+def test_strict_gates_fail_fragile_cpcv():
+    res = evaluate_strict_gates(
+        stitched_oos_stats=_pass_stats(),
+        bh_stats={"max_dd": -0.20},
+        diagnostics={"cpcv": {"fragile_cpcv": True, "frac_positive": 0.2}},
+    )
+    assert res.passed is False
+    assert any("cpcv.fragile_cpcv" in r for r in res.reasons)
+
+
+def test_strict_gates_nan_dsr_skips_dsr_fail():
+    res = evaluate_strict_gates(
+        stitched_oos_stats=_pass_stats(),
+        bh_stats={"max_dd": -0.20},
+        diagnostics={"dsr": {"dsr": float("nan")}},
+    )
+    assert res.passed is True
+    assert "dsr_ok" not in res.checks

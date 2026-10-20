@@ -31,9 +31,12 @@ class IBKRBroker(Broker):
         self.log.info(
             "ib_connect_start host=%s port=%s client_id=%s", host, port, client_id
         )
+        readonly = not self.settings.trading.allow_broker_orders
         with self._lock:
             if not self._connected:
-                self.ib.connect(host, port, clientId=client_id, readonly=False, timeout=5)
+                self.ib.connect(
+                    host, port, clientId=client_id, readonly=readonly, timeout=5
+                )
                 self._connected = self.ib.isConnected()
         self.log.info("ib_connect_end connected=%s", self._connected)
 
@@ -71,6 +74,10 @@ class IBKRBroker(Broker):
                 )
 
     def place_order(self, order: Order) -> str:
+        if not self.settings.trading.allow_broker_orders:
+            raise RuntimeError(
+                "Broker orders disabled (set TRADING__ALLOW_BROKER_ORDERS=true to enable)."
+            )
         if not self.is_connected():
             self.connect()
         if self.settings.mode.upper() == "LIVE":

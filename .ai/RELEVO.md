@@ -1,15 +1,19 @@
 # RELEVO
 
 ## Hecho
-- Motor de papel: `paper-run` ya no fuerza `NO_TRADE`. Clasifica BUY/SELL/WATCH/NO_TRADE con filtro de régimen, tamaño por volatilidad, tope de exposición y vetos (kill switch, símbolo, datos, stop ATR). No envía órdenes.
-- Tests de política y del motor en verde (ruff + mypy en los archivos tocados).
+- Olas A–C del EXEC-PACKET cerradas en el working tree (sin commit aún).
+- Fail-closed backtest; paper↔`approve_order`; gates strict + BH required; smoke CLI; broker `allow_broker_orders` + LIVE account pin; killswitch fail-closed; STOP/EMERGENCY no abren.
+- Pytest focal hardening: **53 passed**.
 
 ## A medias
-- Suite completa: `tests/test_research_cli.py::test_research_run_cli_full_suite` no terminó en varios minutos (ya era lenta; no la toqué).
+- B3 parcial: helpers `restricted_bar_frac` listos; engine aún no publica lockout bars.
+- Ola D (shadow, hashes registry, data fail-loud) no empezada.
+- `main` ahead 1 (rescate paper) + diff hardening sin commit.
 
 ## Siguiente
-- Si Adam quiere el siguiente salto: meta-labeling TAKE/SKIP encima de esta política, o champion/challenger en sombra. Sigue sin órdenes LIVE.
+- Si Adam pide: commit hardening + `git pull --rebase` + push main.
+- Ola D / emitir `restricted_bar_frac` desde backtest.
 
 ## No tocar
-- No abrir largos sin régimen risk-on (sin VIX el filtro apaga scores positivos).
-- No conectar este motor al broker. LIVE sigue bloqueado por `live_safety_ok`.
+- Solo `main`. Paper-run no envía órdenes (`allow_broker_orders=False` por defecto).
+- PASS de gates ≠ deploy.

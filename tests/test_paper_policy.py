@@ -6,6 +6,7 @@ from ibtrader.engine.paper_policy import (
     apply_stop_veto,
     classify_paper_action,
     size_paper_positions,
+    veto_if_risk_rejects,
 )
 
 
@@ -77,3 +78,36 @@ def test_stop_veto_blocks_stopped_entries() -> None:
     assert reason is not None
     kept, none_reason = apply_stop_veto("BUY", desired_sign=1, effective_sign=1)
     assert kept == "BUY" and none_reason is None
+
+
+class _RiskStub:
+    def __init__(self, ok: bool, msg: str = "blocked") -> None:
+        self._ok = ok
+        self._msg = msg
+        self.calls: list[dict] = []
+
+    def approve_order(self, **kwargs: object) -> tuple[bool, str]:
+        self.calls.append(dict(kwargs))
+        return (self._ok, self._msg if not self._ok else "OK")
+
+
+def test_veto_if_risk_rejects_passthrough_non_trade_actions() -> None:
+    rm = _RiskStub(ok=False)
+    for action in ("WATCH", "NO_TRADE", "HOLD"):
+        out, msg = veto_if_risk_rejects(action, rm, symbol="AAA")
+        assert out == action and msg is None
+    assert rm.calls == []
+
+
+def test_veto_if_risk_rejects_blocks_on_risk_denial() -> None:
+    rm = _RiskStub(ok=False, msg="Kill switch activo.")
+    action, msg = veto_if_risk_rejects("BUY", rm, symbol="AAA", equity=50_000.0, price=42.0)
+    assert action == "NO_TRADE"
+    assert msg == "Kill switch activo."
+    assert rm.calls[0]["quantity"] == 1
+    assert rm.calls[0]["symbol"] == "AAA"
+
+    rm2 = _RiskStub(ok=True)
+    action2, msg2 = veto_if_risk_rejects("SELL", rm2, symbol="BBB")
+    assert action2 == "SELL" and msg2 is None
+    assert rm2.calls[0]["quantity"] == -1

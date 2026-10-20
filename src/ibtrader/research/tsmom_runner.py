@@ -11,7 +11,7 @@ from ..backtest.metrics import compute_stats
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.tsmom import TimeSeriesMomentum
-from .gates import evaluate_candidate_gates
+from .runner import evaluate_gates_with_restricted_frac
 
 DEFAULT_TSMOM_LOOKBACKS: List[int] = [21, 63, 126]
 
@@ -41,6 +41,9 @@ def run_tsmom_research(
 
     Fold geometry mirrors ``walk_forward_sma`` (last 40% OOS, n folds) but the
     strategy is frozen TSMOM(lookback) — no in-fold parameter search.
+
+    OOS gates use ``restricted_bar_frac`` from stitched stats when present; the
+    backtest engine does not yet expose lockout-bar fractions on ``BacktestResult``.
     """
     lbs = list(lookbacks) if lookbacks is not None else list(DEFAULT_TSMOM_LOOKBACKS)
     df = data[symbol]
@@ -134,7 +137,7 @@ def run_tsmom_research(
                 "max_dd": float((bh_chain / bh_chain.cummax() - 1.0).min()),
             }
 
-        gate = evaluate_candidate_gates(oos, bh, restricted_bar_frac=0.0)
+        gate = evaluate_gates_with_restricted_frac(oos, bh)
         results.append(
             {
                 "candidate_id": f"tsmom_{int(lookback)}",

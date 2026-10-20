@@ -11,7 +11,7 @@ from ..backtest.metrics import compute_stats
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.mean_reversion import MeanReversion
-from .gates import evaluate_candidate_gates
+from .runner import evaluate_gates_with_restricted_frac
 
 # (window, num_std) — keep small; mean-rev is a second family stress, not a grid hunt.
 DEFAULT_MR_CANDIDATES: List[Tuple[int, float]] = [
@@ -41,7 +41,11 @@ def run_mean_reversion_research(
     n_folds: int = 3,
     warmup_bars: int = 100,
 ) -> List[Dict[str, Any]]:
-    """Anchored multi-fold OOS evaluation for Bollinger mean-reversion configs."""
+    """Anchored multi-fold OOS evaluation for Bollinger mean-reversion configs.
+
+    ``restricted_bar_frac`` for gates is resolved from OOS stats when available;
+    otherwise 0.0 until the engine reports risk lockout bars.
+    """
     grid = list(candidates) if candidates is not None else list(DEFAULT_MR_CANDIDATES)
     df = data[symbol]
     idx = list(df.index)
@@ -132,7 +136,7 @@ def run_mean_reversion_research(
                 "max_dd": float((bh_chain / bh_chain.cummax() - 1.0).min()),
             }
 
-        gate = evaluate_candidate_gates(oos, bh, restricted_bar_frac=0.0)
+        gate = evaluate_gates_with_restricted_frac(oos, bh)
         results.append(
             {
                 "candidate_id": f"mr_{int(window)}_{float(num_std):g}",

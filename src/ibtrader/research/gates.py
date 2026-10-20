@@ -32,6 +32,7 @@ def evaluate_candidate_gates(
     stitched_oos_stats: Mapping[str, Any],
     bh_stats: Optional[Mapping[str, Any]] = None,
     restricted_bar_frac: float = 0.0,
+    min_oos_sharpe: float = 0.0,
 ) -> OOSGateResult:
     """Evaluate whether a candidate is "interesting" under SPEC §3.
 
@@ -49,11 +50,17 @@ def evaluate_candidate_gates(
     max_dd = stitched_oos_stats.get("max_dd", stitched_oos_stats.get("max_drawdown"))
     cand_dd = _as_float(max_dd)
 
-    sharpe_ok = sharpe is not None and sharpe >= 0.0
+    sharpe_ok = sharpe is not None and sharpe >= min_oos_sharpe
     checks["oos_sharpe"] = sharpe
+    checks["min_oos_sharpe"] = min_oos_sharpe
     checks["oos_sharpe_ok"] = sharpe_ok
     if not sharpe_ok:
-        reasons.append(f"oos_sharpe<0 or undefined ({stitched_oos_stats.get('sharpe')})")
+        if min_oos_sharpe > 0.0:
+            reasons.append(
+                f"oos_sharpe<{min_oos_sharpe} or undefined ({stitched_oos_stats.get('sharpe')})"
+            )
+        else:
+            reasons.append(f"oos_sharpe<0 or undefined ({stitched_oos_stats.get('sharpe')})")
 
     trades_ok = trade_count >= 5
     checks["trade_count"] = trade_count
@@ -62,9 +69,15 @@ def evaluate_candidate_gates(
         reasons.append(f"trade_count={trade_count} < 5")
 
     dd_ok = True
-    if bh_stats is not None and cand_dd is not None:
+    if bh_stats is None:
+        dd_ok = False
+        reasons.append("bh_missing: cannot compare max_dd vs Buy&Hold")
+    elif cand_dd is not None:
         bh_dd = _as_float(bh_stats.get("max_dd", bh_stats.get("max_drawdown")))
-        if bh_dd is not None:
+        if bh_dd is None:
+            dd_ok = False
+            reasons.append("bh_max_dd missing or non-numeric")
+        else:
             # Drawdowns are negative fractions; worse = more negative.
             # Reject if candidate is worse than B&H by more than 5 percentage points.
             dd_ok = not (cand_dd < bh_dd - 0.05)
@@ -82,4 +95,51 @@ def evaluate_candidate_gates(
         reasons.append(f"restricted_bar_frac={frac:.2%} > 50% (risk lockout dominated)")
 
     passed = sharpe_ok and trades_ok and dd_ok and lock_ok
+    return OOSGateResult(passed=passed, reasons=reasons, checks=checks)
+
+
+def evaluate_strict_gates(
+    stitched_oos_stats: Mapping[str, Any],
+    bh_stats: Optional[Mapping[str, Any]] = None,
+    restricted_bar_frac: float = 0.0,
+    diagnostics: Optional[Mapping[str, Any]] = None,
+    min_oos_sharpe: float = 0.25,
+) -> OOSGateResult:
+    """Candidate gates plus institutional diagnostics when provided."""
+    base = evaluate_candidate_gates(
+        stitched_oos_stats,
+        bh_stats=bh_stats,
+        restricted_bar_frac=restricted_bar_frac,
+        min_oos_sharpe=min_oos_sharpe,
+    )
+    if not diagnostics:
+        return base
+
+    reasons = list(base.reasons)
+    checks: Dict[str, Any] = dict(base.checks)
+    passed = base.passed
+
+    pbo = diagnostics.get("pbo")
+    if isinstance(pbo, Mapping) and pbo.get("high_overfit_risk"):
+        passed = False
+        checks["pbo_high_overfit_risk"] = True
+        reasons.append("pbo.high_overfit_risk")
+
+    dsr_block = diagnostics.get("dsr")
+    if isinstance(dsr_block, Mapping) and "dsr" in dsr_block:
+        dsr_val = _as_float(dsr_block.get("dsr"))
+        checks["dsr"] = dsr_val
+        if dsr_val is not None and dsr_val < 0.95:
+            passed = False
+            checks["dsr_ok"] = False
+            reasons.append(f"dsr={dsr_val:.4f} < 0.95")
+        elif dsr_val is not None:
+            checks["dsr_ok"] = True
+
+    cpcv = diagnostics.get("cpcv")
+    if isinstance(cpcv, Mapping) and cpcv.get("fragile_cpcv"):
+        passed = False
+        checks["fragile_cpcv"] = True
+        reasons.append("cpcv.fragile_cpcv")
+
     return OOSGateResult(passed=passed, reasons=reasons, checks=checks)

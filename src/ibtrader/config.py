@@ -118,6 +118,7 @@ class EngineConfig(BaseModel):
 
 
 class TradingConfig(BaseModel):
+    allow_broker_orders: bool = False
     allow_short: bool = False
     rebalance_band_pct: float = 0.0
     direction: Literal["long_only", "short_only", "long_short"] = "long_only"
@@ -178,6 +179,11 @@ class AppSettings(BaseSettings):
             return (
                 False,
                 f"El puerto activo {self.ib_port()} no es el de LIVE ({self.ib.live_port}).",
+            )
+        if not (self.ib.expected_account or "").strip():
+            return (
+                False,
+                "LIVE requiere IB_EXPECTED_ACCOUNT configurado en el entorno.",
             )
         return True, "Checks de LIVE aprobados."
 

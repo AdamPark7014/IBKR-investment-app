@@ -6,7 +6,7 @@ from .cpcv_sma import run_sma_cpcv
 from .dsr import deflated_sharpe_ratio, expected_max_sharpe
 from .dsr_sma import run_sma_grid_dsr
 from .embargo_sensitivity import run_embargo_sensitivity
-from .gates import OOSGateResult, evaluate_candidate_gates
+from .gates import OOSGateResult, evaluate_candidate_gates, evaluate_strict_gates
 from .loss_mitigation import (
     DEFAULT_LOSS_MITIGATION_SPECS,
     run_loss_mitigation_research,
@@ -60,6 +60,7 @@ __all__ = [
     "deflated_sharpe_ratio",
     "diagnose_turnover",
     "evaluate_candidate_gates",
+    "evaluate_strict_gates",
     "expected_max_sharpe",
     "load_experiments",
     "meta_ensemble",

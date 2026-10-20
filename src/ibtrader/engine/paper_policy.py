@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from typing import Any
 
 __all__ = [
     "classify_paper_action",
     "size_paper_positions",
     "apply_stop_veto",
+    "veto_if_risk_rejects",
 ]
 
 
@@ -83,4 +85,32 @@ def apply_stop_veto(
         return ("NO_TRADE", "Entrada larga vetada por stop ATR.")
     if action == "SELL" and desired_sign < 0 and effective_sign == 0:
         return ("NO_TRADE", "Entrada corta vetada por stop ATR.")
+    return (action, None)
+
+
+def veto_if_risk_rejects(
+    action: str,
+    risk_manager: Any,  # RiskManager
+    *,
+    symbol: str,
+    equity: float = 100_000.0,
+    price: float = 100.0,
+) -> tuple[str, str | None]:
+    """Verifica si el risk_manager rechaza la acción y devuelve ('NO_TRADE', msg) en caso de rechazo."""
+    if action not in {"BUY", "SELL"}:
+        return (action, None)
+
+    quantity = 1 if action == "BUY" else -1
+    ok, msg = risk_manager.approve_order(
+        symbol=symbol,
+        equity=equity,
+        price=price,
+        quantity=quantity,
+        current_positions_value=0.0,
+        current_position_qty=0,
+    )
+
+    if not ok:
+        return ("NO_TRADE", msg)
+
     return (action, None)

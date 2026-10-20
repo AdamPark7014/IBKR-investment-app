@@ -11,7 +11,7 @@ from ..backtest.metrics import compute_stats
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.rotation import CrossSectionalMomentum
-from .gates import evaluate_candidate_gates
+from .runner import evaluate_gates_with_restricted_frac
 
 DEFAULT_XSECTION_CANDIDATES: List[Tuple[int, int]] = [
     (60, 2),
@@ -43,6 +43,9 @@ def run_xsection_research(
 
     Requires ≥2 symbols. Uses the first symbol's calendar for fold cuts; the
     strategy itself allocates across the universe.
+
+    ``restricted_bar_frac`` for gates comes from stitched OOS stats when wired;
+    otherwise 0.0 (engine lockout metrics not exposed yet).
     """
     if len(data) < 2:
         return []
@@ -147,7 +150,7 @@ def run_xsection_research(
                     "max_dd": float((bh_chain / bh_chain.cummax() - 1.0).min()),
                 }
 
-        gate = evaluate_candidate_gates(oos, bh, restricted_bar_frac=0.0)
+        gate = evaluate_gates_with_restricted_frac(oos, bh)
         results.append(
             {
                 "candidate_id": f"xsection_{int(lookback)}_top{int(top_n)}",

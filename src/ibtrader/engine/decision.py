@@ -23,7 +23,12 @@ from ..portfolio.sizing import volatility_target_weights
 from ..risk.manager import RiskManager
 from ..strategy.mean_reversion import MeanReversion
 from ..strategy.sma_crossover import SMACrossover
-from .paper_policy import apply_stop_veto, classify_paper_action, size_paper_positions
+from .paper_policy import (
+    apply_stop_veto,
+    classify_paper_action,
+    size_paper_positions,
+    veto_if_risk_rejects,
+)
 
 log = setup_logging()
 
@@ -107,6 +112,20 @@ class DecisionEngine:
                 action, veto_reason = apply_stop_veto(action, desired_sign, effective_sign)
                 if veto_reason:
                     reason = veto_reason
+            if action in {"BUY", "SELL"}:
+                last_price = (
+                    float(df["close"].iloc[-1])
+                    if data_ok and isinstance(df, pd.DataFrame) and not df.empty
+                    else 100.0
+                )
+                action, risk_veto = veto_if_risk_rejects(
+                    action,
+                    risk,
+                    symbol=sym,
+                    price=last_price,
+                )
+                if risk_veto:
+                    reason = risk_veto
             actions[sym] = action
             staged.append(
                 {

@@ -28,6 +28,7 @@ def run_research_suite(
     data: Mapping[str, pd.DataFrame],
     symbol: str,
     direction: Optional[str] = None,
+    profile: str = "full",
     n_folds: int = 3,
     include_cost_ladder: bool = True,
     include_tsmom: bool = True,
@@ -44,12 +45,29 @@ def run_research_suite(
     include_market_analyzer: bool = True,
 ) -> Dict[str, Any]:
     """Run full V3 research tracks + institutional diagnostics + analyzer."""
+    if profile == "smoke":
+        n_folds = 2
+        include_cost_ladder = False
+        include_tsmom = False
+        include_regime = False
+        include_embargo = False
+        include_pbo = False
+        include_multi_asset = False
+        include_mean_reversion = False
+        include_cpcv = False
+        include_dsr = True
+        include_turnover = False
+        include_loss_mitigation = False
+        include_xsection = False
+        include_market_analyzer = False
+
     direction = direction or settings.trading.direction
+    sma_candidates = [(10, 30)] if profile == "smoke" else SMA_GRID_CANDIDATES
     sma = run_sma_research(
         settings,
         data,
         symbol,
-        candidates=SMA_GRID_CANDIDATES,
+        candidates=sma_candidates,
         direction=direction,
         n_folds=n_folds,
     )

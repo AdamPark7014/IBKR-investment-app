@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Tuple
 
 from ..config import RiskConfig
 from .state_machine import Intent, RiskFSM
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -68,8 +71,10 @@ class RiskManager:
     def killswitch_active(self) -> bool:
         try:
             return os.path.exists(self.cfg.killswitch_file)
-        except Exception:
-            return False
+        except Exception as exc:
+            # Fail-closed: unreadable kill file → treat as active (block new exposure).
+            log.warning("killswitch_check_failed treating_as_active err=%s", exc)
+            return True
 
     def check_symbol_allowed(self, symbol: str) -> Tuple[bool, str]:
         if self.cfg.allowed_symbols and symbol not in self.cfg.allowed_symbols:
@@ -146,6 +151,11 @@ class RiskManager:
             is_stop=is_stop,
             is_emergency=is_emergency,
         )
+        # STOP/EMERGENCY flags must not be used to open or increase exposure.
+        resulting_probe = int(current_position_qty) + delta
+        if intent in {Intent.STOP, Intent.EMERGENCY_EXIT}:
+            if abs(resulting_probe) > abs(int(current_position_qty)):
+                return False, "STOP/EMERGENCY no puede aumentar exposición."
         # Special probe: no-op order used to probe risk state
         if delta == 0 and current_position_qty == 0:
             ok, msg = self.check_daily_loss(equity)

@@ -783,7 +783,14 @@ def market_analyze() -> None:
 
 
 @app.command("research-run")
-def research_run(exp_id: Optional[str] = None) -> None:
+def research_run(
+    exp_id: Optional[str] = None,
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        help="Research suite profile: smoke (fast SMA+DSR) or full.",
+    ),
+) -> None:
     """
     V3 research suite: gated strategy tracks + loss-mitigation overlays +
     multi-factor market analyzer + overfitting/cost diagnostics.
@@ -798,8 +805,8 @@ def research_run(exp_id: Optional[str] = None) -> None:
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
-    # Expand single-name default to the research ETF cross-section.
-    if list(s.universe.symbols) == ["SPY"]:
+    # Expand single-name default to the research ETF cross-section (full only).
+    if profile != "smoke" and list(s.universe.symbols) == ["SPY"]:
         s.universe.symbols = list(DEFAULT_RESEARCH_SYMBOLS)
     data = load_universe_v2(s)
     sym = s.universe.symbols[0]
@@ -809,7 +816,7 @@ def research_run(exp_id: Optional[str] = None) -> None:
         data,
         sym,
         direction=s.trading.direction,
-        n_folds=3,
+        profile=profile,
     )
     results = list(suite.get("candidates") or [])
     research_dir = _Path(s.data.reports_dir) / "research"
@@ -820,10 +827,13 @@ def research_run(exp_id: Optional[str] = None) -> None:
         save_experiment(registry_path, rec)
     n_pass = int(suite.get("n_pass") or 0)
     n_fail = int(suite.get("n_fail") or 0)
-    suite_label = (
-        "sma+regime+cost_ladder+tsmom+mean_reversion+loss_mitigation+xsection+"
-        "embargo+pbo+multi_asset+cpcv+dsr+turnover+market_analyzer"
-    )
+    if profile == "smoke":
+        suite_label = "sma+dsr (smoke)"
+    else:
+        suite_label = (
+            "sma+regime+cost_ladder+tsmom+mean_reversion+loss_mitigation+xsection+"
+            "embargo+pbo+multi_asset+cpcv+dsr+turnover+market_analyzer"
+        )
     payload = {
         "exp_id": run_id,
         "symbol": sym,

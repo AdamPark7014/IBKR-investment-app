@@ -165,6 +165,7 @@ def backtest(
             if price is None:
                 continue
             pos = holdings.get(sym, 0)
+            block_exposure_increase = False
             # Handle a previously scheduled stop-loss exit at the open, before anything else
             if risk_manager is not None and stop_scheduled.get(sym, False) and pos != 0:
                 side_exit = -1 if pos > 0 else 1
@@ -250,8 +251,9 @@ def backtest(
                                 cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
                             # Do not attempt any other action on this symbol today
                             continue
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("risk_fail_closed killswitch_flatten sym=%s err=%s", sym, exc)
+                    block_exposure_increase = True
             # Forced exits (stop/emergency) must run even if target==pos
             force_close = False
             is_emergency = False
@@ -264,12 +266,20 @@ def backtest(
                         if ks_action == "flatten" and risk_manager.cfg.emergency_flatten_on_kill:
                             force_close = True
                             is_emergency = True
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("risk_fail_closed killswitch_force_close sym=%s err=%s", sym, exc)
+                    block_exposure_increase = True
                 # (Open-time stop processing removed; stops are scheduled at prior close)
             if force_close:
                 target = 0
             delta = target - pos
+            if block_exposure_increase:
+                exposure_increasing = (pos == 0 and delta != 0) or (
+                    pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))
+                )
+                if exposure_increasing:
+                    delta = 0
+                    target = pos
             # After forced exit, respect cooldown before reopening
             # Set cooldown on forced exit
             if force_close and risk_manager is not None and risk_manager.cfg.cooldown_bars > 0:
@@ -303,8 +313,13 @@ def backtest(
                         if (pos == 0) or (pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))):
                             delta = 0
                             target = pos
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("risk_fail_closed daily_loss_prev_ret sym=%s err=%s", sym, exc)
+                    if (pos == 0 and delta != 0) or (
+                        pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))
+                    ):
+                        delta = 0
+                        target = pos
             # Hard gate: if drawdown restriction is active, block exposure-increasing orders
             if risk_manager is not None and delta != 0:
                 try:
@@ -317,8 +332,14 @@ def backtest(
                     if (not ok_dd) and exposure_increasing:
                         delta = 0
                         target = pos
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("risk_fail_closed drawdown sym=%s err=%s", sym, exc)
+                    exposure_increasing = (pos == 0 and delta != 0) or (
+                        pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))
+                    )
+                    if exposure_increasing:
+                        delta = 0
+                        target = pos
             if delta == 0:
                 continue
             if pos != 0 and rebalance_band_pct > 0:
@@ -489,8 +510,13 @@ def backtest(
                             if exposure_increasing:
                                 log.info("risk_veto sym=%s reason=daily_halt_hard_gate", sym)
                                 continue
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("risk_fail_closed daily_halt_hard_gate sym=%s err=%s", sym, exc)
+                        exposure_increasing = (pos == 0 and delta != 0) or (
+                            pos != 0 and ((pos > 0 and delta > 0) or (pos < 0 and delta < 0))
+                        )
+                        if exposure_increasing:
+                            continue
             # Execute order
             cash -= delta * fill_price + commission
             holdings[sym] = pos + delta

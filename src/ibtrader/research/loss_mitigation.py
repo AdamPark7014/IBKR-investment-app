@@ -19,7 +19,7 @@ from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.base import Strategy
 from ..strategy.sma_crossover import SMACrossover
-from .gates import evaluate_candidate_gates
+from .runner import evaluate_gates_with_restricted_frac
 
 
 class TrendFilteredSMA(Strategy):
@@ -197,7 +197,11 @@ def run_loss_mitigation_research(
     fast: int = 10,
     slow: int = 30,
 ) -> List[Dict[str, Any]]:
-    """Compare baseline SMA vs loss-mitigation overlays on stitched OOS."""
+    """Compare baseline SMA vs loss-mitigation overlays on stitched OOS.
+
+    Gate lockout fraction uses OOS stats when present; otherwise 0.0 until the
+    backtest engine exposes restricted-bar counts.
+    """
     direction = direction or settings.trading.direction
     grid = list(specs) if specs is not None else list(DEFAULT_LOSS_MITIGATION_SPECS)
     results: List[Dict[str, Any]] = []
@@ -223,7 +227,7 @@ def run_loss_mitigation_research(
         pack = _anchored_oos(s_run, data, symbol, strat, direction=direction, n_folds=n_folds)
         oos = pack["oos"]
         bh = pack["buy_hold_oos"]
-        gate = evaluate_candidate_gates(oos, bh, restricted_bar_frac=0.0)
+        gate = evaluate_gates_with_restricted_frac(oos, bh)
         dd = oos.get("max_dd")
         try:
             dd_f = float(dd) if dd is not None else float("nan")
