@@ -65,7 +65,7 @@ include = ["ibtrader*"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = ["data/**", "build/**", "dist/**"]
+exclude = [".ai/**", "data/**", "build/**", "dist/**", "reports/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
