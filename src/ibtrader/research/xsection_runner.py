@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import pandas as pd
 
-from ..backtest.engine import backtest
+from ..backtest.engine import backtest, restricted_counts
 from ..backtest.metrics import compute_stats
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
@@ -44,8 +44,8 @@ def run_xsection_research(
     Requires ≥2 symbols. Uses the first symbol's calendar for fold cuts; the
     strategy itself allocates across the universe.
 
-    ``restricted_bar_frac`` for gates comes from stitched OOS stats when wired;
-    otherwise 0.0 (engine lockout metrics not exposed yet).
+    ``restricted_bar_frac`` in the OOS stats is the share of test-window bars on
+    which the engine's RiskManager would have blocked new exposure.
     """
     if len(data) < 2:
         return []
@@ -64,6 +64,8 @@ def run_xsection_research(
     for lookback, top_n in grid:
         folds_eq: List[pd.Series] = []
         oos_trades_all: List[tuple] = []
+        restricted_bars = 0
+        total_bars = 0
         strat = CrossSectionalMomentum(lookback_days=int(lookback), top_n=int(top_n))
         for f in range(n_folds):
             test_start = oos_start + f * fold_size
@@ -89,6 +91,10 @@ def run_xsection_research(
             for tr in res.trades:
                 if pd.Timestamp(tr[0]) in test_dates:
                     oos_trades_all.append(tr)
+            rb, tb = restricted_counts(res, (test_idx[0], test_idx[-1])) if test_idx else (0, 0)
+            restricted_bars += int(rb)
+            total_bars += int(tb)
+        restricted_frac = (restricted_bars / total_bars) if total_bars > 0 else 0.0
 
         stitched_rets = pd.Series(dtype=float)
         for eq in folds_eq:
@@ -107,6 +113,7 @@ def run_xsection_research(
                 "sortino": st.sortino,
                 "calmar": st.calmar,
                 "max_dd": st.max_drawdown,
+                "restricted_bar_frac": restricted_frac,
                 "trade_count": len(oos_trades_all),
                 "total_commission": _commission_for_trades(settings, oos_trades_all),
                 "turnover": float(st.turnover) if st.turnover is not None else float("nan"),
@@ -118,6 +125,7 @@ def run_xsection_research(
                 "sortino": float("nan"),
                 "calmar": float("nan"),
                 "max_dd": float("nan"),
+                "restricted_bar_frac": restricted_frac,
                 "trade_count": 0,
                 "total_commission": 0.0,
                 "turnover": float("nan"),

@@ -242,8 +242,12 @@ class RiskManager:
             limit = self.state.starting_equity_today * (self.cfg.daily_loss_limit_pct / 100.0)
             if equity < self.state.starting_equity_today - limit:
                 self.state.halt_next_day = True
-        except Exception:
-            pass
+        except Exception as exc:
+            # Fail-closed: if the daily-loss check cannot be evaluated, do not leave
+            # tomorrow open. on_new_day() consumes halt_next_day -> halted (opens and
+            # increases blocked; reductions/exits stay allowed, same as a real breach).
+            log.error("risk_fail_closed daily_loss_close_check halt_next_day=True err=%s", exc)
+            self.state.halt_next_day = True
 
     def notify_order_sent(self) -> None:
         self.state.orders_today += 1

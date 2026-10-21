@@ -5,10 +5,8 @@ import re
 import time
 from datetime import datetime, timezone
 
-import pytest
 import pandas as pd
 from typer.testing import CliRunner
-from datetime import datetime
 
 import ibtrader.ops.cli as cli_mod
 
@@ -74,7 +72,6 @@ def test_research_run_cli_smoke_profile(monkeypatch, tmp_path):
     assert on_disk["n_candidates"] == 1
 
 
-@pytest.mark.skipif(not hasattr(datetime, "UTC"), reason="datetime.UTC unavailable on this runtime")
 def test_market_analyze_cli(monkeypatch, tmp_path):
     def fake_loader(settings):
         return {sym: _mk(400) for sym in settings.universe.symbols}

@@ -25,7 +25,7 @@ from ..risk.manager import RiskManager, RiskState
 from ..strategy.sma_crossover import SMACrossover
 from ..validation.signal import validate_sma_signal
 from ..validation.walkforward import walk_forward_sma
-from .artifacts import git_commit, save_run_artifact
+from .artifacts import config_hash, dataset_hash, git_commit, save_run_artifact
 
 app = typer.Typer(no_args_is_help=True)
 log = setup_logging()
@@ -748,6 +748,7 @@ def market_analyze() -> None:
     """
     import json as _json
     from datetime import datetime as _dt
+    from datetime import timezone as _tz
     from pathlib import Path as _Path
 
     from ..research.market_analyzer import analyze_market
@@ -766,7 +767,7 @@ def market_analyze() -> None:
     )
     research_dir = _Path(s.data.reports_dir) / "research"
     research_dir.mkdir(parents=True, exist_ok=True)
-    run_id = _dt.now(_dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    run_id = _dt.now(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
     art = research_dir / f"market_analyze_{run_id}.json"
     payload = {
         "exp_id": run_id,
@@ -798,6 +799,7 @@ def research_run(
     """
     import json as _json
     from datetime import datetime as _dt
+    from datetime import timezone as _tz
     from pathlib import Path as _Path
 
     from ..research.multi_asset import DEFAULT_RESEARCH_SYMBOLS
@@ -810,7 +812,7 @@ def research_run(
         s.universe.symbols = list(DEFAULT_RESEARCH_SYMBOLS)
     data = load_universe_v2(s)
     sym = s.universe.symbols[0]
-    run_id = exp_id or _dt.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    run_id = exp_id or _dt.now(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
     suite = run_research_suite(
         s,
         data,
@@ -822,11 +824,18 @@ def research_run(
     research_dir = _Path(s.data.reports_dir) / "research"
     research_dir.mkdir(parents=True, exist_ok=True)
     registry_path = research_dir / f"experiments_{run_id}.jsonl"
-    records = build_experiment_records(results, exp_id=run_id, git_commit=git_commit())
+    records = build_experiment_records(
+        results,
+        exp_id=run_id,
+        git_commit=git_commit(),
+        dataset_hash=dataset_hash(data),
+        config_hash=config_hash(s),
+    )
     for rec in records:
         save_experiment(registry_path, rec)
     n_pass = int(suite.get("n_pass") or 0)
     n_fail = int(suite.get("n_fail") or 0)
+    n_pass_loose = int(suite.get("n_pass_loose") or 0)
     if profile == "smoke":
         suite_label = "sma+dsr (smoke)"
     else:
@@ -843,6 +852,8 @@ def research_run(
         "n_candidates": int(suite.get("n_candidates") or len(results)),
         "n_pass": n_pass,
         "n_fail": n_fail,
+        "n_pass_loose": n_pass_loose,
+        "gate_mode": "strict",
         "cost_fragility": suite.get("cost_fragility"),
         "loss_mitigation_summary": suite.get("loss_mitigation_summary"),
         "embargo_sensitivity": suite.get("embargo_sensitivity"),
@@ -883,6 +894,7 @@ def research_run(
                 "buy_hold_oos": r.get("buy_hold_oos"),
                 "gate": "PASS" if r.get("gate_passed") else "FAIL",
                 "gate_passed": bool(r.get("gate_passed")),
+                "gate_passed_loose": bool(r.get("gate_passed_loose")),
                 "gate_detail": {
                     "checks": r.get("gate_checks") or {},
                     "reasons": r.get("gate_reasons") or [],

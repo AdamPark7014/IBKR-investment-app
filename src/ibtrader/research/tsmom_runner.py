@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Mapping, Sequence
 
 import pandas as pd
 
-from ..backtest.engine import backtest
+from ..backtest.engine import backtest, restricted_counts
 from ..backtest.metrics import compute_stats
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
@@ -42,8 +42,9 @@ def run_tsmom_research(
     Fold geometry mirrors ``walk_forward_sma`` (last 40% OOS, n folds) but the
     strategy is frozen TSMOM(lookback) — no in-fold parameter search.
 
-    OOS gates use ``restricted_bar_frac`` from stitched stats when present; the
-    backtest engine does not yet expose lockout-bar fractions on ``BacktestResult``.
+    OOS gates use ``restricted_bar_frac`` from stitched stats: the share of OOS
+    bars on which the engine's RiskManager would have blocked new exposure
+    (``BacktestResult.restricted`` summed over the test windows).
     """
     lbs = list(lookbacks) if lookbacks is not None else list(DEFAULT_TSMOM_LOOKBACKS)
     df = data[symbol]
@@ -60,6 +61,8 @@ def run_tsmom_research(
     for lookback in lbs:
         folds_eq: List[pd.Series] = []
         oos_trades_all: List[tuple] = []
+        restricted_bars = 0
+        total_bars = 0
         for f in range(n_folds):
             test_start = oos_start + f * fold_size
             test_end = oos_start + (f + 1) * fold_size if f < n_folds - 1 else n
@@ -83,6 +86,10 @@ def run_tsmom_research(
             for tr in res.trades:
                 if pd.Timestamp(tr[0]) in test_dates:
                     oos_trades_all.append(tr)
+            rb, tb = restricted_counts(res, (test_idx[0], test_idx[-1])) if test_idx else (0, 0)
+            restricted_bars += int(rb)
+            total_bars += int(tb)
+        restricted_frac = (restricted_bars / total_bars) if total_bars > 0 else 0.0
 
         # Stitch OOS via chained returns (same idea as walkforward)
         stitched_rets = pd.Series(dtype=float)
@@ -101,6 +108,7 @@ def run_tsmom_research(
                 "sortino": st.sortino,
                 "calmar": st.calmar,
                 "max_dd": st.max_drawdown,
+                "restricted_bar_frac": restricted_frac,
                 "trade_count": len(oos_trades_all),
                 "total_commission": _commission_for_trades(settings, oos_trades_all),
             }
@@ -111,6 +119,7 @@ def run_tsmom_research(
                 "sortino": float("nan"),
                 "calmar": float("nan"),
                 "max_dd": float("nan"),
+                "restricted_bar_frac": restricted_frac,
                 "trade_count": 0,
                 "total_commission": 0.0,
             }

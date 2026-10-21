@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as _np
 import pandas as pd
 
-from ..backtest.engine import backtest
+from ..backtest.engine import backtest, restricted_counts
 from ..backtest.metrics import compute_stats as _cs
 from ..backtest.reasons import TradeReason
 from ..config import AppSettings, CommissionConfig
@@ -122,6 +122,11 @@ def _roundtrip_trade_metrics(trades: List[dict]) -> Tuple[float, float]:
     return float(pf) if pf == pf or pf == float("inf") else _NAN, exp
 
 
+def _restricted_frac(restricted_bars: int, total_bars: int) -> float:
+    """Share of OOS bars under risk lockout; 0.0 when the window is empty."""
+    return float(restricted_bars) / float(total_bars) if total_bars > 0 else 0.0
+
+
 def _enrich_window_stats(
     base_stats_dict: dict,
     trades: List[dict],
@@ -170,6 +175,8 @@ def walk_forward_sma(
     tried_all: List[Tuple[Tuple[int, int], float]] = []
     total_oos_trades = 0
     total_oos_commission = 0.0
+    total_oos_restricted_bars = 0
+    total_oos_bars = 0
     stitched_eq = pd.Series(dtype=float)
     stitched_bh = pd.Series(dtype=float)
     initial_equity = 100_000.0
@@ -338,6 +345,16 @@ def walk_forward_sma(
         total_oos_trades += int(oos_trades_this)
         comm_fold = _commission_for_fills(settings.commission, oos_trades_list)
         total_oos_commission += float(comm_fold)
+        # Risk lockout bars inside the test window only (engine span includes warmup)
+        restricted_fold, bars_fold = (
+            restricted_counts(res_test_span, (test_idx[0], test_idx[-1])) if test_idx else (0, 0)
+        )
+        total_oos_restricted_bars += int(restricted_fold)
+        total_oos_bars += int(bars_fold)
+        oos_fold_stats = _enrich_window_stats(
+            res_test_stats.__dict__, oos_trades_list, comm_fold, initial_equity
+        )
+        oos_fold_stats["restricted_bar_frac"] = _restricted_frac(restricted_fold, bars_fold)
         # Stitch OOS equity and B&H for this fold
         stitched_eq = pd.concat([stitched_eq, test_eq]) if not stitched_eq.empty else test_eq.copy()
         # B&H for same test window
@@ -365,9 +382,7 @@ def walk_forward_sma(
                 "val": _enrich_window_stats(
                     res_val_stats.__dict__, val_trades, val_comm, initial_equity
                 ),
-                "oos": _enrich_window_stats(
-                    res_test_stats.__dict__, oos_trades_list, comm_fold, initial_equity
-                ),
+                "oos": oos_fold_stats,
                 "tried_combos": [
                     {"fast": a, "slow": b, "val_sharpe": s}
                     for (a, b), s in tried_all[-len(param_grid) :]
@@ -413,6 +428,9 @@ def walk_forward_sma(
                 initial_equity,
             )
             stitched_oos_stats["trade_count"] = int(oos_trade_count)
+            stitched_oos_stats["restricted_bar_frac"] = _restricted_frac(
+                total_oos_restricted_bars, total_oos_bars
+            )
     per_fold_params = [
         {"fold": fd["fold"], "fast": fd["chosen_params"]["fast"], "slow": fd["chosen_params"]["slow"]}
         for fd in folds_detail
@@ -461,6 +479,9 @@ def walk_forward_sma(
         "per_fold_params": per_fold_params,
         "oos_total_trades": int(total_oos_trades),
         "oos_commission_approx": float(total_oos_commission),
+        "oos_restricted_bars": int(total_oos_restricted_bars),
+        "oos_total_bars": int(total_oos_bars),
+        "restricted_bar_frac": _restricted_frac(total_oos_restricted_bars, total_oos_bars),
         "tried_param_count": len(tried_all),
         "stitched_oos_equity": [[str(t), float(v)] for t, v in stitched_eq.items()],
         "stitched_bh_equity": [[str(t), float(v)] for t, v in stitched_bh.items()],

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import pandas as pd
 
-from ..backtest.engine import backtest
+from ..backtest.engine import backtest, restricted_counts
 from ..backtest.metrics import compute_stats
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
@@ -96,6 +96,8 @@ def _anchored_oos(
     initial_equity = 100_000.0
     folds_eq: List[pd.Series] = []
     oos_trades_all: List[tuple] = []
+    restricted_bars = 0
+    total_bars = 0
 
     for f in range(n_folds):
         test_start = oos_start + f * fold_size
@@ -118,6 +120,10 @@ def _anchored_oos(
         for tr in res.trades:
             if pd.Timestamp(tr[0]) in test_dates:
                 oos_trades_all.append(tr)
+        rb, tb = restricted_counts(res, (test_idx[0], test_idx[-1])) if test_idx else (0, 0)
+        restricted_bars += int(rb)
+        total_bars += int(tb)
+    restricted_frac = (restricted_bars / total_bars) if total_bars > 0 else 0.0
 
     stitched_rets = pd.Series(dtype=float)
     for eq in folds_eq:
@@ -135,6 +141,7 @@ def _anchored_oos(
             "sortino": st.sortino,
             "calmar": st.calmar,
             "max_dd": st.max_drawdown,
+            "restricted_bar_frac": restricted_frac,
             "trade_count": len(oos_trades_all),
             "total_commission": _commission_for_trades(settings, oos_trades_all),
             "turnover": float(st.turnover) if st.turnover is not None else float("nan"),
@@ -146,6 +153,7 @@ def _anchored_oos(
             "sortino": float("nan"),
             "calmar": float("nan"),
             "max_dd": float("nan"),
+            "restricted_bar_frac": restricted_frac,
             "trade_count": 0,
             "total_commission": 0.0,
             "turnover": float("nan"),
@@ -199,8 +207,8 @@ def run_loss_mitigation_research(
 ) -> List[Dict[str, Any]]:
     """Compare baseline SMA vs loss-mitigation overlays on stitched OOS.
 
-    Gate lockout fraction uses OOS stats when present; otherwise 0.0 until the
-    backtest engine exposes restricted-bar counts.
+    Gate lockout fraction (``restricted_bar_frac``) is the share of OOS bars on
+    which the engine's RiskManager would have blocked new exposure.
     """
     direction = direction or settings.trading.direction
     grid = list(specs) if specs is not None else list(DEFAULT_LOSS_MITIGATION_SPECS)

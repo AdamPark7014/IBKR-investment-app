@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import pandas as pd
 
-from ..backtest.engine import backtest
+from ..backtest.engine import backtest, restricted_counts
 from ..backtest.metrics import compute_stats
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
@@ -43,8 +43,8 @@ def run_mean_reversion_research(
 ) -> List[Dict[str, Any]]:
     """Anchored multi-fold OOS evaluation for Bollinger mean-reversion configs.
 
-    ``restricted_bar_frac`` for gates is resolved from OOS stats when available;
-    otherwise 0.0 until the engine reports risk lockout bars.
+    ``restricted_bar_frac`` in the OOS stats is the share of test-window bars on
+    which the engine's RiskManager would have blocked new exposure.
     """
     grid = list(candidates) if candidates is not None else list(DEFAULT_MR_CANDIDATES)
     df = data[symbol]
@@ -60,6 +60,8 @@ def run_mean_reversion_research(
     for window, num_std in grid:
         folds_eq: List[pd.Series] = []
         oos_trades_all: List[tuple] = []
+        restricted_bars = 0
+        total_bars = 0
         for f in range(n_folds):
             test_start = oos_start + f * fold_size
             test_end = oos_start + (f + 1) * fold_size if f < n_folds - 1 else n
@@ -83,6 +85,10 @@ def run_mean_reversion_research(
             for tr in res.trades:
                 if pd.Timestamp(tr[0]) in test_dates:
                     oos_trades_all.append(tr)
+            rb, tb = restricted_counts(res, (test_idx[0], test_idx[-1])) if test_idx else (0, 0)
+            restricted_bars += int(rb)
+            total_bars += int(tb)
+        restricted_frac = (restricted_bars / total_bars) if total_bars > 0 else 0.0
 
         stitched_rets = pd.Series(dtype=float)
         for eq in folds_eq:
@@ -99,6 +105,7 @@ def run_mean_reversion_research(
                 "sortino": st.sortino,
                 "calmar": st.calmar,
                 "max_dd": st.max_drawdown,
+                "restricted_bar_frac": restricted_frac,
                 "trade_count": len(oos_trades_all),
                 "total_commission": _commission_for_trades(settings, oos_trades_all),
                 "turnover": float(st.turnover) if st.turnover is not None else float("nan"),
@@ -110,6 +117,7 @@ def run_mean_reversion_research(
                 "sortino": float("nan"),
                 "calmar": float("nan"),
                 "max_dd": float("nan"),
+                "restricted_bar_frac": restricted_frac,
                 "trade_count": 0,
                 "total_commission": 0.0,
                 "turnover": float("nan"),

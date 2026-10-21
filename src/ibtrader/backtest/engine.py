@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
@@ -9,6 +9,7 @@ from ..config import CommissionConfig, SlippageConfig
 from ..logging import setup_logging
 from ..risk.manager import RiskManager
 from ..risk.sizing import volatility_target_weight
+from ..risk.state_machine import RiskState as RiskFSMState
 from ..strategy.base import Strategy
 from .metrics import PerformanceStats, compute_stats
 from .reasons import TradeReason
@@ -24,6 +25,62 @@ class BacktestResult:
     # (date, symbol, qty, price, exit_reason)
     trades: List[Tuple[str, str, int, float, str]]
     stats: PerformanceStats
+    # Per-bar lockout flag (bool, same index as equity_curve): True when the
+    # RiskManager would block new exposure on that bar. All False without a
+    # risk manager; a failed probe marks the bar True (fail-closed).
+    restricted: pd.Series = field(default_factory=lambda: pd.Series(dtype=bool))
+
+
+def _probe_restricted(risk_manager: RiskManager | None) -> bool:
+    """Read-only probe: would the risk manager block new exposure right now?
+
+    True on daily halt, any non-NORMAL FSM state or an active kill switch.
+    Any exception while probing is treated as restricted (fail-closed). The
+    probe never mutates risk state, so it cannot change fills or metrics.
+    """
+    if risk_manager is None:
+        return False
+    try:
+        if bool(risk_manager.state.halted):
+            return True
+        fsm = getattr(risk_manager, "fsm", None)
+        if fsm is not None and fsm.state != RiskFSMState.NORMAL:
+            return True
+        if risk_manager.killswitch_active():
+            return True
+        return False
+    except Exception as exc:
+        log.warning("risk_fail_closed restricted_probe err=%s", exc)
+        return True
+
+
+def restricted_counts(
+    res: BacktestResult,
+    window: slice | Tuple[Any, Any] | None = None,
+) -> Tuple[int, int]:
+    """Return ``(restricted_bars, total_bars)`` from ``res.restricted``.
+
+    ``window`` selects a sub-range by index label: ``None`` for the whole
+    series, a ``slice(start, stop)`` of labels, or an inclusive ``(start, end)``
+    tuple (either end may be ``None``). Missing/NaN values inside the window
+    count as restricted (fail-closed). Returns ``(0, 0)`` when nothing is
+    selected.
+    """
+    series = getattr(res, "restricted", None)
+    if series is None or len(series) == 0:
+        return 0, 0
+    sel = series
+    if window is not None:
+        if isinstance(window, slice):
+            sel = sel.loc[window]
+        else:
+            start, end = window
+            sel = sel.loc[start:end]
+    total = int(len(sel))
+    if total == 0:
+        return 0, 0
+    restricted = int(sel.fillna(True).astype(bool).sum())
+    return restricted, total
 
 
 def _commission(commission_cfg: CommissionConfig, qty: int, price: float) -> float:
@@ -87,6 +144,8 @@ def backtest(
     cooldown_until: Dict[str, int] = {}
     # Close-based stop scheduling: decide at bar close, execute at next open
     stop_scheduled: Dict[str, bool] = {sym: False for sym in data}
+    # Per-bar lockout flags (read-only probes; never alter risk state or fills)
+    restricted_flags: List[Tuple[Any, bool]] = []
     for i, dt in enumerate(all_dates):
         if i == 0:
             # No execution possible on first bar; mark-to-market at close
@@ -96,6 +155,7 @@ def backtest(
             equity = cash + sum(qty * close_prices.get(sym, 0.0) for sym, qty in holdings.items())
             equity_curve.append((dt, equity))
             returns.append((dt, 0.0))
+            restricted_flags.append((dt, _probe_restricted(risk_manager)))
             prev_equity = equity
             for sym in data.keys():
                 positions[sym].loc[dt] = holdings.get(sym, 0)
@@ -105,6 +165,8 @@ def backtest(
         if risk_manager is not None:
             # Use previous equity as starting equity for the day
             risk_manager.on_new_day(str(dt), float(prev_equity))
+        # Lockout at the open (prior-day halt, kill switch, FSM carried into today)
+        bar_restricted = _probe_restricted(risk_manager)
         close_prev = {
             sym: float(data[sym].reindex([dt_prev])["close"].iloc[0])
             for sym in data
@@ -568,6 +630,10 @@ def backtest(
             )
             # Update last target after execution
             last_targets[sym] = target
+        # Lockout asserted during the bar (drawdown / cumulative / intraday daily-loss probes)
+        if not bar_restricted:
+            bar_restricted = _probe_restricted(risk_manager)
+        restricted_flags.append((dt, bar_restricted))
         # Mark-to-market at today's close
         close_today = {
             sym: float(data[sym].reindex([dt])["close"].iloc[0])
@@ -601,6 +667,12 @@ def backtest(
             positions[sym].loc[dt] = holdings.get(sym, 0)
     equity_series = pd.Series({dt: eq for dt, eq in equity_curve}).sort_index()
     returns_series = pd.Series({dt: r for dt, r in returns}).sort_index()
+    restricted_series = pd.Series(
+        {dt: bool(flag) for dt, flag in restricted_flags}, dtype=bool
+    ).sort_index()
+    if not restricted_series.index.equals(equity_series.index):
+        # Defensive: any bar without a probe counts as restricted (fail-closed)
+        restricted_series = restricted_series.reindex(equity_series.index, fill_value=True).astype(bool)
     stats = compute_stats(equity_series, returns_series)
     # Extend stats with trade-level metrics
     trade_count = len(trades)
@@ -619,5 +691,6 @@ def backtest(
         positions=positions,
         trades=trades,
         stats=stats,
+        restricted=restricted_series,
     )
 

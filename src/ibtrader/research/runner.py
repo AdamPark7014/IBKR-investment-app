@@ -54,7 +54,6 @@ def resolve_restricted_bar_frac(
         if found is not None:
             return found, True
 
-    # TODO(P0-10): wire restricted_bar_frac from engine once backtest exposes lockout bars.
     return 0.0, False
 
 
@@ -189,7 +188,17 @@ def build_experiment_records(
     config_hash: str = "",
     notes: str = "",
 ) -> List[ExperimentRecord]:
-    """Convert runner result dicts into ``ExperimentRecord`` rows."""
+    """Convert runner result dicts into ``ExperimentRecord`` rows.
+
+    ``dataset_hash`` and ``config_hash`` are mandatory provenance: a registry
+    row that cannot be tied to the exact data + settings it was produced with
+    is not reproducible, so empty hashes raise ``ValueError``.
+    """
+    if not dataset_hash or not config_hash:
+        raise ValueError(
+            "build_experiment_records: dataset_hash and config_hash are required "
+            f"(got dataset_hash={dataset_hash!r}, config_hash={config_hash!r})"
+        )
     now = datetime.now(timezone.utc).isoformat()
     out: List[ExperimentRecord] = []
     for r in results:

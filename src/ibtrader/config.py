@@ -18,7 +18,7 @@ class RiskConfig(BaseModel):
         20.0, description="If cumulative PnL < -limit% vs first equity, restrict (blocks new entries)"
     )
     drawdown_limit_pct: float = Field(
-        25.0, description="If drawdown from peak < -limit%, restrict (blocks new entries)"
+        20.0, description="If drawdown from peak < -limit%, restrict (blocks new entries)"
     )
     target_vol_annual: float = Field(0.10, description="Volatility target for sizing (annualized)")
     risk_on_threshold: float = Field(0.5, description="Minimum risk-on probability to allow trades")

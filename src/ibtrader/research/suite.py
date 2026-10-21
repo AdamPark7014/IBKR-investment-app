@@ -11,6 +11,7 @@ from .cost_stress import run_cost_ladder_research, summarize_cost_fragility
 from .cpcv_sma import run_sma_cpcv
 from .dsr_sma import run_sma_grid_dsr
 from .embargo_sensitivity import run_embargo_sensitivity
+from .gates import evaluate_strict_gates
 from .loss_mitigation import run_loss_mitigation_research, summarize_loss_mitigation
 from .market_analyzer import analyze_market
 from .mean_reversion_runner import DEFAULT_MR_CANDIDATES, run_mean_reversion_research
@@ -21,6 +22,84 @@ from .runner import SMA_GRID_CANDIDATES, TREND_REGIME_CANDIDATES, run_sma_resear
 from .tsmom_runner import DEFAULT_TSMOM_LOOKBACKS, run_tsmom_research
 from .turnover_diag import diagnose_turnover
 from .xsection_runner import DEFAULT_XSECTION_CANDIDATES, run_xsection_research
+
+# Diagnostic blocks (keys of the suite output) that ``evaluate_strict_gates`` understands.
+_STRICT_DIAGNOSTIC_KEYS = ("dsr", "pbo", "cpcv")
+
+
+def _is_sma_family(row: Mapping[str, Any]) -> bool:
+    """True for rows produced by ``run_sma_research`` (grid / regime / cost ladder / multi-asset).
+
+    Other tracks tag ``params.family`` (tsmom, mean_reversion, xsection_momentum,
+    loss_mitigation); SMA rows carry no family tag and a ``sma`` candidate prefix.
+    """
+    params = row.get("params") or {}
+    family = params.get("family") if isinstance(params, Mapping) else None
+    if family not in (None, "sma"):
+        return False
+    return str(row.get("candidate_id") or "").startswith("sma")
+
+
+def _apply_strict_gates(
+    rows: List[Dict[str, Any]],
+    diagnostics: Optional[Mapping[str, Any]],
+    symbol: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Re-gate every candidate row with ``evaluate_strict_gates`` (in place).
+
+    Runners emit the loose SPEC §3 gate (``gate_passed`` / ``gate_reasons`` /
+    ``gate_checks``). This keeps that verdict under ``gate_passed_loose`` /
+    ``gate_reasons_loose`` and overwrites ``gate_passed`` / ``gate_reasons`` with
+    the strict verdict (Sharpe ≥ 0.25, beat B&H risk-adjusted, DSR/PBO/CPCV).
+
+    ``diagnostics`` (DSR / PBO / CPCV) were computed over the SMA grid of
+    ``symbol``, so they are only applied to SMA-family rows of that symbol
+    (``symbol=None`` → any SMA row); other families get ``diagnostics=None``.
+    A row whose loose checks carry ``restricted_bar_frac_assumed=True`` (the
+    engine did not report lockout bars) fails strict with reason
+    ``restricted_bar_frac_assumed``: an assumed 0.0 is not evidence.
+    """
+    diag: Optional[Dict[str, Any]] = None
+    if diagnostics:
+        diag = {k: diagnostics[k] for k in _STRICT_DIAGNOSTIC_KEYS if diagnostics.get(k) is not None} or None
+
+    for row in rows:
+        loose_checks = dict(row.get("gate_checks") or {})
+        row["gate_passed_loose"] = bool(row.get("gate_passed"))
+        row["gate_reasons_loose"] = list(row.get("gate_reasons") or [])
+
+        oos = row.get("oos") or {}
+        bh = row.get("buy_hold_oos")
+        try:
+            frac = float(loose_checks.get("restricted_bar_frac") or 0.0)
+        except (TypeError, ValueError):
+            frac = 0.0
+
+        row_symbol = row.get("symbol") or (row.get("params") or {}).get("symbol")
+        use_diag = (
+            diag is not None
+            and _is_sma_family(row)
+            and (symbol is None or row_symbol is None or str(row_symbol) == str(symbol))
+        )
+        strict = evaluate_strict_gates(
+            stitched_oos_stats=oos,
+            bh_stats=bh if isinstance(bh, Mapping) else None,
+            restricted_bar_frac=frac,
+            diagnostics=diag if use_diag else None,
+        )
+        passed = strict.passed
+        reasons = list(strict.reasons)
+        checks: Dict[str, Any] = {**loose_checks, **strict.checks}
+        if loose_checks.get("restricted_bar_frac_assumed"):
+            passed = False
+            reasons.append("restricted_bar_frac_assumed")
+        checks["gate_mode"] = "strict"
+        checks["strict_diagnostics_applied"] = bool(use_diag)
+
+        row["gate_passed"] = passed
+        row["gate_reasons"] = reasons
+        row["gate_checks"] = checks
+    return rows
 
 
 def run_research_suite(
@@ -92,7 +171,6 @@ def run_research_suite(
             direction=direction,
             n_folds=n_folds,
         )
-        fragility = summarize_cost_fragility(ladder)
     tsmom: List[Dict[str, Any]] = []
     if include_tsmom:
         tsmom = run_tsmom_research(
@@ -125,7 +203,6 @@ def run_research_suite(
             direction=direction,
             n_folds=n_folds,
         )
-        lossmit_summary = summarize_loss_mitigation(lossmit)
 
     xsection: List[Dict[str, Any]] = []
     if include_xsection and len(data) >= 2:
@@ -168,7 +245,6 @@ def run_research_suite(
             direction=direction,
             n_folds=n_folds,
         )
-        xasset_summary = summarize_cross_section(xasset)
 
     cpcv_report: Dict[str, Any] | None = None
     if include_cpcv:
@@ -214,11 +290,26 @@ def run_research_suite(
             n_folds=n_folds,
         )
 
+    # Strict gating is the verdict the suite reports; loose stays as *_loose.
+    _apply_strict_gates(
+        all_rows,
+        {"dsr": dsr_report, "pbo": pbo_report, "cpcv": cpcv_report},
+        symbol=symbol,
+    )
+    # Per-track summaries must describe the same (strict) gate as the rows.
+    if include_cost_ladder:
+        fragility = summarize_cost_fragility(ladder)
+    if include_loss_mitigation:
+        lossmit_summary = summarize_loss_mitigation(lossmit)
+    if include_multi_asset:
+        xasset_summary = summarize_cross_section(xasset)
+
     turnover_report: Dict[str, Any] | None = None
     if include_turnover:
         turnover_report = diagnose_turnover(all_rows)
 
     n_pass = sum(1 for r in all_rows if r.get("gate_passed"))
+    n_pass_loose = sum(1 for r in all_rows if r.get("gate_passed_loose"))
     out: Dict[str, Any] = {
         "symbol": symbol,
         "direction": direction,
@@ -243,8 +334,10 @@ def run_research_suite(
         "market_analyzer": analyzer,
         "candidates": all_rows,
         "n_candidates": len(all_rows),
+        "gate_mode": "strict",
         "n_pass": n_pass,
         "n_fail": len(all_rows) - n_pass,
+        "n_pass_loose": n_pass_loose,
         "any_gate_passed": n_pass > 0,
     }
     out["honest_report"] = build_honest_report(out)
