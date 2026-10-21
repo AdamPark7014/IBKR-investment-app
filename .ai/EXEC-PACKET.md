@@ -33,7 +33,7 @@ Cerrar P0-1…P0-9 y smoke research usable. No conectar paper a broker. No inven
 ### [x] Defaults conservadores: drawdown 25 → 20 % (`config.py`, `RISK_MODEL.md`, `.env.example` con `RISK__*`).
 ### [x] CI en `main` con ubuntu + macOS y smoke de `research-run` (`.github/workflows/ci.yml`).
 ### [ ] D — Shadow book (`ops/shadow.py`) + data fail-loud (P1-4, P1-5, P1-6) — siguiente turno
-### [ ] Fase 2 — Universo ~10 ETFs: paridad de riesgo, TSMOM, dual momentum vs 60/40, periodo de confirmación congelado
+### [ ] Fase 2 — Universo ~10 ETFs según `docs/research/QUANT-FUNDS-PLAYBOOK-2026-10-21.md` (grafo de stages, EWMAC + 1/3/12 m, risk parity por cajas, vol target 10 %, buffers, hold-out congelado)
 
 ## DoD
 - [x] `pytest`: 171 passed · `ruff check src tests` OK · `mypy src` OK (2026-10-21, Python 3.12)
