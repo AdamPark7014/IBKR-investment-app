@@ -2,13 +2,23 @@ name: CI
 
 on:
   push:
-    branches: [ "dev", "cursor/**" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "dev" ]
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: lint + types + tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,22 +26,26 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
       - name: Lint (ruff)
-        run: |
-          ruff check .
+        run: ruff check .
       - name: Type check (mypy)
-        run: |
-          mypy src
+        run: mypy src
       - name: Tests (pytest)
-        run: |
-          pytest -q
+        run: pytest -q
 
   clean-install:
-    runs-on: ubuntu-latest
+    name: fresh venv + CLI smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,4 +71,4 @@ jobs:
           ibtrader backtest-sample --exp-id ci
           ibtrader compare-directions --exp-id ci2
           ibtrader walk-forward --exp-id ciwf
-
+          ibtrader research-run --profile smoke --exp-id cismoke
