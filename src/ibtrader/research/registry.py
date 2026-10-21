@@ -27,6 +27,14 @@ class ExperimentRecord:
     notes: str = ""
     dataset_hash: str = ""
     config_hash: str = ""
+    # Research discipline (playbook phase 1). Older rows omit these → defaults.
+    n_trials: int = 0  # configurations evaluated in the run that produced this row (N for DSR/PBO)
+    years_available: float = 0.0  # data span in years, hold-out excluded
+    years_needed: float = 0.0  # 2·ln(N)/SR² (Bailey et al. 2014)
+    budget_ok: Optional[bool] = None  # None = budget not evaluated (legacy row)
+    holdout_start: Optional[str] = None  # declared frozen hold-out (ISO date) or None
+    holdout_applied: bool = False  # bars ≥ holdout_start were hidden from this run
+    holdout_opened: bool = False  # confirmation run: the hold-out was used (logged)
     extra: Dict[str, Any] = field(default_factory=dict)
 
 

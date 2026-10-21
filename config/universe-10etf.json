@@ -1,0 +1,98 @@
+{
+  "name": "10etf-risk-parity",
+  "as_of": "2026-10-21",
+  "source": "docs/research/QUANT-FUNDS-PLAYBOOK-2026-10-21.md (universo propuesto 10 + cash) y anexo 7",
+  "notes": "listed_from = fecha de inception publicada por el emisor (no la primera barra disponible en cada proveedor). Antes de confiar en una fecha, compararla con TiingoProvider.fetch_metadata(symbol).start_date; las entradas marcadas 'verificar contra Tiingo metadata' se pusieron de memoria. spread_bps es el techo documentado en el playbook (<= 2 pb salvo PDBC y TIP <= 5 pb), no una medida propia. delisted_on = null mientras el ETF siga listado.",
+  "symbols": [
+    {
+      "symbol": "SPY",
+      "asset_class": "equity",
+      "box": "us_equity",
+      "listed_from": "1993-01-22",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "SPDR S&P 500. Alternativa VTI (2001-05-24)."
+    },
+    {
+      "symbol": "VEA",
+      "asset_class": "equity",
+      "box": "developed_ex_us_equity",
+      "listed_from": "2007-07-20",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "Vanguard FTSE Developed Markets. verificar contra Tiingo metadata."
+    },
+    {
+      "symbol": "VWO",
+      "asset_class": "equity",
+      "box": "emerging_equity",
+      "listed_from": "2005-03-04",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "Vanguard FTSE Emerging Markets."
+    },
+    {
+      "symbol": "IEF",
+      "asset_class": "fixed_income",
+      "box": "treasuries_intermediate",
+      "listed_from": "2002-07-22",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "iShares 7-10 Year Treasury Bond."
+    },
+    {
+      "symbol": "TLT",
+      "asset_class": "fixed_income",
+      "box": "treasuries_long",
+      "listed_from": "2002-07-22",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "iShares 20+ Year Treasury Bond."
+    },
+    {
+      "symbol": "TIP",
+      "asset_class": "fixed_income",
+      "box": "tips",
+      "listed_from": "2003-12-04",
+      "delisted_on": null,
+      "spread_bps": 5.0,
+      "notes": "iShares TIPS Bond. verificar contra Tiingo metadata."
+    },
+    {
+      "symbol": "GLD",
+      "asset_class": "commodity",
+      "box": "gold",
+      "listed_from": "2004-11-18",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "SPDR Gold Shares."
+    },
+    {
+      "symbol": "PDBC",
+      "asset_class": "commodity",
+      "box": "commodities",
+      "listed_from": "2014-11-07",
+      "delisted_on": null,
+      "spread_bps": 5.0,
+      "notes": "Invesco Optimum Yield Diversified Commodity Strategy No K-1. verificar contra Tiingo metadata. Alternativa DBC (2006-02-03) con mas historia pero emite K-1."
+    },
+    {
+      "symbol": "VNQ",
+      "asset_class": "real_estate",
+      "box": "reit",
+      "listed_from": "2004-09-23",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "Vanguard Real Estate ETF."
+    },
+    {
+      "symbol": "BIL",
+      "asset_class": "cash",
+      "box": "cash",
+      "listed_from": "2007-05-25",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "SPDR Bloomberg 1-3 Month T-Bill; proxy de cash. verificar contra Tiingo metadata. Alternativa SGOV (2020-05-26)."
+    }
+  ]
+}

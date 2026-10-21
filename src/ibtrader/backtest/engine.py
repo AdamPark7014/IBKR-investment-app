@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
-from ..config import CommissionConfig, SlippageConfig
+from ..config import CommissionConfig, RegFeesConfig, SlippageConfig
+from ..execution.costs import (
+    OrderCost,
+    estimated_fill_price,
+    rolling_adv_and_sigma,
+    slippage_legacy_bps,
+    total_order_cost,
+)
+from ..execution.costs import (
+    commission as _commission_cost,
+)
 from ..logging import setup_logging
 from ..risk.manager import RiskManager
 from ..risk.sizing import volatility_target_weight
 from ..risk.state_machine import RiskState as RiskFSMState
 from ..strategy.base import Strategy
-from .metrics import PerformanceStats, compute_stats
+from .metrics import CostTotals, PerformanceStats, compute_stats
 from .reasons import TradeReason
 
 log = setup_logging()
@@ -84,14 +94,13 @@ def restricted_counts(
 
 
 def _commission(commission_cfg: CommissionConfig, qty: int, price: float) -> float:
-    per_share = commission_cfg.per_share * abs(qty)
-    ad_valorem = commission_cfg.percent_of_value / 100.0 * abs(qty) * price
-    return max(per_share + ad_valorem, commission_cfg.min_per_order)
+    """Commission for one fill (delegates to ``execution.costs.commission``)."""
+    return _commission_cost(commission_cfg, qty, price)
 
 
 def _slip(slippage_cfg: SlippageConfig, price: float, side: int) -> float:
-    bps = slippage_cfg.bps / 10000.0
-    return price * (1 + bps * side)
+    """Legacy flat-bps fill (``slippage.model == "bps"``); kept for callers/tests."""
+    return slippage_legacy_bps(slippage_cfg, price, side)
 
 
 def backtest(
@@ -110,10 +119,48 @@ def backtest(
     risk_on_threshold: float = 0.0,
     target_vol_annual: float | None = None,
     risk_manager: RiskManager | None = None,
+    reg_fees_cfg: Optional[RegFeesConfig] = None,
 ) -> BacktestResult:
     # Validate band units
     if rebalance_band_pct < 0.0 or rebalance_band_pct > 1.0:
         raise ValueError("rebalance_band_pct debe estar en [0,1]. Usa fracción (e.g., 0.02 para 2%).")
+    # Execution-cost model (COST_MODEL.md). Regulatory fees default to the IBKR schedule.
+    reg_cfg = reg_fees_cfg if reg_fees_cfg is not None else RegFeesConfig()
+    spread_impact = slippage_cfg.model != "bps"
+    adv_by_sym: Dict[str, pd.Series] = {}
+    sigma_by_sym: Dict[str, pd.Series] = {}
+    if spread_impact:
+        for sym_, df_ in data.items():
+            adv_by_sym[sym_], sigma_by_sym[sym_] = rolling_adv_and_sigma(
+                df_, slippage_cfg.adv_window_days, slippage_cfg.sigma_window_days
+            )
+    impact_warned: Set[str] = set()
+    costs = CostTotals()
+
+    def _order_cost(sym_: str, qty_: int, ref_price_: float, dt_: Any) -> OrderCost:
+        """Fill price and all-in cost of ``qty_`` shares of ``sym_`` at the open ``ref_price_``."""
+        sigma_: Optional[float] = None
+        adv_: Optional[float] = None
+        if spread_impact:
+            s_ = sigma_by_sym.get(sym_)
+            a_ = adv_by_sym.get(sym_)
+            if s_ is not None and dt_ in s_.index:
+                sigma_ = float(s_.loc[dt_])
+            if a_ is not None and dt_ in a_.index:
+                adv_ = float(a_.loc[dt_])
+        return total_order_cost(
+            sym_,
+            int(qty_),
+            float(ref_price_),
+            dt_,
+            commission_cfg=commission_cfg,
+            slippage_cfg=slippage_cfg,
+            reg_fees_cfg=reg_cfg,
+            sigma_daily=sigma_,
+            adv_shares=adv_,
+            warned=impact_warned,
+        )
+
     # Prepare signals
     signals = strategy.generate_signals(data)
     # Align dates
@@ -130,7 +177,6 @@ def backtest(
     prev_equity = initial_equity
     # Track last executed targets to reduce churn
     last_targets: Dict[str, int] = {sym: 0 for sym in data}
-    total_commission = 0.0
     turnover_notional = 0.0
     realized_pnl = 0.0
     realized_wins = 0.0
@@ -211,7 +257,7 @@ def backtest(
                     vt = volatility_target_weight(rets, target_vol_annual=target_vol_annual)
                 w = base_alloc * vt * (1 if raw_sign[sym] > 0 else -1)
                 # Compute against slippage-adjusted estimated fill to avoid oversizing
-                est_fill = _slip(slippage_cfg, open_now[sym], 1 if w >= 0 else -1)
+                est_fill = estimated_fill_price(slippage_cfg, sym, open_now[sym], 1 if w >= 0 else -1)
                 qty = int(nav_prev * abs(w) / est_fill) if est_fill > 0 else 0
                 proposed = qty if w >= 0 else -qty
                 # Only trade on signal changes, or when drift exceeds band (if configured)
@@ -230,12 +276,12 @@ def backtest(
             block_exposure_increase = False
             # Handle a previously scheduled stop-loss exit at the open, before anything else
             if risk_manager is not None and stop_scheduled.get(sym, False) and pos != 0:
-                side_exit = -1 if pos > 0 else 1
-                fill_exit = _slip(slippage_cfg, price, side_exit)
-                comm_exit = _commission(commission_cfg, -pos, fill_exit)
+                oc_exit = _order_cost(sym, -pos, price, dt)
+                fill_exit = oc_exit.fill_price
+                comm_exit = oc_exit.explicit_fees  # commission + regulatory fees
                 cash -= (-pos) * fill_exit + comm_exit
                 turnover_notional += abs(pos) * fill_exit
-                total_commission += comm_exit
+                costs.add(oc_exit)
                 # Book realized P&L for full close
                 reduce_qty = abs(pos)
                 pnl = (
@@ -272,12 +318,12 @@ def backtest(
                     if hasattr(risk_manager, "killswitch_active") and risk_manager.killswitch_active():
                         ks_action = getattr(risk_manager.cfg, "killswitch_action", "flatten")
                         if ks_action == "flatten" and risk_manager.cfg.emergency_flatten_on_kill:
-                            side_exit = -1 if pos > 0 else 1
-                            fill_exit = _slip(slippage_cfg, price, side_exit)
-                            comm_exit = _commission(commission_cfg, -pos, fill_exit)
+                            oc_exit = _order_cost(sym, -pos, price, dt)
+                            fill_exit = oc_exit.fill_price
+                            comm_exit = oc_exit.explicit_fees  # commission + regulatory fees
                             cash -= (-pos) * fill_exit + comm_exit
                             turnover_notional += abs(pos) * fill_exit
-                            total_commission += comm_exit
+                            costs.add(oc_exit)
                             # Book realized P&L for full close
                             reduce_qty = abs(pos)
                             pnl = (
@@ -408,12 +454,12 @@ def backtest(
                 rel_change = abs(delta) / max(1, abs(pos))
                 if rel_change < rebalance_band_pct:
                     continue
-            side = 1 if delta > 0 else -1
-            # Use slippage-adjusted estimate for sizing checks
-            fill_price = _slip(slippage_cfg, price, side)
-            commission = _commission(commission_cfg, delta, fill_price)
+            # Modelled fill (spread + impact, or legacy flat bps) and explicit fees for this order
+            oc = _order_cost(sym, delta, price, dt)
+            fill_price = oc.fill_price
+            commission = oc.explicit_fees  # commission + regulatory fees (sells)
             if ((benefit_bps > 0.0) or (risk_cost_bps > 0.0)) and (pos != 0) and (target != 0) and (pos * target > 0):
-                slippage_cost = abs(delta) * price * (slippage_cfg.bps / 10000.0)
+                slippage_cost = oc.half_spread + oc.impact
                 risk_cost = abs(delta) * price * (risk_cost_bps / 10000.0)
                 expected_benefit = abs(delta) * price * (benefit_bps / 10000.0)
                 total_cost = commission + slippage_cost + risk_cost
@@ -437,12 +483,13 @@ def backtest(
                 # If forced close, bypass risk checks for the close leg (always allowed)
                 if force_close and pos != 0:
                     dclose = -pos
-                    dfill = _slip(slippage_cfg, price, (1 if dclose > 0 else -1))
-                    dcomm = _commission(commission_cfg, dclose, dfill)
+                    oc_close = _order_cost(sym, dclose, price, dt)
+                    dfill = oc_close.fill_price
+                    dcomm = oc_close.explicit_fees
                     cash -= dclose * dfill + dcomm
                     holdings[sym] = 0
                     turnover_notional += abs(dclose) * dfill
-                    total_commission += dcomm
+                    costs.add(oc_close)
                     reduce_qty = abs(pos)
                     pnl = (dfill - avg_price[sym]) * reduce_qty if pos > 0 else (avg_price[sym] - dfill) * reduce_qty
                     pnl -= dcomm
@@ -488,10 +535,11 @@ def backtest(
                     if not ok:
                         # Attempt close-only leg; open leg vetoed
                         delta_close = -pos
+                        oc_close = _order_cost(sym, delta_close, price, dt)
                         okc, msgc = risk_manager.approve_order(
                             symbol=sym,
                             equity=eq_prev,
-                            price=_slip(slippage_cfg, price, (1 if delta_close > 0 else -1)),
+                            price=oc_close.fill_price,
                             quantity=int(delta_close),
                             current_positions_value=float(cur_pos_val),
                             current_position_qty=int(pos),
@@ -500,12 +548,12 @@ def backtest(
                         )
                         if okc and delta_close != 0:
                             # Execute close-only
-                            dfill = _slip(slippage_cfg, price, (1 if delta_close > 0 else -1))
-                            dcomm = _commission(commission_cfg, delta_close, dfill)
+                            dfill = oc_close.fill_price
+                            dcomm = oc_close.explicit_fees
                             cash -= delta_close * dfill + dcomm
                             holdings[sym] = 0
                             turnover_notional += abs(delta_close) * dfill
-                            total_commission += dcomm
+                            costs.add(oc_close)
                             # Bookkeeping for realized P&L on full close
                             reduce_qty = min(abs(delta_close), abs(pos))
                             if pos > 0 and delta_close < 0:
@@ -583,7 +631,7 @@ def backtest(
             cash -= delta * fill_price + commission
             holdings[sym] = pos + delta
             turnover_notional += abs(delta) * fill_price
-            total_commission += commission
+            costs.add(oc)
             if risk_manager is not None:
                 risk_manager.notify_order_sent()
             if force_close:
@@ -673,13 +721,13 @@ def backtest(
     if not restricted_series.index.equals(equity_series.index):
         # Defensive: any bar without a probe counts as restricted (fail-closed)
         restricted_series = restricted_series.reindex(equity_series.index, fill_value=True).astype(bool)
-    stats = compute_stats(equity_series, returns_series)
+    stats = compute_stats(equity_series, returns_series, costs=costs, initial_equity=initial_equity)
     # Extend stats with trade-level metrics
     trade_count = len(trades)
     profit_factor = (realized_wins / realized_losses) if realized_losses > 0 else 0.0
     expectancy = (realized_pnl / realized_trades) if realized_trades > 0 else 0.0
     stats.trade_count = trade_count
-    stats.total_commission = float(total_commission)
+    stats.total_commission = float(costs.commission)
     stats.turnover = float(turnover_notional / initial_equity if initial_equity else 0.0)
     stats.win_rate_trades = float((win_trades / realized_trades) if realized_trades > 0 else 0.0)
     # use pnl share separately through profit_factor

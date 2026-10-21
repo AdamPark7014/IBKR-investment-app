@@ -1,9 +1,37 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
+
+PERIODS_PER_YEAR = 252
+
+
+@dataclass
+class CostTotals:
+    """Running sums of execution costs across every fill of a backtest (USD)."""
+
+    commission: float = 0.0
+    reg_fees: float = 0.0
+    half_spread: float = 0.0
+    impact: float = 0.0
+    n_orders: int = 0
+    notional: float = 0.0
+
+    @property
+    def total(self) -> float:
+        return float(self.commission + self.reg_fees + self.half_spread + self.impact)
+
+    def add(self, order_cost: Any) -> None:
+        """Accumulate an ``ibtrader.execution.costs.OrderCost`` (duck-typed to avoid a cycle)."""
+        self.commission += float(order_cost.commission)
+        self.reg_fees += float(order_cost.reg_fees)
+        self.half_spread += float(order_cost.half_spread)
+        self.impact += float(order_cost.impact)
+        self.n_orders += 1
+        self.notional += float(order_cost.notional)
 
 
 @dataclass
@@ -28,18 +56,89 @@ class PerformanceStats:
     cvar_95: float = 0.0
     current_underwater_days: int = 0
     max_underwater_days: int = 0
+    # Execution-cost breakdown (USD unless noted). See COST_MODEL.md.
+    total_slippage: float = 0.0  # half-spread paid (flat bps when slippage model == "bps")
+    total_impact: float = 0.0
+    total_reg_fees: float = 0.0
+    total_costs: float = 0.0  # commission + reg fees + slippage + impact
+    n_orders: int = 0
+    notional_traded: float = 0.0
+    avg_cost_bps_per_order: float = 0.0  # total_costs / notional_traded * 1e4
+    cost_drag_annual_pct: float = 0.0  # total_costs / initial equity / years * 100
+
+
+COST_METRIC_FIELDS = (
+    "total_commission",
+    "total_slippage",
+    "total_impact",
+    "total_reg_fees",
+    "total_costs",
+    "n_orders",
+    "notional_traded",
+    "avg_cost_bps_per_order",
+    "cost_drag_annual_pct",
+    "turnover",
+)
+
+
+def attach_cost_metrics(
+    stats: PerformanceStats,
+    costs: CostTotals,
+    *,
+    initial_equity: float,
+    n_periods: int,
+    periods_per_year: int = PERIODS_PER_YEAR,
+) -> PerformanceStats:
+    """Fill the cost fields of ``stats`` from ``costs`` (in place; returned for chaining)."""
+    stats.total_commission = float(costs.commission)
+    stats.total_reg_fees = float(costs.reg_fees)
+    stats.total_slippage = float(costs.half_spread)
+    stats.total_impact = float(costs.impact)
+    stats.total_costs = float(costs.total)
+    stats.n_orders = int(costs.n_orders)
+    stats.notional_traded = float(costs.notional)
+    stats.avg_cost_bps_per_order = (
+        float(costs.total / costs.notional * 1e4) if costs.notional > 0.0 else 0.0
+    )
+    years = max(int(n_periods), 1) / float(periods_per_year)
+    stats.cost_drag_annual_pct = (
+        float(costs.total / float(initial_equity) / years * 100.0)
+        if initial_equity and initial_equity > 0.0 and years > 0.0
+        else 0.0
+    )
+    return stats
+
+
+def cost_metrics_dict(stats: PerformanceStats) -> Dict[str, Any]:
+    """Only the execution-cost metrics (for JSON artifacts and HTML reports)."""
+    return {k: getattr(stats, k) for k in COST_METRIC_FIELDS}
+
+
+def stats_to_dict(stats: PerformanceStats) -> Dict[str, Any]:
+    """Every metric as a plain dict (dataclass fields, JSON-friendly scalars)."""
+    return dict(asdict(stats))
 
 
 def compute_stats(
-    equity_curve: pd.Series, returns: pd.Series, rf: float = 0.0
+    equity_curve: pd.Series,
+    returns: pd.Series,
+    rf: float = 0.0,
+    *,
+    costs: Optional[CostTotals] = None,
+    initial_equity: Optional[float] = None,
 ) -> PerformanceStats:
+    """Performance metrics from an equity curve; with ``costs`` also the cost breakdown.
+
+    ``initial_equity`` defaults to the first point of ``equity_curve`` and is the base
+    of ``cost_drag_annual_pct``.
+    """
     equity_curve = equity_curve.dropna()
     returns = returns.loc[equity_curve.index].fillna(0.0)
     if equity_curve.index.freq == "B":
-        periods_per_year = 252
+        periods_per_year = PERIODS_PER_YEAR
     else:
         # Approximate by daily
-        periods_per_year = 252
+        periods_per_year = PERIODS_PER_YEAR
     total_return = equity_curve.iloc[-1] / equity_curve.iloc[0] - 1.0
     n_periods = max(len(returns), 1)
     cagr = (1 + total_return) ** (periods_per_year / n_periods) - 1 if n_periods > 0 else 0.0
@@ -84,7 +183,7 @@ def compute_stats(
     # calmar & recovery
     calmar = float(cagr / abs(max_drawdown)) if max_drawdown < 0 else _nan
     recovery_factor = float(total_return / abs(max_drawdown)) if max_drawdown < 0 else _nan
-    return PerformanceStats(
+    stats = PerformanceStats(
         cagr=float(cagr),
         sharpe=float(sharpe),
         sortino=float(sortino),
@@ -100,4 +199,18 @@ def compute_stats(
         current_underwater_days=int(current_underwater_days),
         max_underwater_days=int(max_underwater_days),
     )
+    if costs is not None:
+        base_equity = (
+            float(initial_equity)
+            if initial_equity is not None
+            else float(equity_curve.iloc[0]) if len(equity_curve) else 0.0
+        )
+        attach_cost_metrics(
+            stats,
+            costs,
+            initial_equity=base_equity,
+            n_periods=len(returns),
+            periods_per_year=periods_per_year,
+        )
+    return stats
 

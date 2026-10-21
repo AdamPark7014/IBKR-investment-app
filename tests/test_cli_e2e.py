@@ -40,6 +40,7 @@ def test_cli_download_backtest_compare(monkeypatch: Any, tmp_path) -> None:
     monkeypatch.setenv("DATA__PROVIDERS", '["fixture"]')
     monkeypatch.setenv("DATA__FIXTURE_DIR", "./tests/fixtures")
     monkeypatch.setenv("DATA__CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("DATA__VINTAGE_DIR", str(tmp_path / "vintages"))
     runner = CliRunner()
     # download-data
     res = runner.invoke(cli_mod.app, ["download-data"])
@@ -64,6 +65,7 @@ def test_service_calls_yahoo_with_window(monkeypatch: Any, tmp_path) -> None:
     # Build default settings
     from ibtrader.config import AppSettings
     monkeypatch.setenv("DATA__CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("DATA__VINTAGE_DIR", str(tmp_path / "vintages"))
     s = AppSettings()
     s.resolve_paths()
     # Ensure no cache to force fetch
@@ -98,6 +100,7 @@ def test_cache_poisoning_blocked(monkeypatch: Any, tmp_path) -> None:
     # Load with tmp cache dir
     from ibtrader.config import AppSettings
     monkeypatch.setenv("DATA__CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("DATA__VINTAGE_DIR", str(tmp_path / "vintages"))
     s = AppSettings()
     s.resolve_paths()
     out = real_load_universe_v2(s)

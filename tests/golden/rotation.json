@@ -1,0 +1,37 @@
+{
+  "config_hash": "f91b59c3a4878713dcea2e5f7cd25e8dd27e28cf4c7602ae9cdd1dabb186d7c4",
+  "dataset_hash": "98b61708c2676ee1fb483152b212ba7e09341b8468a73ddc94d0bfdb1359da7d",
+  "direction": "long_only",
+  "fixtures": [
+    "SPY_1d.csv"
+  ],
+  "generated_at_utc": "2026-10-21T19:29:17.220454+00:00",
+  "git_commit": "21b20f31032763569b2acdffa0d1bfbbce57c44c",
+  "n_bars": 273,
+  "n_orders": 4,
+  "orders_hash": "a18b9fd952d0392397a97d62e5ea7252bb9052a9feafaef8c4e863920010412e",
+  "params": {
+    "lookback_days": 60,
+    "top_n": 2
+  },
+  "regenerate": "ibtrader golden-regen --yes",
+  "stats": {
+    "cagr": 0.80029538454923,
+    "final_equity": 189069.9091061734,
+    "max_dd": -0.07450645699811664,
+    "sharpe": 4.180187632612857,
+    "total_commission": 7.055,
+    "trade_count": 4,
+    "turnover": 1.9930782035029464
+  },
+  "strategy": "rotation",
+  "synthetic": {
+    "SYN_REV": "SPY fixture OHLC reversed in time (a clean down-trend); volume kept",
+    "SYN_WAVE": "sawtooth close = 100 + 0.5*(i mod 40): +0.5/bar for 39 bars then a one-bar reset of -19.5 (exact IEEE arithmetic, ~16% gap that crosses a 2-sigma Bollinger band); open=close, high=close+1, low=close-1, volume=1e6"
+  },
+  "universe": [
+    "SPY",
+    "SYN_REV",
+    "SYN_WAVE"
+  ]
+}

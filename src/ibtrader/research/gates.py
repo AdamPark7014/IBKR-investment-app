@@ -103,12 +103,53 @@ BH_SHARPE_TOLERANCE = 0.10  # candidate may trail B&H Sharpe by at most this muc
 BH_DD_MARGIN = 0.05  # ...if its max DD is at least this many pp shallower than B&H.
 
 
+def compute_trial_budget(
+    n_trials: int,
+    years_available: float,
+    target_sharpe: float = 1.0,
+) -> Dict[str, Any]:
+    """Trial budget of Bailey, Borwein, López de Prado & Zhu (2014).
+
+    With ``N`` independent trials and a target annual Sharpe ``SR``, the sample
+    must span at least ``years_needed = 2·ln(N) / SR²`` years for the best
+    backtest not to be a selection artefact (E[max Z_N]² ≤ 2 ln N). One trial
+    needs nothing (``years_needed = 0``). ``budget_ok`` is
+    ``years_available >= years_needed``; a non-positive ``target_sharpe`` makes
+    the budget undefined (``years_needed = inf``, ``budget_ok = False``).
+    """
+    n = max(int(n_trials), 0)
+    years = float(years_available)
+    sr = float(target_sharpe)
+    if n < 2:
+        needed = 0.0
+    elif sr <= 0.0 or math.isnan(sr):
+        needed = float("inf")
+    else:
+        needed = 2.0 * math.log(n) / (sr * sr)
+    ok = bool(math.isfinite(needed) and years >= needed - 1e-12)
+    return {
+        "n_trials": n,
+        "years_available": years,
+        "years_needed": needed,
+        "target_sharpe": sr,
+        "budget_ok": ok,
+    }
+
+
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return bool(value)
+
+
 def evaluate_strict_gates(
     stitched_oos_stats: Mapping[str, Any],
     bh_stats: Optional[Mapping[str, Any]] = None,
     restricted_bar_frac: float = 0.0,
     diagnostics: Optional[Mapping[str, Any]] = None,
     min_oos_sharpe: float = 0.25,
+    budget: Optional[Mapping[str, Any]] = None,
+    holdout: Optional[Mapping[str, Any]] = None,
 ) -> OOSGateResult:
     """Candidate gates + risk-adjusted beat-B&H + institutional diagnostics.
 
@@ -121,6 +162,16 @@ def evaluate_strict_gates(
       This applies even when ``diagnostics`` is None.
     * When ``diagnostics`` carries ``pbo`` / ``dsr`` / ``cpcv`` blocks, high
       overfit risk, DSR < 0.95 or a fragile CPCV distribution also FAIL.
+    * ``budget`` (see ``compute_trial_budget``: ``budget_ok``, ``n_trials``,
+      ``years_needed``, ``years_available``; optional
+      ``fail_on_budget_exceeded``, default True) → FAIL with reason
+      ``trial_budget_exceeded`` when the sample is shorter than the trial
+      budget demands and enforcement is on. When enforcement is off the
+      verdict is unchanged but ``checks['budget_ok']`` still says False.
+    * ``holdout`` (``holdout_applied`` / ``holdout_opened`` /
+      ``holdout_overused``) → FAIL with reason ``holdout_overused`` when the
+      frozen hold-out was opened more times than ``max_holdout_openings``.
+      All flags are copied into ``checks``.
     """
     base = evaluate_candidate_gates(
         stitched_oos_stats,
@@ -167,6 +218,46 @@ def evaluate_strict_gates(
     checks["beats_bh"] = beats_bh
     checks["beats_bh_via_dd"] = beats_bh_via_dd
     checks["beats_bh_ok"] = beats_bh or beats_bh_via_dd
+
+    # --- Trial budget (Bailey et al. 2014): years ≥ 2·ln(N)/SR² ----------------
+    if budget is not None:
+        n_trials = int(budget.get("n_trials") or 0)
+        years_needed = _as_float(budget.get("years_needed"))
+        years_available = _as_float(budget.get("years_available"))
+        budget_ok = _as_bool(budget.get("budget_ok"), default=False)
+        enforce = _as_bool(budget.get("fail_on_budget_exceeded"), default=True)
+        checks["n_trials"] = n_trials
+        checks["years_needed"] = years_needed
+        checks["years_available"] = years_available
+        checks["budget_ok"] = budget_ok
+        checks["budget_enforced"] = enforce
+        if not budget_ok:
+            txt = (
+                f"trial_budget_exceeded: n_trials={n_trials} needs "
+                f"{years_needed if years_needed is not None else float('nan'):.2f}y, "
+                f"have {years_available if years_available is not None else float('nan'):.2f}y"
+            )
+            if enforce:
+                passed = False
+                reasons.append(txt)
+            else:
+                checks["budget_warning"] = txt + " (not enforced)"
+
+    # --- Frozen hold-out discipline --------------------------------------------
+    if holdout is not None:
+        applied = _as_bool(holdout.get("holdout_applied"))
+        opened = _as_bool(holdout.get("holdout_opened"))
+        overused = _as_bool(holdout.get("holdout_overused"))
+        checks["holdout_applied"] = applied
+        checks["holdout_opened"] = opened
+        checks["holdout_overused"] = overused
+        if holdout.get("holdout_start") is not None:
+            checks["holdout_start"] = str(holdout.get("holdout_start"))
+        if holdout.get("holdout_opening_no") is not None:
+            checks["holdout_opening_no"] = int(holdout["holdout_opening_no"])
+        if overused:
+            passed = False
+            reasons.append("holdout_overused")
 
     if not diagnostics:
         return OOSGateResult(passed=passed, reasons=reasons, checks=checks)

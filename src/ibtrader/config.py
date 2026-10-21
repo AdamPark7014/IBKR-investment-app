@@ -78,15 +78,70 @@ class RiskConfig(BaseModel):
 
 
 class CommissionConfig(BaseModel):
+    """IBKR US stocks/ETFs commission schedule (read 2026-10-21, see docs/research annex 4)."""
+
     model: Literal["fixed", "tiered"] = "fixed"
+    # Fixed: USD 0.005/share, min USD 1.00/order, max 1 % of trade value.
     per_share: float = 0.005
     min_per_order: float = 1.0
-    percent_of_value: float = 0.0  # optional ad-valorem
+    max_percent_of_value: float = Field(default=1.0, description="Cap as % of trade value (IBKR Fixed: 1 %)")
+    percent_of_value: float = 0.0  # optional ad-valorem (legacy)
+    # Tiered (<=300k shares/month): USD 0.0035/share, min USD 0.35, + exchange + clearing + pass-through.
+    tiered_per_share: float = 0.0035
+    tiered_min_per_order: float = 0.35
+    tiered_exchange_per_share: float = Field(
+        default=0.0030,
+        description="Exchange fee when removing liquidity (NOT verified)",
+    )
+    clearing_per_share: float = 0.0002
+    pass_through_pct_of_commission: float = 0.000175 + 0.00056  # NYSE + FINRA pass-through
+    sanity_min_all_in_bps: float = Field(
+        default=2.5,
+        description="IBKR Pro clients' real all-in cost (2.5-4 bp, jul-2026); reports flag cheaper models",
+    )
+
+
+class RegFeesConfig(BaseModel):
+    """US regulatory fees on sells (SEC Section 31, FINRA TAF, CAT). Rates as of 2026-10-21."""
+
+    sec_fee_rate: float = Field(
+        default=0.0000206,
+        description="SEC fee x notional sold (USD 20.60/million, since 2026-04-04)",
+    )
+    finra_taf_per_share: float = Field(default=0.000195, description="FINRA TAF per share sold (normal rate)")
+    finra_taf_max_per_order: float = 9.79
+    finra_taf_paused_until: Optional[str] = Field(
+        default="2026-12-31",
+        description="ISO date; TAF is USD 0 through this date",
+    )
+    cat_per_share: float = 0.000003
 
 
 class SlippageConfig(BaseModel):
-    bps: float = 1.0  # basis points per trade (round-trip ~2*bps)
+    """Spread + impact model (annex 4): half-spread by symbol class plus square-root impact."""
+
+    model: Literal["bps", "spread_impact"] = "spread_impact"
+    bps: float = 1.0  # legacy flat slippage per trade (used when model == "bps")
     ticks: float = 0.0
+    spread_bps_default: float = Field(
+        default=2.0,
+        description="Full quoted spread (bps) for unknown symbols; core ETFs ~0-2",
+    )
+    spread_bps_by_symbol: dict = Field(
+        default_factory=lambda: {
+            "SPY": 0.5, "IVV": 1.0, "VTI": 1.0, "QQQ": 0.7, "IWM": 0.9, "EFA": 1.5, "VEA": 2.0,
+            "EEM": 1.5, "VWO": 2.0, "IEF": 1.5, "TLT": 1.0, "TIP": 3.0, "GLD": 1.0, "DBC": 5.0,
+            "PDBC": 5.0, "VNQ": 2.0, "BIL": 1.0, "SGOV": 1.0,
+        }
+    )
+    half_spread_mult: float = Field(default=1.0, description="1.0 = cross the spread; 0.5 = patient limit at mid")
+    impact_y: float = Field(
+        default=0.5,
+        description="Y in Y*sigma_daily*sqrt(Q/ADV); Toth 'order unity', 0.5 conservative",
+    )
+    impact_exponent: float = 0.5
+    adv_window_days: int = 20
+    sigma_window_days: int = 20
 
 
 class DataConfig(BaseModel):
@@ -96,6 +151,22 @@ class DataConfig(BaseModel):
     journal_db: str = "./data/journal.sqlite"
     providers: List[str] = Field(default_factory=lambda: ["yahoo", "stooq"])
     max_cache_age_days: int = 7
+    # Point-in-time layer (playbook phase 1): vintages + SHA-256 manifest, lifecycle universe, loud validators.
+    tiingo_token: str = Field(
+        default="",
+        description="Tiingo API token (DATA__TIINGO_TOKEN); empty disables the provider",
+    )
+    vintage_dir: str = Field(default="./data/vintages", description="Parquet snapshots by vintage_date + manifest.json")
+    write_manifest: bool = True
+    universe_file: Optional[str] = Field(
+        default=None,
+        description="JSON/YAML with symbol lifecycle (listed_from, delisted_on)",
+    )
+    max_price_spike_pct: float = Field(
+        default=25.0,
+        description="Reject bars whose close jumps more than this % day over day",
+    )
+    reject_future_bars: bool = Field(default=True, description="Fail loud if any bar is dated after today (UTC)")
 
 
 class IBConfig(BaseModel):
@@ -131,6 +202,21 @@ class StrategyConfig(BaseModel):
     params: dict = Field(default_factory=lambda: {"fast_window": 10, "slow_window": 30})
 
 
+class ResearchConfig(BaseModel):
+    """Research discipline (playbook phase 1): frozen hold-out and trial budget."""
+
+    holdout_start: Optional[str] = Field(
+        default=None,
+        description="ISO date. Bars on/after this date are hidden from research runs unless confirmation_mode",
+    )
+    confirmation_mode: bool = Field(default=False, description="Open the frozen hold-out once; every opening is logged")
+    max_holdout_openings: int = 1
+    trial_budget_target_sharpe: float = Field(
+        default=1.0, description="SR used in the trial budget: years_needed >= 2*ln(N)/SR^2 (Bailey et al. 2014)"
+    )
+    fail_on_budget_exceeded: bool = True
+
+
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -145,7 +231,9 @@ class AppSettings(BaseSettings):
     ib: IBConfig = Field(default_factory=lambda: IBConfig())
     risk: RiskConfig = Field(default_factory=lambda: RiskConfig())  # type: ignore[call-arg]
     commission: CommissionConfig = Field(default_factory=lambda: CommissionConfig())
+    reg_fees: RegFeesConfig = Field(default_factory=lambda: RegFeesConfig())
     slippage: SlippageConfig = Field(default_factory=lambda: SlippageConfig())
+    research: ResearchConfig = Field(default_factory=lambda: ResearchConfig())
     data: DataConfig = Field(default_factory=lambda: DataConfig())
     universe: UniverseConfig = Field(default_factory=lambda: UniverseConfig())
     engine: EngineConfig = Field(default_factory=lambda: EngineConfig())

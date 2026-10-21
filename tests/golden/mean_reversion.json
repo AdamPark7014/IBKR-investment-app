@@ -1,0 +1,35 @@
+{
+  "config_hash": "efcbdcf693177b103af13bf6d4ed66fa6de0586f4b50fdeb6bff33f39a85de4c",
+  "dataset_hash": "080a5bd8a1e9dae1764d4ef977fe1bcbd3abcc8e32c1f7dc541150b0ad5742fd",
+  "direction": "long_only",
+  "fixtures": [
+    "SPY_1d.csv"
+  ],
+  "generated_at_utc": "2026-10-21T19:29:20.306093+00:00",
+  "git_commit": "21b20f31032763569b2acdffa0d1bfbbce57c44c",
+  "n_bars": 273,
+  "n_orders": 12,
+  "orders_hash": "a0b27eff5039ab7451a3d2c77666d247b9c57fd870e74da5e4e0c72d7fe6afb5",
+  "params": {
+    "num_std": 2.0,
+    "window": 20
+  },
+  "regenerate": "ibtrader golden-regen --yes",
+  "stats": {
+    "cagr": 0.013508887694161587,
+    "final_equity": 101464.28319500215,
+    "max_dd": -6.85122311365749e-05,
+    "sharpe": 4.085413942253258,
+    "total_commission": 12.0,
+    "trade_count": 12,
+    "turnover": 2.0918196267931424
+  },
+  "strategy": "mean_reversion",
+  "synthetic": {
+    "SYN_WAVE": "sawtooth close = 100 + 0.5*(i mod 40): +0.5/bar for 39 bars then a one-bar reset of -19.5 (exact IEEE arithmetic, ~16% gap that crosses a 2-sigma Bollinger band); open=close, high=close+1, low=close-1, volume=1e6"
+  },
+  "universe": [
+    "SPY",
+    "SYN_WAVE"
+  ]
+}

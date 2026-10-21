@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from ..backtest.engine import BacktestResult
+from ..backtest.metrics import cost_metrics_dict
 from ..backtest.reasons import TradeReason
 from ..config import AppSettings
 
@@ -150,6 +151,8 @@ def save_run_artifact(
             "cvar_95": result.stats.cvar_95,
             "current_underwater_days": result.stats.current_underwater_days,
             "max_underwater_days": result.stats.max_underwater_days,
+            # Execution costs (playbook phase 1, COST_MODEL.md)
+            **cost_metrics_dict(result.stats),
         },
         "trades": [
             {

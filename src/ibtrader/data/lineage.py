@@ -16,6 +16,10 @@ class DataLineage:
     parameters: Dict[str, Any] = field(default_factory=dict)
     license: Optional[str] = None
     notes: Optional[str] = None
+    # Point-in-time vintage (playbook phase 1): where this exact snapshot lives and its SHA-256.
+    vintage_date: Optional[str] = None
+    vintage_path: Optional[str] = None
+    sha256: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

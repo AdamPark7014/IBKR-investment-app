@@ -35,6 +35,7 @@ def test_real_cache_not_modified(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("DATA__PROVIDERS", '["fixture"]')
     monkeypatch.setenv("DATA__FIXTURE_DIR", "./tests/fixtures")
     monkeypatch.setenv("DATA__CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("DATA__VINTAGE_DIR", str(tmp_path / "vintages"))
     runner = CliRunner()
     res = runner.invoke(cli_mod.app, ["backtest-sample", "--exp-id", "cacheguard"])
     assert res.exit_code == 0

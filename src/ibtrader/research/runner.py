@@ -180,6 +180,10 @@ def run_trend_regime_research(
     )
 
 
+def _opt_bool(value: Any) -> bool | None:
+    return None if value is None else bool(value)
+
+
 def build_experiment_records(
     results: List[Dict[str, Any]],
     exp_id: str,
@@ -187,21 +191,45 @@ def build_experiment_records(
     dataset_hash: str = "",
     config_hash: str = "",
     notes: str = "",
+    suite_summary: Mapping[str, Any] | None = None,
 ) -> List[ExperimentRecord]:
     """Convert runner result dicts into ``ExperimentRecord`` rows.
 
     ``dataset_hash`` and ``config_hash`` are mandatory provenance: a registry
     row that cannot be tied to the exact data + settings it was produced with
     is not reproducible, so empty hashes raise ``ValueError``.
+
+    ``suite_summary`` (the dict returned by ``run_research_suite``) supplies the
+    research-discipline fields shared by every row of the run: ``n_trials``,
+    ``years_available``, ``years_needed``, ``budget_ok``, ``holdout_start``,
+    ``holdout_applied``, ``holdout_opened``. Without it they keep their
+    defaults (0 / None / False), which is how legacy rows read back. A row
+    flagged ``holdout_overused`` keeps that flag under ``extra``.
     """
     if not dataset_hash or not config_hash:
         raise ValueError(
             "build_experiment_records: dataset_hash and config_hash are required "
             f"(got dataset_hash={dataset_hash!r}, config_hash={config_hash!r})"
         )
+    summary: Mapping[str, Any] = suite_summary or {}
+    n_trials = int(summary.get("n_trials") or 0)
+    years_available = float(summary.get("years_available") or 0.0)
+    years_needed = float(summary.get("years_needed") or 0.0)
+    budget_ok = _opt_bool(summary.get("budget_ok"))
+    holdout_start_raw = summary.get("holdout_start")
+    holdout_start = str(holdout_start_raw) if holdout_start_raw is not None else None
+    holdout_applied = bool(summary.get("holdout_applied"))
+    holdout_opened = bool(summary.get("holdout_opened"))
+
     now = datetime.now(timezone.utc).isoformat()
     out: List[ExperimentRecord] = []
     for r in results:
+        extra: Dict[str, Any] = {}
+        if r.get("holdout_overused"):
+            extra["holdout_overused"] = True
+            opening_no = summary.get("holdout_opening_no")
+            if opening_no is not None:
+                extra["holdout_opening_no"] = int(opening_no)
         out.append(
             ExperimentRecord(
                 exp_id=exp_id,
@@ -216,6 +244,14 @@ def build_experiment_records(
                 notes=notes,
                 dataset_hash=dataset_hash,
                 config_hash=config_hash,
+                n_trials=n_trials,
+                years_available=years_available,
+                years_needed=years_needed,
+                budget_ok=budget_ok,
+                holdout_start=holdout_start,
+                holdout_applied=holdout_applied,
+                holdout_opened=holdout_opened,
+                extra=extra,
             )
         )
     return out

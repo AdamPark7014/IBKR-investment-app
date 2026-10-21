@@ -21,3 +21,6 @@ data/KILL_SWITCH
 
 .firecrawl/
 .ai/index/
+
+# vintages point-in-time (parquet + manifest); se regeneran desde el proveedor
+data/vintages/

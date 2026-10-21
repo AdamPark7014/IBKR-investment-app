@@ -19,11 +19,19 @@ def run_sma_grid_dsr(
     direction: str | None = None,
     n_folds: int = 3,
     precomputed: Optional[List[Dict[str, Any]]] = None,
+    n_trials: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Deflate the best OOS Sharpe among SMA grid trials.
 
     Uses measured variance of trial Sharpes (Bailey/LdP). If ``precomputed``
     SMA research rows are provided, avoids a second walk-forward pass.
+
+    ``n_trials`` is the real number of configurations evaluated in the whole
+    research run (every family and grid variant, not only this SMA grid). The
+    DSR benchmark ``SR0`` grows with ``N``; the suite passes its own count so
+    the deflation is not understated. When omitted, ``N`` is the number of
+    finite trial Sharpes in ``rows`` (the grid itself); the larger of the two
+    is always used.
     """
     rows = (
         list(precomputed)
@@ -52,11 +60,13 @@ def run_sma_grid_dsr(
             if sh_f > best_sr:
                 best_sr = sh_f
                 best = r
+    n_eff = max(int(n_trials) if n_trials is not None else 0, len(trial_sharpes))
     if best is None or not trial_sharpes:
         return {
             "dsr": float("nan"),
             "note": "no finite trial Sharpes for DSR",
-            "n_trials": len(rows),
+            "n_trials": max(n_eff, len(rows)),
+            "n_grid_trials": len(rows),
         }
 
     oos = best.get("oos") or {}
@@ -75,11 +85,12 @@ def run_sma_grid_dsr(
     dsr = deflated_sharpe_ratio(
         float(best_sr),
         n_obs=n_obs,
-        n_trials=len(trial_sharpes),
+        n_trials=n_eff,
         trial_sharpes=trial_sharpes,
         skew=skew,
         kurtosis=kurt,
     )
+    dsr["n_grid_trials"] = len(trial_sharpes)
     dsr["selected_candidate_id"] = best.get("candidate_id")
     dsr["selected_params"] = best.get("params")
     dsr["trial_sharpes"] = trial_sharpes

@@ -1,0 +1,31 @@
+{
+  "config_hash": "91b703b3421dab6ec6ca3eb7433c82bee659b97f4fee58ff67ea4a6d5ace4ffb",
+  "dataset_hash": "4e52a380cb42100af8626ddf93ae6b11554a5442d7828fb6e8413ff828f282ab",
+  "direction": "long_only",
+  "fixtures": [
+    "SPY_1d.csv"
+  ],
+  "generated_at_utc": "2026-10-21T19:29:09.046624+00:00",
+  "git_commit": "21b20f31032763569b2acdffa0d1bfbbce57c44c",
+  "n_bars": 273,
+  "n_orders": 1,
+  "orders_hash": "e525407fb23defc0fec3d9750f3768d22265e23e958e9ddebb36586734d61824",
+  "params": {
+    "lookback": 21
+  },
+  "regenerate": "ibtrader golden-regen --yes",
+  "stats": {
+    "cagr": 1.3326498919294338,
+    "final_equity": 250324.6919135305,
+    "max_dd": -0.00012308086469503543,
+    "sharpe": 21.0995481888423,
+    "total_commission": 4.345,
+    "trade_count": 1,
+    "turnover": 0.999429630864695
+  },
+  "strategy": "tsmom",
+  "synthetic": {},
+  "universe": [
+    "SPY"
+  ]
+}
