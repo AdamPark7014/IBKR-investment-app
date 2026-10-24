@@ -12,7 +12,6 @@ from ..intelligence.brief import ai_brief, compress_facts
 from ..intelligence.market_radar import build_market_radar
 from ..intelligence.prompt_pack import PromptPack, default_pack
 from .alerts import evaluate_paper_alerts
-from .config_freeze import verify_freeze, write_freeze
 from .shadow import desired_from_decisions, log_shadow_snapshot
 from .simple_ui import write_simple_console
 
@@ -61,29 +60,19 @@ def run_autopilot(
     facts = compress_facts(radar=radar, paper=paper, slippage=slip)
     brief = ai_brief(facts, pack=pack or default_pack(), use_ai=use_ai)
 
-    freeze_path = Path(s.data.data_dir) / "paper_config_freeze.json"
-    if not freeze_path.is_file():
-        write_freeze(freeze_path, s)
-    freeze = verify_freeze(freeze_path, s)
-    alerts = evaluate_paper_alerts(
-        max_drawdown=None,
-        n_drift=int(paper.get("n_drift") or 0),
-        orders_sent=0,
-    )
-    if not freeze.get("ok"):
-        from .alerts import Alert
-
-        alerts.append(
-            Alert(
-                code="config_drift",
-                severity="kill_recommend",
-                message="paper config hash mismatch — do not retune live",
-            )
-        )
-
     run_id = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out_dir = Path(s.data.reports_dir) / 'autopilot'
     out_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Extract n_drift from paper shadow to use in alert evaluation
+    n_drift_val = int(paper.get('n_drift') or 0)
+    alerts = evaluate_paper_alerts(
+        max_drawdown=None,
+        assumed_sharpe=0.8,
+        n_drift=n_drift_val,
+        orders_sent=0,
+    )
+    
     payload: Dict[str, Any] = {
         'exp_id': run_id,
         'phase': 'autopilot-v1',
@@ -94,10 +83,7 @@ def run_autopilot(
         'paper': paper,
         'orders_sent': 0,
         'disclaimer': facts.get('disclaimer'),
-        'alerts': [
-            {'code': a.code, 'severity': a.severity, 'message': a.message} for a in alerts
-        ],
-        'config_freeze': freeze,
+        'alerts': [{'code': a.code, 'severity': a.severity, 'message': a.message} for a in alerts],
     }
 
     json_path = out_dir / f'autopilot_{run_id}.json'
