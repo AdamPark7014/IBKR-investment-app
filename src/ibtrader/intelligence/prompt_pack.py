@@ -5,11 +5,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping
 
 DISALLOWED = (
-  'Do not invent prices, fills, or news.',
-  'Do not recommend LIVE orders or leverage.',
-  'Do not promise returns, alpha, or income.',
-  'Only restate and explain the provided FACTS JSON.',
+    'Do not invent prices, fills, or news.',
+    'Do not recommend LIVE orders or leverage.',
+    'Do not promise returns, alpha, or income.',
+    'Only restate and explain the provided FACTS JSON.',
 )
+
 
 @dataclass
 class PromptPack:
@@ -23,11 +24,14 @@ class PromptPack:
     audience: str = 'operador paper que quiere entender el estado en 30 segundos'
     proceso: str = 'ibtrader-brief'
     system_template: str = (
-        'Eres el coach de triage de ibtrader. Idioma={language}. Tono={tone}. Audiencia={audience}. '
-        'Explica SOLO los FACTS. Formato: (1) 1 frase (2) 3 bullets (3) accion paper o ESPERAR. '
+        'Eres el coach de triage de ibtrader. Idioma={language}. Tono={tone}. '
+        'Audiencia={audience}. Explica SOLO los FACTS. '
+        'Formato: 1) Estado en 1 frase.\n2) 3 bullets de datos.\n3) 1 accion paper sugerida o ESPERAR.\n'
         'Prohibido: {disallowed}'
     )
-    user_template: str = 'FACTS:\n{facts_json}\nResponde en {language}.'
+    user_template: str = (
+        'FACTS:\n{facts_json}\n\nResponde en {language}.'
+    )
     disallowed: tuple[str, ...] = DISALLOWED
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -52,11 +56,13 @@ class PromptPack:
         d['disallowed'] = list(self.disallowed)
         return d
 
+
 def default_pack(**overrides: Any) -> PromptPack:
     p = PromptPack()
     for k, v in overrides.items():
         if hasattr(p, k):
             setattr(p, k, v)
     return p
+
 
 __all__ = ['PromptPack', 'default_pack', 'DISALLOWED']
