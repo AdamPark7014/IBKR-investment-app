@@ -136,3 +136,11 @@ Semántica en `load_universe_v2`:
 
 Se mantienen porque son gratuitos, no requieren token y sirven para arrancar un laboratorio en una máquina nueva; la cadena por defecto sigue siendo `["yahoo","stooq"]` hasta que haya token de Tiingo configurado.
 
+## Precios ajustados por dividendos (total return) — 21-10-2026
+
+`YahooProvider` baja con `auto_adjust=False` y luego escala `open/high/low/close` por `Adj Close / Close`
+(`apply_total_return_adjustment`), guardando el cierre sin ajustar en `close_raw`, con la misma convención
+que `TiingoProvider` (`adjClose` → `close`, `close_raw`). Motivo: sin ajustar, PDBC cae 26,6 % el
+2021-12-03 por una distribución de USD 5,39 y cualquier ETF de bonos o REIT pierde todos sus dividendos
+en el backtest; el validador `validate_pit` lo detectó como salto de precio. Stooq sigue sin ajustar
+(no publica distribuciones): queda solo como respaldo y su linaje lo dice.

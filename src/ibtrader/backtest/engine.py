@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -163,6 +164,10 @@ def backtest(
 
     # Prepare signals
     signals = strategy.generate_signals(data)
+    # Weight mode (pipeline strategies): signals are signed target weights (fraction of NAV),
+    # already sized and buffered upstream; the engine only enforces direction, regime veto and risk.
+    weight_mode = getattr(strategy, "signal_kind", "direction") == "weight"
+    last_weights: Dict[str, float] = {sym: 0.0 for sym in data}
     # Align dates
     all_dates = sorted(set().union(*[df.index for df in data.values()]))
     positions: Dict[str, pd.Series] = {
@@ -226,8 +231,17 @@ def backtest(
         # Equal-weight targets based on signals at dt_prev
         # Build raw sign per symbol from signals with direction and risk gating
         raw_sign: Dict[str, int] = {}
+        raw_weight: Dict[str, float] = {}
         for sym, s in signals.items():
-            sig = int(s.reindex([dt_prev]).fillna(0).iloc[0])
+            raw_val = s.reindex([dt_prev]).fillna(0).iloc[0]
+            if weight_mode:
+                wv = float(raw_val)
+                if not math.isfinite(wv):
+                    wv = 0.0
+                raw_weight[sym] = wv
+                sig = 1 if wv > 0 else (-1 if wv < 0 else 0)
+            else:
+                sig = int(raw_val)
             # Enforce direction
             if direction == "long_only":
                 sig = max(sig, 0)
@@ -240,6 +254,8 @@ def backtest(
                 if pd.isna(ro_val) or float(ro_val) < risk_on_threshold:
                     sig = 0
             raw_sign[sym] = sig
+            if weight_mode and (sig == 0 or (raw_weight[sym] > 0) != (sig > 0)):
+                raw_weight[sym] = 0.0
         actives = [sym for sym, sign in raw_sign.items() if sign != 0]
         targets: Dict[str, int] = {sym: 0 for sym in data}
         n_active = len(actives)
@@ -247,15 +263,18 @@ def backtest(
         nav_prev = cash + sum(holdings[s] * close_prev.get(s, 0.0) for s in holdings)
         for sym in actives:
             if sym in open_now and open_now[sym] > 0:
-                # Volatility-target sizing factor (if enabled)
-                vt = 1.0
-                if target_vol_annual is not None and target_vol_annual > 0:
-                    # Use symbol history up to dt_prev for realized vol
-                    hist_series = data[sym]["close"].astype(float)
-                    hist_series = hist_series.loc[:dt_prev]
-                    rets = hist_series.pct_change().fillna(0.0)
-                    vt = volatility_target_weight(rets, target_vol_annual=target_vol_annual)
-                w = base_alloc * vt * (1 if raw_sign[sym] > 0 else -1)
+                if weight_mode:
+                    w = raw_weight[sym]
+                else:
+                    # Volatility-target sizing factor (if enabled)
+                    vt = 1.0
+                    if target_vol_annual is not None and target_vol_annual > 0:
+                        # Use symbol history up to dt_prev for realized vol
+                        hist_series = data[sym]["close"].astype(float)
+                        hist_series = hist_series.loc[:dt_prev]
+                        rets = hist_series.pct_change().fillna(0.0)
+                        vt = volatility_target_weight(rets, target_vol_annual=target_vol_annual)
+                    w = base_alloc * vt * (1 if raw_sign[sym] > 0 else -1)
                 # Compute against slippage-adjusted estimated fill to avoid oversizing
                 est_fill = estimated_fill_price(slippage_cfg, sym, open_now[sym], 1 if w >= 0 else -1)
                 qty = int(nav_prev * abs(w) / est_fill) if est_fill > 0 else 0
@@ -263,7 +282,13 @@ def backtest(
                 # Only trade on signal changes, or when drift exceeds band (if configured)
                 prev_target = last_targets.get(sym, 0)
                 sign_change = (prev_target == 0 and proposed != 0) or (prev_target * proposed < 0)
-                if not sign_change and rebalance_band_pct <= 0.0:
+                if weight_mode:
+                    # Trade only when the (already buffered) target weight moved; otherwise hold.
+                    if abs(w - last_weights.get(sym, 0.0)) < 1e-12 and prev_target != 0:
+                        proposed = prev_target
+                    else:
+                        last_weights[sym] = w
+                elif not sign_change and rebalance_band_pct <= 0.0:
                     proposed = prev_target
                 targets[sym] = proposed
         # Execute at today's open

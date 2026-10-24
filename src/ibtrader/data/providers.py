@@ -94,6 +94,28 @@ def _normalize_df_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def apply_total_return_adjustment(df: pd.DataFrame) -> pd.DataFrame:
+    """Scale OHLC by ``adj_close / close`` so prices include dividends and splits (total return).
+
+    Yahoo's raw ``close`` drops on every ex-dividend date (PDBC lost 26.6 % on 2021-12-03 from a
+    USD 5.39 distribution); a long-only ETF backtest on raw closes loses every dividend and sees
+    spurious crashes. The unadjusted close is kept as ``close_raw`` (same convention as Tiingo).
+    Rows without a usable factor keep their raw values.
+    """
+    if "adj_close" not in df.columns or "close" not in df.columns:
+        return df
+    out = df.copy()
+    close = out["close"].astype(float)
+    adj = out["adj_close"].astype(float)
+    factor = (adj / close).where((close > 0) & adj.notna() & close.notna(), 1.0)
+    out["close_raw"] = close
+    for col in ("open", "high", "low", "close"):
+        if col in out.columns:
+            out[col] = out[col].astype(float) * factor
+    out["adj_close"] = out["close"]
+    return out
+
+
 class YahooProvider(MarketDataProvider):
     def fetch_daily_ohlcv(
         self, symbol: str, start: Optional[str] = None, end: Optional[str] = None
@@ -111,15 +133,15 @@ class YahooProvider(MarketDataProvider):
         )
         if df is None or df.empty:
             raise RuntimeError("yfinance vacío")
-        out = _normalize_df_ohlcv(df)
+        out = apply_total_return_adjustment(_normalize_df_ohlcv(df))
         ok, msg = validate_timeseries_strict(out)
         if not ok:
             raise RuntimeError(f"Data inválida de Yahoo: {msg}")
         lin = DataLineage(
             source="yahoo",
             source_url=f"https://finance.yahoo.com/quote/{symbol}",
-            methodology="yfinance daily bars",
-            parameters={"interval": "1d", "auto_adjust": False},
+            methodology="yfinance daily bars; OHLC scaled by Adj Close/Close (total return), close_raw unadjusted",
+            parameters={"interval": "1d", "auto_adjust": False, "total_return_adjusted": True},
             license="Yahoo TOS (research use)",
         )
         return DataFrameWithMeta(out, lin)
