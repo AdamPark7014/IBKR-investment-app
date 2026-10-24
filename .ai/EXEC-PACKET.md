@@ -1,11 +1,29 @@
-# EXEC-PACKET — Oleada F3+ (paper disciplinado)
+# EXEC-PACKET — Oleada F3++ (cablear lo ya construido)
 
-**Estado:** CLOSED  
-**Git:** solo `main`
+**Estado:** FILLED  
+**Git:** solo `main`  
+**Agentes previos:** todos terminados. No hay cola viva.
 
-### [x] W1 — RTH + latency sim (`execution/session.py`, `SimulatedBroker`)
-### [x] W2 — alerts + freeze en autopilot/UI
-### [x] W3 — `scripts/schedule-autopilot.ps1` + README
-### [x] W4 — tests + push
+## Honestidad
+“Perfecto” ≠ ingresos. Bloqueado en Adam: Tiingo, hold-out, pia token.  
+Esta oleada solo **cablea** piezas ya en disco (urgency, freeze) + reconcile schedule + checklist IBC (docs-as-code JSON).
 
-Bloqueado Adam: Tiingo, hold-out, pia token.
+## Gaps
+
+### [ ] W6 — Autopilot: `config_freeze` + `decide_urgency`
+- Al arrancar: write_freeze si falta; verify_freeze → alert `config_drift` si mismatch.
+- Facts: urgency snapshot (age=0 paper triage → passive) en compress/extra.
+- UI ya muestra alerts.
+
+### [ ] W7 — `scripts/schedule-reconcile.ps1`
+- Igual patrón que schedule-autopilot: diario `ibtrader paper-reconcile`.
+- README 2 líneas.
+
+### [ ] W8 — `ops/ibc_checklist.py` + CLI `ibc-checklist`
+- Checklist JSON honesta (Gateway paper puerto, Read-Only off, API 127.0.0.1, IBC opcional).
+- No instala nada; no LIVE.
+
+### [ ] W9 — Tests + push
+
+## No hacer
+LIVE · retocar params estrategia · LLM noticias · hold-out
