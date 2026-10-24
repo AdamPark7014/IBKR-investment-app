@@ -1,22 +1,19 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — a medias costos)
-- `broker/simulated.py` usa `execution.costs.total_order_cost` (+ `RegFeesConfig`); tests BUY/SELL con reg fees.
-- Walk-forward `_stats_to_dict` expone `avg_cost_bps_per_order`, `total_costs`, `cost_drag_annual_pct`, `total_reg_fees` → filas OOS de research.
-- Smoke `SystemConfig` en `portfolio_runner`: warm-ups cortos (scalar/fdm/idm 60, step 5).
-- `paper-run --shadow` lee `data/paper_positions.json` si existe (si no, held={}).
+## Hecho (2026-10-24, cursor — tsmom/MR costos + CI)
+- tsmom + mean_reversion runners: `reg_fees` + `avg_cost_bps_per_order` / `cost_drag` en OOS stitched.
+- CI clean-install: `research-portfolio --profile smoke`.
+- `uv.lock` fuera del índice + en `.gitignore` (pip sigue siendo el camino oficial).
 
 ## Hecho (previo)
-- Fase 2 CLI `research-portfolio`; Ola D; playbook fase 1; pipeline stages.
+- Sim IBKR, WF costos, smoke warmups, shadow held JSON, Fase 2 CLI.
 
 ## A medias
-- Agentes en paralelo pueden seguir tocando costos/smoke — revisar si hay diff extra al integrar.
-- Tiingo real + hold-out confirmación: inputs de Adam.
-- Push `main` pendiente (`ahead` local).
+- Tiingo real + hold-out: inputs de Adam (token, DD, capital).
 
 ## Siguiente
-- Push si Adam lo pide.
-- Confirmación OOS con datos reales cuando haya token Tiingo.
+- Tras push: vigilar CI ubuntu/macOS (portfolio smoke ~1 min extra).
+- Confirmación OOS cuando haya Tiingo.
 
 ## No tocar
-- Solo `main`. PASS ≠ deploy. Hold-out una vez. Paper-run no envía órdenes.
+- Solo `main`. PASS ≠ deploy. Hold-out una vez. Paper-run sin órdenes.

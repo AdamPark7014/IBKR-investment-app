@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Mapping, Sequence
 import pandas as pd
 
 from ..backtest.engine import backtest, restricted_counts
-from ..backtest.metrics import compute_stats
+from ..backtest.metrics import compute_stats, copy_oos_cost_metrics
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.tsmom import TimeSeriesMomentum
@@ -59,6 +59,11 @@ def run_tsmom_research(
 
     results: List[Dict[str, Any]] = []
     for lookback in lbs:
+        agg_total_costs = 0.0
+        agg_notional = 0.0
+        agg_n_orders = 0
+        agg_commission = 0.0
+        agg_reg_fees = 0.0
         folds_eq: List[pd.Series] = []
         oos_trades_all: List[tuple] = []
         restricted_bars = 0
@@ -79,6 +84,7 @@ def run_tsmom_research(
                 direction=direction,
                 risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=initial_equity)),
                 target_vol_annual=float(settings.risk.target_vol_annual),
+                reg_fees_cfg=settings.reg_fees,
             )
             test_dates = set(test_idx)
             test_eq = res.equity_curve.reindex(test_idx).dropna()
@@ -89,6 +95,12 @@ def run_tsmom_research(
             rb, tb = restricted_counts(res, (test_idx[0], test_idx[-1])) if test_idx else (0, 0)
             restricted_bars += int(rb)
             total_bars += int(tb)
+            fold_st = res.stats
+            agg_total_costs += float(getattr(fold_st, "total_costs", 0.0) or 0.0)
+            agg_notional += float(getattr(fold_st, "notional_traded", 0.0) or 0.0)
+            agg_n_orders += int(getattr(fold_st, "n_orders", 0) or 0)
+            agg_commission += float(getattr(fold_st, "total_commission", 0.0) or 0.0)
+            agg_reg_fees += float(getattr(fold_st, "total_reg_fees", 0.0) or 0.0)
         restricted_frac = (restricted_bars / total_bars) if total_bars > 0 else 0.0
 
         # Stitch OOS via chained returns (same idea as walkforward)
@@ -112,6 +124,24 @@ def run_tsmom_research(
                 "trade_count": len(oos_trades_all),
                 "total_commission": _commission_for_trades(settings, oos_trades_all),
             }
+            years = max(len(stitched_rets), 1) / 252.0
+            avg_bps = (agg_total_costs / agg_notional * 1e4) if agg_notional > 0 else 0.0
+            drag = (
+                (agg_total_costs / initial_equity / years * 100)
+                if initial_equity > 0 and years > 0
+                else 0.0
+            )
+            oos["total_costs"] = agg_total_costs
+            oos["notional_traded"] = agg_notional
+            oos["n_orders"] = agg_n_orders
+            if agg_commission > 0:
+                oos["total_commission"] = agg_commission
+            if agg_reg_fees > 0:
+                oos["total_reg_fees"] = agg_reg_fees
+            copy_oos_cost_metrics(
+                oos,
+                {"avg_cost_bps_per_order": avg_bps, "cost_drag_annual_pct": drag},
+            )
         else:
             oos = {
                 "cagr": float("nan"),
@@ -122,6 +152,11 @@ def run_tsmom_research(
                 "restricted_bar_frac": restricted_frac,
                 "trade_count": 0,
                 "total_commission": 0.0,
+                "avg_cost_bps_per_order": 0.0,
+                "cost_drag_annual_pct": 0.0,
+                "total_costs": 0.0,
+                "n_orders": 0,
+                "notional_traded": 0.0,
             }
 
         # B&H on same stitched OOS windows

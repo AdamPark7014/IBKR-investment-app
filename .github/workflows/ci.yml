@@ -72,3 +72,4 @@ jobs:
           ibtrader compare-directions --exp-id ci2
           ibtrader walk-forward --exp-id ciwf
           ibtrader research-run --profile smoke --exp-id cismoke
+          ibtrader research-portfolio --profile smoke --exp-id ciportfolio

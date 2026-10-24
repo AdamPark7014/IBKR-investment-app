@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: lint + types + tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Type check (mypy)
+        run: mypy src
+      - name: Tests (pytest)
+        run: pytest -q
+
+  clean-install:
+    name: fresh venv + CLI smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fresh venv and install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+      - name: Run official CLIs on fixtures (no network)
+        env:
+          DATA__PROVIDERS: '["fixture"]'
+          DATA__FIXTURE_DIR: ./tests/fixtures
+          DATA__CACHE_DIR: ./tmp-cache
+          DATA__REPORTS_DIR: ./tmp-reports
+        run: |
+          source .venv/bin/activate
+          ibtrader download-data
+          ibtrader backtest-sample --exp-id ci
+          ibtrader compare-directions --exp-id ci2
+          ibtrader walk-forward --exp-id ciwf
+          ibtrader research-run --profile smoke --exp-id cismoke
+          ibtrader research-portfolio --profile smoke --exp-id ciportfolio
