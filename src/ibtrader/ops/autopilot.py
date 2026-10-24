@@ -8,10 +8,12 @@ from typing import Any, Dict, Optional
 from ..config import AppSettings
 from ..data.service import load_universe_v2
 from ..engine.decision import DecisionEngine
+from ..execution.passive_aggressive import decide_urgency
 from ..intelligence.brief import ai_brief, compress_facts
 from ..intelligence.market_radar import build_market_radar
 from ..intelligence.prompt_pack import PromptPack, default_pack
-from .alerts import evaluate_paper_alerts
+from .alerts import Alert, evaluate_paper_alerts
+from .config_freeze import verify_freeze, write_freeze
 from .shadow import desired_from_decisions, log_shadow_snapshot
 from .simple_ui import write_simple_console
 
@@ -59,15 +61,35 @@ def run_autopilot(
     paper["orders_sent"] = 0
     paper["shadow_held_source"] = str(held_path) if held_path.exists() else None
 
+    # --- Cableado freeze + urgency: ANTES de compress_facts ---
+    freeze_path = Path(s.data.data_dir) / 'paper_config_freeze.json'
+    if not freeze_path.is_file():
+        write_freeze(freeze_path, s)
+    freeze = verify_freeze(freeze_path, s)
+    # age_seconds=0.0 -> triage snapshot; no órdenes ejecutables
+    urgency = decide_urgency(age_seconds=0.0, max_passive_seconds=60.0, touchable=True)
+    # ------------------------------------
+
     slip = _slippage_summary(Path(s.data.data_dir))
-    facts = compress_facts(radar=radar, paper=paper, slippage=slip)
+
+    facts = compress_facts(
+        radar=radar, 
+        paper=paper, 
+        slippage=slip,
+        extra={
+            'urgency_mode': urgency.mode, 
+            'urgency_reason': urgency.reason, 
+            'config_hash_ok': freeze.get('ok'), 
+            'config_hash': freeze.get('actual') or freeze.get('expected')
+        }
+    )
+
     brief = ai_brief(facts, pack=pack or default_pack(), use_ai=use_ai)
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_dir = Path(s.data.reports_dir) / "autopilot"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Extract n_drift from paper shadow to use in alert evaluation
     n_drift_val = int(paper.get("n_drift") or 0)
     alerts = evaluate_paper_alerts(
         max_drawdown=None,
@@ -75,6 +97,14 @@ def run_autopilot(
         n_drift=n_drift_val,
         orders_sent=0,
     )
+    if not freeze.get("ok"):
+        alerts.append(
+            Alert(
+                code="config_drift",
+                severity="kill_recommend",
+                message="paper config hash mismatch — do not retune live",
+            )
+        )
 
     payload: Dict[str, Any] = {
         "exp_id": run_id,
@@ -87,6 +117,9 @@ def run_autopilot(
         "orders_sent": 0,
         "disclaimer": facts.get("disclaimer"),
         "alerts": [{"code": a.code, "severity": a.severity, "message": a.message} for a in alerts],
+        # Payload añade 'config_freeze' y urgencia según instrucción
+        "config_freeze": freeze,
+        "urgency": {'mode': urgency.mode, 'reason': urgency.reason},
     }
 
     json_path = out_dir / f"autopilot_{run_id}.json"

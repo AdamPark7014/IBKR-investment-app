@@ -434,6 +434,16 @@ def autopilot(
     typer.echo(_json.dumps(_noneify(slim), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("ibc-checklist")
+def ibc_checklist() -> None:
+    """Print a manual paper Gateway/IBC checklist as JSON (no installs, no orders)."""
+    import json as _json
+
+    from .ibc_checklist import build_ibc_checklist
+
+    typer.echo(_json.dumps(_noneify(build_ibc_checklist()), ensure_ascii=False, separators=(",", ":")))
+
+
 @app.command("paper-reconcile")
 def paper_reconcile(
     window_days: int = typer.Option(
