@@ -117,3 +117,32 @@ def test_simulated_broker_rejects_outside_rth() -> None:
     broker.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="MKT"))
     assert broker.get_positions() == {}
     assert broker.last_latency_ms == 12.0
+
+
+def test_require_rth_rejects_outside_hours():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    market = SimulatedMarketState(last_prices={'SPY': 100.0}, equity=10_000.0)
+    # inject now_fn: Saturday noon ET as UTC
+    sat = datetime(2024, 6, 15, 16, 0, tzinfo=timezone.utc)  # 12:00 EDT
+    broker = SimulatedBroker(
+        market,
+        CommissionConfig(model='fixed', min_per_order=0.0, per_share=0.0),
+        SlippageConfig(model='bps', bps=0.0),
+        dry_run=False,
+        require_rth=True,
+        latency_ms=5.0,
+        now_fn=lambda: sat,
+    )
+    oid = broker.place_order(Order(symbol='SPY', side='BUY', quantity=1, order_type='MKT'))
+    assert oid.startswith('SIM-')
+    assert broker.get_positions() == {}
+    assert broker.last_latency_ms is None
+    assert market.equity == 10_000.0
+
+def test_require_rth_fills_during_rth_and_records_latency():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    market = SimulatedMarketState(last_prices={'SPY':

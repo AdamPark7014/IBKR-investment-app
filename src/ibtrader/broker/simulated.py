@@ -74,10 +74,10 @@ class SimulatedBroker(Broker):
     def place_order(self, order: Order) -> str:
         self._order_seq += 1
         order_id = f"SIM-{self._order_seq}"
-        self.last_latency_ms = self.latency_ms
-        if self.dry_run:
-            return order_id
         if self.require_rth and not is_rth(self._now_fn()):
+            self.last_latency_ms = None
+            return order_id
+        if self.dry_run:
             return order_id
         last = self.market_state.last_prices.get(order.symbol)
         if last is None:
@@ -140,6 +140,7 @@ class SimulatedBroker(Broker):
         pos = self._positions.get(order.symbol, 0)
         self._positions[order.symbol] = pos + signed
         self.market_state.equity += -signed * exec_px - oc.explicit_fees
+        self.last_latency_ms = self.latency_ms
         return order_id
 
     def get_quote(self, symbol: str) -> Quote:
