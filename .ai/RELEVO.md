@@ -16,3 +16,6 @@
 
 ## No tocar
 - Solo main. PASS ≠ deploy. Autopilot/reconcile sin órdenes LIVE.
+
+Escrito al cerrar turno cursor 2026-10-24 16:04.
+
