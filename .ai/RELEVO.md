@@ -22,3 +22,6 @@
 - Solo `main`. PASS ≠ deploy. Hold-out una vez.
 - No LLM sobre titulares / alt-data de pago / intradía / apalancados.
 - Autopilot no envía órdenes broker.
+
+Escrito al cerrar turno cursor 2026-10-24 13:03.
+
