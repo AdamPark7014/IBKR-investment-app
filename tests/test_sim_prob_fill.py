@@ -40,3 +40,20 @@ def test_lmt_prob_fill_deterministic(tmp_path: Path) -> None:
     b_miss.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="LMT", limit_price=100.0))
     assert b_miss.get_positions().get("SPY", 0) == 0
     assert market2.equity == before
+
+
+def test_lmt_partial_fill_frac(tmp_path: Path) -> None:
+    ledger = tmp_path / "slip.jsonl"
+    market = SimulatedMarketState(last_prices={"SPY": 100.0}, equity=50_000.0)
+    broker = SimulatedBroker(
+        market,
+        CommissionConfig(model="fixed", per_share=0.0, min_per_order=0.0),
+        SlippageConfig(model="bps", bps=0.0),
+        dry_run=False,
+        prob_fill_on_limit=1.0,
+        partial_fill_frac=0.5,
+        ledger_path=str(ledger),
+        rng=random.Random(1),
+    )
+    broker.place_order(Order(symbol="SPY", side="BUY", quantity=10, order_type="LMT", limit_price=100.0))
+    assert abs(broker.get_positions().get("SPY", 0)) == 5

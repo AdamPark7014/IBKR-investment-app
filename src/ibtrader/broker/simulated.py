@@ -34,6 +34,7 @@ class SimulatedBroker(Broker):
         reg_fees: RegFeesConfig | None = None,
         *,
         prob_fill_on_limit: float = 0.7,
+        partial_fill_frac: float | None = None,
         ledger_path: str | None = None,
         rng: random.Random | None = None,
         latency_ms: float = 0.0,
@@ -46,6 +47,7 @@ class SimulatedBroker(Broker):
         self.dry_run = dry_run
         self.reg_fees_cfg = reg_fees if reg_fees is not None else RegFeesConfig()
         self.prob_fill_on_limit = float(prob_fill_on_limit)
+        self.partial_fill_frac = None if partial_fill_frac is None else float(partial_fill_frac)
         self.ledger_path = ledger_path
         self._rng = rng if rng is not None else random.Random()
         self.latency_ms = float(latency_ms)
@@ -111,6 +113,13 @@ class SimulatedBroker(Broker):
         if fill_price is None:
             return order_id
 
+        if order.order_type == "LMT" and self.partial_fill_frac is not None:
+            qty = abs(signed)
+            fill_qty = int(qty * self.partial_fill_frac)
+            if qty >= 1:
+                fill_qty = max(1, fill_qty)
+            signed = fill_qty if signed > 0 else -fill_qty
+
         if order.order_type == "LMT":
             oc = total_order_cost(
                 order.symbol,
@@ -133,7 +142,7 @@ class SimulatedBroker(Broker):
                 side=order.side,
                 decision_px=float(last),
                 fill_px=exec_px,
-                qty=int(order.quantity),
+                qty=abs(signed),
                 source="sim",
             )
 

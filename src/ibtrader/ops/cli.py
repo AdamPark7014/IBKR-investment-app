@@ -444,6 +444,29 @@ def ibc_checklist() -> None:
     typer.echo(_json.dumps(_noneify(build_ibc_checklist()), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("slippage-report")
+def slippage_report(
+    path: str = typer.Option(
+        "data/slippage_ledger.jsonl",
+        "--path",
+        help="Path to slippage JSONL ledger.",
+    ),
+    window_days: int = typer.Option(
+        30,
+        "--window-days",
+        help="Lookback window in days.",
+    ),
+) -> None:
+    """Print slippage ledger summary as JSON (zero orders)."""
+    import json as _json
+
+    from .slippage_report import summarize_cli
+
+    typer.echo(
+        _json.dumps(_noneify(summarize_cli(path, window_days)), ensure_ascii=False, separators=(",", ":"))
+    )
+
+
 @app.command("paper-reconcile")
 def paper_reconcile(
     window_days: int = typer.Option(

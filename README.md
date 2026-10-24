@@ -42,6 +42,8 @@ Requisitos (Windows 11, Python 3.12):
      - Opcional hora: `-Time 17:00`. Estado: `-Action Status`. Quitar: `-Action Unregister`.
      - Registrar tarea `ibtrader-paper-reconcile` (16:35 local, tras autopilot): `pwsh -File scripts/schedule-reconcile.ps1 -Action Register`
      - Estado/quitar/hora: mismos `-Action Status|Unregister` y `-Time` que autopilot.
+     - Registrar tarea `ibtrader-ibc-check` (08:00 local): `pwsh -File scripts/schedule-ibc-check.ps1 -Action Register`
+     - Estado/quitar/hora/RunOnce: mismos `-Action Status|Unregister|RunOnce` y `-Time` (default 08:00).
    - Checklist Gateway/IBC (JSON manual, no instala nada): `ibtrader ibc-checklist`
    - Kill switch: `ibtrader kill` / limpiar: `ibtrader clear-kill`
 
