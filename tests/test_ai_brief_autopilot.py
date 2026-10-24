@@ -28,7 +28,8 @@ def test_compress_and_deterministic_brief() -> None:
         },
         paper={"n_drift": 2, "n_symbols": 3, "orders_sent": 0},
     )
-    urgency_line = "Urgency paper: passive (fresh)."; text = deterministic_brief(facts)
+    urgency_line = "Urgency paper: passive (fresh)."
+    text = deterministic_brief(facts)
     assert "alcista" in text.lower() or "Estado" in text
     assert "0" in text  # orders
     out = ai_brief(facts, use_ai=False)
