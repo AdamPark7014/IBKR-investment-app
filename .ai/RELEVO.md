@@ -1,25 +1,17 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — oleada F3+)
-- `execution/session.py` RTH ET; sim `require_rth` + `latency_ms`.
-- `ops/alerts.py` + `config_freeze.py`; autopilot emite alerts + freeze hash.
-- `scripts/schedule-autopilot.ps1` (Task Scheduler diario, 0 órdenes).
-- Tests: session, alerts, freeze, broker RTH.
+## Hecho (2026-10-24, cursor — W2 polish merge)
+- [W2 alerts](c6749c4d): card Alerts en simple_ui; alerts/tests refinados; schedule-autopilot aclarado.
+- Mantener sim RTH/latency de `616f2e4` (no reintroducir last_latency_ms=None).
 
 ## Hecho (previo)
-- Autopilot UI, PromptPack/brief, Fase 3 ledger/prob-fill/paper-reconcile/radar.
+- F3+ RTH, freeze, autopilot, passive_aggressive stub.
 
 ## A medias
-- Tiingo + hold-out (Adam).
-- Token puerta IA opcional.
-- Agentes W1–W3 en background pueden solapar; disco = verdad tras este commit.
+- Tiingo + hold-out (Adam). pia token opcional.
 
 ## Siguiente
-- Oleada: stub passive→aggressive (`algoOriginalBest` paper-only) + enrich brief con freeze/alerts.
-- IBC/Gateway docs-only (no instalar en máquina ajena).
+- Integrar W1/W3 si aún llegan limpios; no aceptar rewrites rotos de sim/session.
 
 ## No tocar
-- Solo `main`. PASS ≠ deploy. Hold-out una vez. Autopilot sin órdenes.
-
-Escrito al cerrar turno cursor 2026-10-24 13:13.
-
+- Solo main. Autopilot sin órdenes. PASS ≠ deploy.

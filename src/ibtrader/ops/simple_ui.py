@@ -7,38 +7,44 @@ from typing import Any, Mapping
 
 
 def _esc(x: Any) -> str:
-    return html.escape('' if x is None else str(x), quote=True)
+    return html.escape("" if x is None else str(x), quote=True)
+
 
 def _fmt_pct(x: Any) -> str:
     try:
-        return f'{float(x)*100:.1f}%'
+        return f"{float(x)*100:.1f}%"
     except Exception:
-        return '—'
+        return "—"
 
-def render_simple_console(payload: Mapping[str, Any], *, title: str = 'ibtrader') -> str:
-    facts = payload.get('facts') or {}
-    brief = payload.get('brief') or {}
-    text = _esc(brief.get('text') or '')
-    source = _esc(brief.get('source') or 'deterministic')
-    as_of = _esc(facts.get('as_of') or '—')
-    trend = facts.get('equity_trend')
-    trend_lbl = {1:'Alcista', -1:'Bajista', 0:'Lateral'}.get(trend, '—')
-    vol = _fmt_pct(facts.get('equity_vol_20'))
-    breadth = _fmt_pct(facts.get('breadth_proxy'))
-    drift = _esc(facts.get('paper_n_drift') if facts.get('paper_n_drift') is not None else '—')
-    risk = facts.get('risk_on_proxy')
-    risk_lbl = 'ON' if risk==1 else ('OFF' if risk==0 else '—')
-    ts = _esc(payload.get('generated_at') or datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))
-    alerts = list(payload.get('alerts') or [])
-    n_alerts = len(alerts)
-    worst = 'info'
-    for a in alerts:
-        sev = str((a or {}).get('severity') or 'info')
-        if sev == 'kill_recommend':
-            worst = 'kill_recommend'
-        elif sev == 'warn' and worst == 'info':
-            worst = 'warn'
-    return f'''<!DOCTYPE html>
+
+def render_simple_console(payload: Mapping[str, Any], *, title: str = "ibtrader") -> str:
+    facts = payload.get("facts") or {}
+    brief = payload.get("brief") or {}
+    text = _esc(brief.get("text") or "")
+    source = _esc(brief.get("source") or "deterministic")
+    as_of = _esc(facts.get("as_of") or "—")
+    trend = facts.get("equity_trend")
+    trend_lbl = {1: "Alcista", -1: "Bajista", 0: "Lateral"}.get(trend, "—")
+    vol = _fmt_pct(facts.get("equity_vol_20"))
+    breadth = _fmt_pct(facts.get("breadth_proxy"))
+    drift = _esc(facts.get("paper_n_drift") if facts.get("paper_n_drift") is not None else "—")
+    risk = facts.get("risk_on_proxy")
+    risk_lbl = "ON" if risk == 1 else ("OFF" if risk == 0 else "—")
+    ts = _esc(payload.get("generated_at") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    alerts = payload.get("alerts") or []
+    n = len(alerts)
+    worst_rank = {"info": 0, "warn": 1, "kill_recommend": 2}
+    if n == 0:
+        worst = "—"
+    else:
+        max_rank = -1
+        for a in alerts:
+            sev = str((a or {}).get("severity") or "info")
+            r = worst_rank.get(sev, 0)
+            if r > max_rank:
+                max_rank = r
+                worst = sev
+    return f"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>{_esc(title)}</title>
 <style>
@@ -65,16 +71,19 @@ h1 {{ font-size:1.25rem; font-weight:600; letter-spacing:0.02em; margin:0 0 0.25
   <div class="card"><div class="k">Vol 20d</div><div class="v">{_esc(vol)}</div></div>
   <div class="card"><div class="k">Risk proxy</div><div class="v">{_esc(risk_lbl)}</div></div>
   <div class="card"><div class="k">Paper drift</div><div class="v">{drift}</div></div>
+  <div class="card"><div class="k">Alerts</div><div class="v">{_esc(n)} · {_esc(worst)}</div></div>
 </div>
 <div class="brief">{text}</div>
-<div class="meta">as_of={as_of} · breadth={_esc(breadth)} · brief={source} · alerts={n_alerts} ({_esc(worst)})</div>
+<div class="meta">as_of={as_of} · breadth={_esc(breadth)} · brief={source}</div>
 <p class="foot">Triage paper. No es lista de compra. No promete rentabilidad. Cero órdenes LIVE desde esta pantalla.</p>
-</main></body></html>'''
+</main></body></html>"""
 
-def write_simple_console(payload: Mapping[str, Any], path: str | Path, *, title: str = 'ibtrader') -> str:
+
+def write_simple_console(payload: Mapping[str, Any], path: str | Path, *, title: str = "ibtrader") -> str:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(render_simple_console(payload, title=title), encoding='utf-8')
+    p.write_text(render_simple_console(payload, title=title), encoding="utf-8")
     return str(p)
 
-__all__ = ['render_simple_console', 'write_simple_console']
+
+__all__ = ["render_simple_console", "write_simple_console"]
