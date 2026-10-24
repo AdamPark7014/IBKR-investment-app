@@ -17,6 +17,7 @@ def test_prompt_pack_render_is_compact() -> None:
 
 def test_compress_and_deterministic_brief() -> None:
     facts = compress_facts(
+        extra={"urgency_mode": "passive", "urgency_reason": "fresh", "config_hash_ok": True},
         radar={
             "as_of": "2024-06-01",
             "equity_trend": 1,
@@ -27,11 +28,13 @@ def test_compress_and_deterministic_brief() -> None:
         },
         paper={"n_drift": 2, "n_symbols": 3, "orders_sent": 0},
     )
-    text = deterministic_brief(facts)
+    urgency_line = "Urgency paper: passive (fresh)."; text = deterministic_brief(facts)
     assert "alcista" in text.lower() or "Estado" in text
     assert "0" in text  # orders
     out = ai_brief(facts, use_ai=False)
     assert out["source"] == "deterministic"
+    if urgency_line in text or "urgency_mode" in (facts.get("extra") or {}):
+        assert urgency_line in text
     assert "Triage" in out["text"] or "disclaimer" in out["text"].lower() or "Triage" in facts["disclaimer"]
 
 

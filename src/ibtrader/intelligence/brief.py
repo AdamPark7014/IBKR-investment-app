@@ -86,6 +86,16 @@ def deterministic_brief(facts: Mapping[str, Any]) -> str:
         )
     for b in bullets[:5]:
         lines.append(f"- {b}")
+    
+    extra = facts.get("extra") or {}
+    if isinstance(extra, Mapping):
+        if "urgency_mode" in extra:
+            mode = extra["urgency_mode"]
+            reason = extra.get("urgency_reason") or "n/d"
+            lines.append(f"- Urgency paper: {mode} ({reason}).")
+        if extra.get("config_hash_ok") is False:
+            lines.append("- Config freeze: HASH MISMATCH — do not retune.")
+
     drift = int(facts.get('paper_n_drift') or 0)
     if drift > 0:
         lines.append(

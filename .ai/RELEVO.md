@@ -1,20 +1,20 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — schedule-reconcile)
-- `scripts/schedule-reconcile.ps1`: Action Register|Unregister|Status (default Status); Time 16:35 local (tras autopilot 16:30); task `ibtrader-paper-reconcile`; prefer `.venv\Scripts\python.exe -m ibtrader.ops.cli paper-reconcile` else `ibtrader paper-reconcile`; Set-Location repo; schtasks /F; banner paper triage / zero orders / no LIVE.
-- README: 2 líneas bajo schedule-autopilot (Register 16:35 + Status|Unregister|Time).
-- Smoke Status OK (task not registered). NO commit (pedido Adam). NO edité `src/`.
+## Hecho (2026-10-24, cursor — ibc-checklist)
+- Spec ya estaba en `main`: `src/ibtrader/ops/ibc_checklist.py` (`build_ibc_checklist`, phase=paper-ops, 6 items, disclaimer), CLI `ibtrader ibc-checklist` → JSON via `_noneify`, `tests/test_ibc_checklist.py`.
+- Este turno: Ollama apply truncó `cli.py` → `git restore`; quité duplicate command; ruff import fix en tests.
+- Ruff + pytest `tests/test_ibc_checklist.py` verdes. NO commit (pedido Adam). Autopilot/paper-reconcile bodies intactos.
 
-## Hecho (previo — schedule-autopilot)
-- `scripts/schedule-autopilot.ps1` + README autopilot bullets.
+## Hecho (previo)
+- schedule-reconcile / schedule-autopilot scripts + README.
 
 ## A medias
 - Tiingo + hold-out (Adam). pia token opcional.
-- Adam: Register de ambas tareas schtasks (puede pedir elevación).
+- Dirty local: solo `tests/test_ibc_checklist.py` (imports ruff) — no commitear salvo pedido.
 
 ## Siguiente
-- Adam: `pwsh -File scripts/schedule-reconcile.ps1 -Action Register` (y autopilot si aún no).
+- Adam: Register schtasks autopilot/reconcile si aún no.
 - Cablear `decide_urgency` al paper path cuando toque (sin órdenes).
 
 ## No tocar
-- Solo `main`. Schedule = paper triage, zero broker orders, no LIVE. PASS ≠ deploy.
+- Solo `main`. Paper triage / zero broker orders / no LIVE. No instalar IBC desde checklist.
