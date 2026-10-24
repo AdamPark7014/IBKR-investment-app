@@ -14,6 +14,7 @@ from ..intelligence.market_radar import build_market_radar
 from ..intelligence.prompt_pack import PromptPack, default_pack
 from .alerts import Alert, evaluate_paper_alerts
 from .config_freeze import verify_freeze, write_freeze
+from .paper_curve import paper_max_drawdown
 from .shadow import desired_from_decisions, log_shadow_snapshot
 from .simple_ui import write_simple_console
 
@@ -91,8 +92,10 @@ def run_autopilot(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     n_drift_val = int(paper.get("n_drift") or 0)
+    paper_equity_path = Path(s.data.data_dir) / "paper_equity.jsonl"
+    max_dd = paper_max_drawdown(paper_equity_path) if paper_equity_path.is_file() else None
     alerts = evaluate_paper_alerts(
-        max_drawdown=None,
+        max_drawdown=max_dd,
         assumed_sharpe=0.8,
         n_drift=n_drift_val,
         orders_sent=0,

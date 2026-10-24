@@ -1,16 +1,16 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — brief urgency)
-- `deterministic_brief`: si `extra` tiene `urgency_mode` → bullet `Urgency paper: {mode} ({reason}).`; si `config_hash_ok is False` → `Config freeze: HASH MISMATCH — do not retune.`
-- `tests/test_ai_brief_autopilot.py`: extra + assert urgency line if present.
-- Ruff + pytest verdes. NO commit. No toqué autopilot/simulated/cli.
+## Hecho (2026-10-24, cursor — W11a paper max DD)
+- NEW `src/ibtrader/ops/paper_curve.py`: load_equity_points / max_drawdown / paper_max_drawdown.
+- NEW `tests/test_paper_curve.py`: empty, rising, 100→80→90 DD=0.2.
+- `autopilot.py`: evaluate_paper_alerts max_drawdown from paper_equity.jsonl if exists else None.
+- pytest test_paper_curve + test_ai_brief_autopilot OK. NO commit. No toqué cli/simulated/stack/schedule.
 
 ## Hecho (previo)
-- ibc-checklist / freeze+urgency autopilot / schedule scripts.
+- brief urgency; ibc-checklist / freeze+urgency / schedule scripts.
 
 ## A medias
 - Tiingo + hold-out + pia (Adam).
-- Dirty local: brief.py + test_ai_brief_autopilot.py (sin commit).
 
 ## Siguiente
 - Paper vivo congelado sin retocar params.
