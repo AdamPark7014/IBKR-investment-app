@@ -1,11 +1,11 @@
 ### IBKR Investment System (institucional, fase 1)
 
-Sistema cuantitativo profesional con ejecución por IBKR. Papel por defecto; LIVE requiere confirmación explícita y verificaciones. Este repo sigue el SPEC “INSTITUTIONAL AI INVESTMENT SYSTEM — IBKR”.
+Sistema cuantitativo profesional con ejecución por IBKR. Papel por defecto; LIVE requiere confirmación explícita y verificaciones. Este repo sigue el SPEC "INSTITUTIONAL AI INVESTMENT SYSTEM — IBKR".
 
 Documentación principal:
 - `ARCHITECTURE.md`: arquitectura modular y capas.
 - `DATA_SOURCES.md`: qué provee IBKR vs fuentes externas, licencias.
-- `RISK_MODEL.md`: límites, circuit breaker, “NO_TRADE”.
+- `RISK_MODEL.md`: límites, circuit breaker, "NO_TRADE".
 - `DECISION_ENGINE.md`: motor de decisiones (fase 1), journal, explicabilidad.
 - `ROADMAP.md`: plan por fases y definición de hecho.
 
@@ -15,7 +15,7 @@ Advertencia honesta:
 Requisitos (Windows 11, Python 3.12):
 1) Instalar Python 3.12 (x64) y Git.
 2) Instalar IB Gateway (o TWS), habilitar API.
-   - Gateway: Configuración API → “Read-Only API” desactivado para trading; puerto: Paper 4002, Live 4001; permitir 127.0.0.1.
+   - Gateway: Configuración API → "Read-Only API" desactivado para trading; puerto: Paper 4002, Live 4001; permitir 127.0.0.1.
 3) Crear/activar entorno virtual:
    - PowerShell:
      ```powershell
@@ -35,7 +35,7 @@ Requisitos (Windows 11, Python 3.12):
      - Puedes generar un ID de experimento: `ibtrader backtest-sample --exp-id p1p5_check`
      - Comparar modos (P5): `ibtrader compare-directions --exp-id p1p5_compare`
    - Motor de papel (BUY/SELL/WATCH/NO_TRADE, sin órdenes): `ibtrader paper-run`
-   - Reconciliación paper (desired vs `data/paper_positions.json`, JSON a stdout, **cero órdenes**): `ibtrader paper-reconcile`. Fase 3 = cimiento disciplinado (drift + slippage ledger opcional); **no LIVE**. El playbook institucional excluye LLM sobre titulares, alt-data de pago e intradía — aquí solo comparas cartera objetivo vs held.
+   - Reconciliación paper (desired vs `data/paper_positions.json`, JSON a stdout, cero órdenes): `ibtrader paper-reconcile`. Fase 3 = cimiento disciplinado (drift + slippage ledger opcional); **no LIVE**. El playbook institucional excluye LLM sobre titulares, alt-data de pago e intradía — aquí solo comparas cartera objetivo vs held.
    - Kill switch: `ibtrader kill` / limpiar: `ibtrader clear-kill`
 
 Ejecución LIVE (deshabilitada por defecto):
@@ -51,7 +51,7 @@ Datos (P2):
 - Todos los comandos (`download-data`, `backtest-sample`, `compare-directions`) usan un pipeline de proveedores con puerta de calidad:
   - Primero Yahoo Finance (vía yfinance 1.x) y, si falla, Stooq CSV con cabeceras tipo `curl` (evita 404).
   - Validación estricta: índice creciente sin duplicados, columnas no vacías. Si falla, se bloquea el backtest.
-  - Stooq: en la práctica NO funcional (JS bot-check frecuente). Se mantiene como fallback “best effort”, pero no confiar en él. El error agrega la razón de cada proveedor probado.
+  - Stooq: en la práctica NO funcional (JS bot-check frecuente). Se mantiene como fallback "best effort", pero no confiar en él. El error agrega la razón de cada proveedor probado.
   - Yahoo Finance (yfinance 1.x) es la única fuente gratuita funcional por defecto.
   - IBKRProvider (vía `ib_async`) está implementado para históricos diarios (TRADES). Es opcional y seleccionable vía `DATA__PROVIDERS` (por defecto `yahoo,stooq`), y requiere IB Gateway/TWS local con API habilitada.
 
@@ -63,7 +63,7 @@ Histeresis costo-aware (P3–P4):
 - Razones de NO_REBALANCE se registran en logs estructurados (JSON).
 
 BacktestSkeptic:
-- El CLI señalará resultados “sospechosos” (e.g., Sharpe > 3 o CAGR > 100%) vía `skeptic_flags` en la salida para evitar falsas conclusiones por datos corruptos o fugas.
+- El CLI señalará resultados "sospechosos" (e.g., Sharpe > 3 o CAGR > 100%) vía `skeptic_flags` en la salida para evitar falsas conclusiones por datos corruptos o fugas.
 
 V2 Fase P6–P9 (comandos reproducibles)
 - P6 Régimen (aprendido, no hardcodeado): GMM sobre [ret_1d, vol_20] del benchmark.
@@ -82,4 +82,3 @@ V2 Fase P6–P9 (comandos reproducibles)
 Opcional — Riesgo en backtest-sample/compare:
 - `ibtrader backtest-sample --with-risk --risk-on-threshold 0.5 --exp-id demo`
 - `COMPARE_WITH_RISK=true ibtrader compare-directions --exp-id demo2`
-

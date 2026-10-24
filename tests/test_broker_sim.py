@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import date
+from pathlib import Path
 
 from ibtrader.broker.base import Order
 from ibtrader.broker.simulated import SimulatedBroker, SimulatedMarketState
@@ -51,3 +53,45 @@ def test_simulated_broker_sell_charges_sec_reg_fee() -> None:
     sec = reg_fees(reg_cfg, 100, 100.0, date.today(), is_sell=True)
     assert sec > 0.0
     assert market.equity == equity_after_buy + 10_000.0 - sec
+
+def test_simulated_broker_limit_unfilled_when_prob_zero() -> None:
+    """Touchable LMT does not fill when prob_fill_on_limit is 0."""
+    slip_cfg = SlippageConfig(model="bps", bps=0.0)
+    comm_cfg = CommissionConfig(model="fixed", min_per_order=0.0, per_share=0.0)
+    market = SimulatedMarketState(last_prices={"SPY": 100.0}, equity=10_000.0)
+    broker = SimulatedBroker(
+        market,
+        comm_cfg,
+        slip_cfg,
+        dry_run=False,
+        prob_fill_on_limit=0.0,
+        rng=__import__("random").Random(0),
+    )
+    start_eq = market.equity
+    broker.place_order(
+        Order(symbol="SPY", side="BUY", quantity=10, order_type="LMT", limit_price=101.0),
+    )
+    assert broker.get_positions() == {}
+    assert market.equity == start_eq
+
+
+def test_simulated_broker_writes_slippage_ledger_on_fill(tmp_path: Path) -> None:
+    slip_cfg = SlippageConfig(model="bps", bps=10.0)
+    comm_cfg = CommissionConfig(model="fixed", min_per_order=0.0, per_share=0.0)
+    ledger = tmp_path / "slip.jsonl"
+    market = SimulatedMarketState(last_prices={"SPY": 100.0}, equity=10_000.0)
+    broker = SimulatedBroker(
+        market,
+        comm_cfg,
+        slip_cfg,
+        dry_run=False,
+        ledger_path=str(ledger),
+    )
+    broker.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="MKT"))
+    assert ledger.is_file()
+    row = json.loads(ledger.read_text(encoding="utf-8").strip())
+    assert row["symbol"] == "SPY"
+    assert row["decision_px"] == 100.0
+    assert row["fill_px"] > 100.0
+    assert row["slip_bps"] > 0
+

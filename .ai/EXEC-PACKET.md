@@ -1,6 +1,6 @@
 # EXEC-PACKET — Fase 3 paper disciplinado (cimiento)
 
-**Estado:** FILLED  
+**Estado:** CLOSED  
 **Fuente:** `docs/research/QUANT-FUNDS-PLAYBOOK-2026-10-21.md` §Fase 3  
 **Git:** solo `main`
 
@@ -16,23 +16,22 @@ Cimientos de Fase 3: fills probabilísticos en el sim, ledger de slippage (decis
 
 ## Pasos
 
-### [ ] F3-1 — `ops/slippage_ledger.py`
-- SQLite o JSONL bajo `data/`: `decision_ts`, `symbol`, `side`, `decision_px`, `fill_px`, `qty`, `slip_bps`, `source`
+### [x] F3-1 — `ops/slippage_ledger.py`
+- JSONL bajo `data/`: `decision_ts`, `symbol`, `side`, `decision_px`, `fill_px`, `qty`, `slip_bps`, `source`
 - `record_slip(...)`, `summarize(window_days) -> {n, mean_slip_bps, p95}`
 
-### [ ] F3-2 — `SimulatedBroker` fills probabilísticos
-- `prob_fill_on_limit: float` (default 0.7) en config o ctor
-- LMT: con probabilidad `prob_fill` rellena; si no, unfilled
-- Al fill MKT/LMT: escribir en slippage ledger si se pasa `ledger=`
+### [x] F3-2 — `SimulatedBroker` fills probabilísticos
+- `prob_fill_on_limit: float` (default 0.7) + `ledger_path` + `rng`
+- LMT touchable: fill con probabilidad; si no, unfilled
+- Al fill: `record_slip` si hay ledger
 
-### [ ] F3-3 — CLI `paper-reconcile`
-- Compara desired (DecisionEngine) vs held (`paper_positions.json` o empty)
-- Imprime drift + opcional resumen ledger
-- Cero órdenes broker
+### [x] F3-3 — CLI `paper-reconcile`
+- Desired (DecisionEngine) vs held (`paper_positions.json` o empty)
+- Drift + resumen ledger opcional; cero órdenes
 
-### [ ] F3-4 — Tests + RELEVO
-- Tests unitarios ledger + prob fill + CLI smoke
-- Actualizar packet checkboxes
+### [x] F3-4 — Tests + RELEVO
+- Tests ledger + prob fill + CLI smoke + market_radar
+- Extra: `intelligence/market_radar.py` PIT (triage, no alpha) en `market-analyze`
 
 ## DoD
 - pytest focal verde; ruff en paths tocados

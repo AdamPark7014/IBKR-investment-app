@@ -401,6 +401,50 @@ def paper_run(
     rprint(out)
 
 
+@app.command("paper-reconcile")
+def paper_reconcile(
+    window_days: int = typer.Option(
+        30,
+        "--window-days",
+        help="Slippage ledger summary lookback when data/slippage_ledger.jsonl exists.",
+    ),
+) -> None:
+    """Compare DecisionEngine targets vs paper_positions.json; no broker orders."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from .shadow import desired_from_decisions, log_shadow_snapshot
+
+    s = AppSettings()
+    s.resolve_paths()
+    data = load_universe_v2(s)
+    engine = DecisionEngine(s)
+    decisions = engine.generate(data)
+    desired = desired_from_decisions(decisions)
+
+    held: dict[str, float] = {}
+    held_path = _Path(s.data.data_dir) / "paper_positions.json"
+    if held_path.exists():
+        raw = _json.loads(held_path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            held = {str(k): float(v) for k, v in raw.items()}
+
+    out: dict[str, Any] = log_shadow_snapshot(desired, held, tag="paper-reconcile")
+    out["orders_sent"] = 0
+    out["shadow_held_source"] = str(held_path) if held_path.exists() else None
+
+    ledger_path = _Path(s.data.data_dir) / "slippage_ledger.jsonl"
+    if ledger_path.exists():
+        try:
+            from . import slippage_ledger as _slippage_ledger
+
+            out["slippage"] = _slippage_ledger.summarize(ledger_path, window_days)
+        except ImportError:
+            pass
+
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
+
+
 @app.command()
 def kill() -> None:
     s = AppSettings()
@@ -783,6 +827,7 @@ def market_analyze() -> None:
     from datetime import timezone as _tz
     from pathlib import Path as _Path
 
+    from ..intelligence.market_radar import build_market_radar
     from ..research.market_analyzer import analyze_market
     from ..research.multi_asset import DEFAULT_RESEARCH_SYMBOLS
 
@@ -797,6 +842,7 @@ def market_analyze() -> None:
         symbols=list(s.universe.symbols),
         benchmark=s.universe.benchmark if s.universe.benchmark in data else s.universe.symbols[0],
     )
+    radar = build_market_radar(data)
     research_dir = _Path(s.data.reports_dir) / "research"
     research_dir.mkdir(parents=True, exist_ok=True)
     run_id = _dt.now(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -805,6 +851,7 @@ def market_analyze() -> None:
         "exp_id": run_id,
         "phase": "V3-market-analyzer",
         "report": report,
+        "market_radar": radar,
         "artifact": str(art),
         "note": report.get("disclaimer"),
     }
