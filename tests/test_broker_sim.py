@@ -95,3 +95,25 @@ def test_simulated_broker_writes_slippage_ledger_on_fill(tmp_path: Path) -> None
     assert row["fill_px"] > 100.0
     assert row["slip_bps"] > 0
 
+
+
+def test_simulated_broker_rejects_outside_rth() -> None:
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    ET = ZoneInfo("America/New_York")
+    market = SimulatedMarketState(last_prices={"SPY": 100.0}, equity=10_000.0)
+    # Sunday evening UTC-ish → not RTH
+    sunday = datetime(2024, 6, 2, 12, 0, tzinfo=ET)
+    broker = SimulatedBroker(
+        market,
+        CommissionConfig(model="fixed", per_share=0.0, min_per_order=0.0),
+        SlippageConfig(model="bps", bps=0.0),
+        dry_run=False,
+        require_rth=True,
+        now_fn=lambda: sunday,
+        latency_ms=12.0,
+    )
+    broker.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="MKT"))
+    assert broker.get_positions() == {}
+    assert broker.last_latency_ms == 12.0

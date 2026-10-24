@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
 
 from ..config import CommissionConfig, RegFeesConfig, SlippageConfig
 from ..execution.costs import total_order_cost
+from ..execution.session import is_rth
 from ..ops.slippage_ledger import record_slip
 from .base import Broker, Order, Quote
 
@@ -35,6 +36,9 @@ class SimulatedBroker(Broker):
         prob_fill_on_limit: float = 0.7,
         ledger_path: str | None = None,
         rng: random.Random | None = None,
+        latency_ms: float = 0.0,
+        require_rth: bool = False,
+        now_fn: Any | None = None,
     ) -> None:
         self.market_state = market_state
         self.commission_cfg = commission
@@ -44,6 +48,10 @@ class SimulatedBroker(Broker):
         self.prob_fill_on_limit = float(prob_fill_on_limit)
         self.ledger_path = ledger_path
         self._rng = rng if rng is not None else random.Random()
+        self.latency_ms = float(latency_ms)
+        self.require_rth = bool(require_rth)
+        self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
+        self.last_latency_ms: float | None = None
         self._positions: Dict[str, int] = {}
         self._connected = True
         self._order_seq = 0
@@ -66,7 +74,10 @@ class SimulatedBroker(Broker):
     def place_order(self, order: Order) -> str:
         self._order_seq += 1
         order_id = f"SIM-{self._order_seq}"
+        self.last_latency_ms = self.latency_ms
         if self.dry_run:
+            return order_id
+        if self.require_rth and not is_rth(self._now_fn()):
             return order_id
         last = self.market_state.last_prices.get(order.symbol)
         if last is None:

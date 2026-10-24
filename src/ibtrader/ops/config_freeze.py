@@ -1,7 +1,10 @@
 from __future__ import annotations
-import hashlib, json
+
+import hashlib
+import json
 from pathlib import Path
 from typing import Any, Mapping
+
 
 def snapshot_settings(settings: Any) -> dict[str, Any]:
     '''Extrae subset estable de AppSettings (risk, commission, slippage, engine, universe symbols).'''
@@ -38,10 +41,16 @@ def write_freeze(path: str | Path, settings: Any) -> dict[str, Any]:
 def verify_freeze(path: str | Path, settings: Any) -> dict[str, Any]:
     p = Path(path)
     if not p.is_file():
-        return {'ok': False, 'reason': 'missing_freeze', 'expected': None, 'actual': config_hash(snapshot_settings(settings))}
+        actual = config_hash(snapshot_settings(settings))
+        return {'ok': False, 'reason': 'missing_freeze', 'expected': None, 'actual': actual}
     raw = json.loads(p.read_text(encoding='utf-8'))
     expected = str(raw.get('hash') or '')
     actual = config_hash(snapshot_settings(settings))
-    return {'ok': expected == actual, 'reason': None if expected == actual else 'hash_mismatch', 'expected': expected, 'actual': actual}
+    return {
+        'ok': expected == actual,
+        'reason': None if expected == actual else 'hash_mismatch',
+        'expected': expected,
+        'actual': actual,
+    }
 
 __all__ = ['snapshot_settings', 'config_hash', 'write_freeze', 'verify_freeze']

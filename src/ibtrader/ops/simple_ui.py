@@ -29,6 +29,15 @@ def render_simple_console(payload: Mapping[str, Any], *, title: str = 'ibtrader'
     risk = facts.get('risk_on_proxy')
     risk_lbl = 'ON' if risk==1 else ('OFF' if risk==0 else '—')
     ts = _esc(payload.get('generated_at') or datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))
+    alerts = list(payload.get('alerts') or [])
+    n_alerts = len(alerts)
+    worst = 'info'
+    for a in alerts:
+        sev = str((a or {}).get('severity') or 'info')
+        if sev == 'kill_recommend':
+            worst = 'kill_recommend'
+        elif sev == 'warn' and worst == 'info':
+            worst = 'warn'
     return f'''<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>{_esc(title)}</title>
@@ -58,7 +67,7 @@ h1 {{ font-size:1.25rem; font-weight:600; letter-spacing:0.02em; margin:0 0 0.25
   <div class="card"><div class="k">Paper drift</div><div class="v">{drift}</div></div>
 </div>
 <div class="brief">{text}</div>
-<div class="meta">as_of={as_of} · breadth={_esc(breadth)} · brief={source}</div>
+<div class="meta">as_of={as_of} · breadth={_esc(breadth)} · brief={source} · alerts={n_alerts} ({_esc(worst)})</div>
 <p class="foot">Triage paper. No es lista de compra. No promete rentabilidad. Cero órdenes LIVE desde esta pantalla.</p>
 </main></body></html>'''
 
