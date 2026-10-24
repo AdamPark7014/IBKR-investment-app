@@ -1,6 +1,6 @@
 # EXEC-PACKET — Hardening hiper-robusto post-auditoría
 
-**Estado:** CLOSED — olas A–C, D2, D parcial y fase 1 del playbook  
+**Estado:** CLOSED — olas A–C, Ola D (D2 + registry hashes + data fail-loud + shadow stub) y fase 1 del playbook  
 **Fuente:** `docs/AUDIT-HARDENING-2026-10-18.md`  
 **Git:** solo `main` · sin ramas · sin worktrees · sin PRs
 
@@ -32,7 +32,9 @@ Cerrar P0-1…P0-9 y smoke research usable. No conectar paper a broker. No inven
 ### [x] Bug `market-analyze`: `datetime.UTC` → `timezone.utc` (y `utcnow` deprecado en `research-run`).
 ### [x] Defaults conservadores: drawdown 25 → 20 % (`config.py`, `RISK_MODEL.md`, `.env.example` con `RISK__*`).
 ### [x] CI en `main` con ubuntu + macOS y smoke de `research-run` (`.github/workflows/ci.yml`).
-### [x] D (parcial) — data fail-loud cerrado en fase 1 del playbook (P1-4: `validate_pit`, service sin excepciones silenciosas); shadow book (P1-6) pendiente
+### [x] D — data fail-loud (P1-4: `validate_pit`, `cache.py` loud miss, `service.py` razones agregadas; `downloader.normalize_yf` ya no traga MultiIndex)
+### [x] D — shadow book stub (P1-6): `ops/shadow.py` + `paper-run --shadow` (desired vs held, cero broker)
+### [x] D2b — `restricted_bar_frac` en `backtest/report.stats_json` (desde `restricted_counts` del engine)
 ### [x] Fase 1 del playbook (2026-10-21) — datos PIT (Tiingo, vintages, universo), modelo de costos IBKR, presupuesto de pruebas + hold-out congelado, golden files
 ### [ ] Fase 2 — Universo ~10 ETFs según `docs/research/QUANT-FUNDS-PLAYBOOK-2026-10-21.md` (grafo de stages, EWMAC + 1/3/12 m, risk parity por cajas, vol target 10 %, buffers, hold-out congelado)
 

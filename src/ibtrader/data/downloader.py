@@ -38,8 +38,9 @@ def normalize_yf(df: pd.DataFrame) -> pd.DataFrame:
         try:
             df = df.copy()
             df.columns = df.columns.get_level_values(0)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("normalize_yf_multindex_flatten_failed reason=%s: %s", type(e).__name__, e)
+            raise
     out = df.rename(
         columns={
             "Open": "open",

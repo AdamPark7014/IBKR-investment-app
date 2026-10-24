@@ -364,7 +364,13 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
 
 
 @app.command("paper-run")
-def paper_run() -> None:
+def paper_run(
+    shadow: bool = typer.Option(
+        False,
+        "--shadow",
+        help="Log desired vs held weights via shadow book (no broker orders).",
+    ),
+) -> None:
     s = AppSettings()
     s.resolve_paths()
     data = load_universe_v2(s)
@@ -373,7 +379,16 @@ def paper_run() -> None:
     counts: dict[str, int] = {}
     for d in decisions:
         counts[d.action] = counts.get(d.action, 0) + 1
-    rprint({"orders_sent": 0, "counts": counts, "decisions": [d.__dict__ for d in decisions]})
+    out: dict[str, Any] = {
+        "orders_sent": 0,
+        "counts": counts,
+        "decisions": [d.__dict__ for d in decisions],
+    }
+    if shadow:
+        from .shadow import desired_from_decisions, log_shadow_snapshot
+
+        out["shadow"] = log_shadow_snapshot(desired_from_decisions(decisions), held={})
+    rprint(out)
 
 
 @app.command()

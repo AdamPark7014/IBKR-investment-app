@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import plotly.graph_objects as go
 
-from .engine import BacktestResult
+from .engine import BacktestResult, restricted_counts
 from .metrics import cost_metrics_dict, stats_to_dict
 
 _COST_ROWS = (
@@ -32,8 +32,17 @@ def _json_safe(value: Any) -> Any:
 
 
 def stats_json(result: BacktestResult) -> Dict[str, Any]:
-    """All metrics as a JSON-safe dict (NaN/inf -> null)."""
-    return {k: _json_safe(v) for k, v in stats_to_dict(result.stats).items()}
+    """All metrics as a JSON-safe dict (NaN/inf -> null).
+
+    Includes ``restricted_bar_frac`` from per-bar risk lockout flags on the result.
+    """
+    out = {k: _json_safe(v) for k, v in stats_to_dict(result.stats).items()}
+    restricted, total = restricted_counts(result)
+    frac = float(restricted / total) if total else 0.0
+    out["restricted_bars"] = int(restricted)
+    out["total_bars"] = int(total)
+    out["restricted_bar_frac"] = _json_safe(frac)
+    return out
 
 
 def _cost_table_html(result: BacktestResult) -> str:

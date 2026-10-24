@@ -1,5 +1,12 @@
 # RELEVO
 
+## Hecho (2026-10-24, cursor — Ola D cierre)
+- Repo canónico sigue en `C:/dev/apps/IBKR-INVESTMENT-app` (`C:/dev/ibkr-investment-app` no existe en disco).
+- **Ola D restante:** `ops/shadow.py` (log desired vs held), hook `paper-run --shadow`; `stats_json` expone
+  `restricted_bar_frac` desde el engine; docstrings de `resolve_restricted_bar_frac` al día; `normalize_yf` fail-loud
+  en flatten MultiIndex.
+- D2 / registry hashes / walk-forward `restricted_bar_frac` ya estaban en main desde hardening fase 1 (2026-10-21).
+
 ## Hecho (2026-10-21, claude-code)
 - Checkout canónico `C:/dev/apps/IBKR-INVESTMENT-app`; repo público; CI verde en `main` (ubuntu + macOS).
 - Hardening fase 1 (gates estrictos, `restricted_bar_frac`, hashes, fail-closed) y playbook

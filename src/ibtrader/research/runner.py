@@ -36,8 +36,8 @@ def resolve_restricted_bar_frac(
     """Return ``(frac, sourced)`` for the risk-lockout gate.
 
     ``sourced`` is True when the fraction came from backtest/WF stats (or a
-    non-zero caller override). When False, ``frac`` is 0.0 — the backtest engine
-    does not yet expose per-bar lockout counts on stitched OOS (see runner docstrings).
+    non-zero caller override). When False, ``frac`` is 0.0 and gates should treat
+    the sample as ``restricted_bar_frac_assumed`` (legacy rows without engine wiring).
     """
     if override is not None and float(override) != 0.0:
         return float(override), True
@@ -78,7 +78,7 @@ def evaluate_gates_with_restricted_frac(
     checks = dict(gate.checks)
     checks["restricted_bar_frac_assumed"] = True
     checks["restricted_bar_frac_note"] = (
-        "restricted_bar_frac not in OOS/WF stats; engine lockout bars not wired — using 0.0"
+        "restricted_bar_frac missing from OOS/WF stats — using 0.0 (assumed)"
     )
     return OOSGateResult(passed=gate.passed, reasons=list(gate.reasons), checks=checks)
 
