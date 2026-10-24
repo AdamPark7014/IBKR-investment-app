@@ -74,6 +74,9 @@ class SimulatedBroker(Broker):
     def place_order(self, order: Order) -> str:
         self._order_seq += 1
         order_id = f"SIM-{self._order_seq}"
+        if self.require_rth and not is_rth(self._now_fn()):
+            self.last_latency_ms = None
+            return order_id
         self.last_latency_ms = self.latency_ms
         if self.dry_run:
             return order_id
