@@ -465,8 +465,9 @@ def signal_validate(
         slow=int(s.strategy.params.get("slow_window", 30)),
         direction=direction,
     )
-    # Buy & Hold for comparison
-    px = data[s.universe.benchmark]["close"].astype(float)
+    # Buy & Hold for comparison (benchmark may have been dropped by validation)
+    bench = s.universe.benchmark if s.universe.benchmark in data else next(iter(data))
+    px = data[bench]["close"].astype(float)
     eq = (100_000.0 / float(px.iloc[0])) * px
     bh_ret = eq.pct_change().fillna(0.0)
     ann = np.sqrt(252.0)
@@ -998,6 +999,96 @@ def research_run(
     )
     payload["artifact"] = str(summary_path)
     payload["summary_artifact"] = str(summary_path)
+    typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
+
+
+@app.command("research-portfolio")
+def research_portfolio(
+    exp_id: Optional[str] = None,
+    profile: str = typer.Option(
+        "smoke",
+        "--profile",
+        help="Phase-2 profile: smoke (1 config) or full (rules × weighting grid).",
+    ),
+    universe: Optional[str] = typer.Option(
+        None,
+        "--universe",
+        help="Path to UniverseSpec JSON (default: DATA__UNIVERSE_FILE or config/universe-10etf.json).",
+    ),
+    confirmation: bool = typer.Option(
+        False,
+        "--confirmation",
+        help="Open the frozen hold-out once (same semantics as research-run --confirmation).",
+    ),
+) -> None:
+    """
+    Phase-2 portfolio research: pipeline stage graph vs 60/40 + All Weather + random portfolios.
+    Strict gates decide PASS/FAIL. PASS ≠ deploy.
+    """
+    import json as _json
+    from dataclasses import fields as _dc_fields
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+    from pathlib import Path as _Path
+
+    from ..data.universe import load_universe_spec
+    from ..research.portfolio_runner import RECOMMENDATION_FAIL, run_portfolio_research
+    from ..research.registry import ExperimentRecord, save_experiment
+
+    s = AppSettings()
+    s.resolve_paths()
+    warn_unknown_trading_env()
+    if profile not in {"smoke", "full"}:
+        raise typer.BadParameter("profile must be smoke|full", param_hint="--profile")
+    if s.research.confirmation_mode and not confirmation:
+        log.warning(
+            "research_confirmation_mode_ignored: RESEARCH__CONFIRMATION_MODE is set but "
+            "--confirmation was not typed; running with the frozen hold-out hidden"
+        )
+        s.research.confirmation_mode = False
+    if confirmation:
+        if not s.research.holdout_start:
+            raise typer.BadParameter(
+                "no frozen hold-out is declared: set RESEARCH__HOLDOUT_START=YYYY-MM-DD before confirming",
+                param_hint="--confirmation",
+            )
+        s.research.confirmation_mode = True
+
+    uni_path = universe or s.data.universe_file or "config/universe-10etf.json"
+    uni = load_universe_spec(uni_path)
+    s.universe.symbols = list(uni.symbols)
+    if s.universe.benchmark not in set(uni.symbols):
+        s.universe.benchmark = uni.symbols[0]
+    data = load_universe_v2(s)
+    allowed = set(uni.symbols)
+    data = {sym: df for sym, df in data.items() if sym in allowed}
+    if not data:
+        raise typer.BadParameter(f"no prices loaded for universe symbols {list(uni.symbols)}")
+    run_id = exp_id or _dt.now(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    summary = run_portfolio_research(
+        data, s, uni, profile=profile, exp_id=run_id, reports_dir=s.data.reports_dir  # type: ignore[arg-type]
+    )
+    research_dir = _Path(s.data.reports_dir) / "research"
+    research_dir.mkdir(parents=True, exist_ok=True)
+    registry_path = research_dir / f"portfolio_experiments_{run_id}.jsonl"
+    known = {f.name for f in _dc_fields(ExperimentRecord)}
+    for rec in summary.get("registry_records") or []:
+        if isinstance(rec, ExperimentRecord):
+            save_experiment(registry_path, rec)
+        elif isinstance(rec, dict):
+            save_experiment(registry_path, ExperimentRecord(**{k: v for k, v in rec.items() if k in known}))
+    payload = {k: v for k, v in summary.items() if k not in {"registry_records"}}
+    payload["registry"] = str(registry_path)
+    if not payload.get("artifact"):
+        art = research_dir / f"portfolio_{run_id}.json"
+        art.write_text(
+            _json.dumps(_noneify(summary), ensure_ascii=False, separators=(",", ":"), indent=2),
+            encoding="utf-8",
+        )
+        payload["artifact"] = str(art)
+    if summary.get("verdict") == "FAIL":
+        typer.echo(RECOMMENDATION_FAIL, err=True)
+    # JSON on stdout (same as research-run) so tests/automation can parse the payload.
     typer.echo(_json.dumps(_noneify(payload), ensure_ascii=False, separators=(",", ":")))
 
 
