@@ -1,48 +1,58 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Register/unregister daily paper autopilot (zero broker orders, NO LIVE).
-.PARAMETER Action
-  Register | Unregister | Status
-.PARAMETER Time
-  Daily start time (HH:MM), default 16:30
+  Register / unregister / query a daily Windows Task Scheduler job for ibtrader autopilot.
 .NOTES
-  PAPER TRIAGE ONLY — no broker orders.
-  No log files, no config, no --quiet flags.
+  PAPER triage only — zero broker orders — NO LIVE trading.
 #>
 param(
-  [ValidateSet("Register", "Unregister", "Status")]
-  [string]$Action = "Status",
-  [string]$Time = "16:30"
+    [ValidateSet('Register', 'Unregister', 'Status')]
+    [string]$Action = 'Status',
+    [string]$Time = '16:30'
 )
 
+$ErrorActionPreference = 'Stop'
 $TaskName = 'ibtrader-autopilot'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$VenvPy = Join-Path $RepoRoot '.venv\Scripts\python.exe'
 
-$Tr = if (Test-Path $VenvPy) {
-    "$VenvPy -m ibtrader.ops.cli autopilot"
-} elseif (Get-Command ibtrader -ErrorAction SilentlyContinue) {
-    "ibtrader autopilot"
-} else {
-    Write-Error "Neither venv python nor global ibtrader command found. Exit 1."
-    exit 1
-}
+Write-Host 'PAPER triage only — zero broker orders — NO LIVE.'
 
-if ($Action -eq "Register") {
-    schtasks /Create /TN $TaskName /TR "$Tr" /SC DAILY /ST $Time /F | Out-Null
-    if (-not (Get-ScheduledTask -ErrorAction SilentlyContinue -TaskName $TaskName)) {
-        Write-Warning "Failed to register task $TaskName."
-    } else {
-        Write-Host "Registered $TaskName daily at $Time (PAPER TRIAGE ONLY)."
+switch ($Action) {
+    'Register' {
+        $VenvPy = Join-Path $RepoRoot '.venv\Scripts\python.exe'
+        if (Test-Path -LiteralPath $VenvPy) {
+            $inner = "Set-Location -LiteralPath '$RepoRoot'; & '$VenvPy' -m ibtrader.ops.cli autopilot"
+        }
+        elseif (Get-Command ibtrader -ErrorAction SilentlyContinue) {
+            $inner = "Set-Location -LiteralPath '$RepoRoot'; & ibtrader autopilot"
+        }
+        else {
+            Write-Error "Need repo .venv\Scripts\python.exe or ibtrader on PATH. Repo=$RepoRoot"
+            exit 1
+        }
+
+        # WorkingDirectory = repo via Set-Location inside -Command. /F = idempotent recreate.
+        $Tr = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"$inner`""
+        schtasks /Create /TN $TaskName /TR $Tr /SC DAILY /ST $Time /F
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "schtasks /Create failed (exit $LASTEXITCODE)."
+            exit $LASTEXITCODE
+        }
+        Write-Host "Registered '$TaskName' daily at $Time. WorkingDirectory=$RepoRoot"
     }
-} elseif ($Action -eq "Unregister") {
-    schtasks /Delete /TN $TaskName /F 2>$null | Out-Null
-    if (-not (Get-ScheduledTask -ErrorAction SilentlyContinue -TaskName $TaskName)) {
-        Write-Host "Task $TaskName removed or never existed (OK)."
-    } else {
-        Write-Host "Unregistered $TaskName."
+    'Unregister' {
+        schtasks /Delete /TN $TaskName /F 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Task '$TaskName' not found (OK)."
+            exit 0
+        }
+        Write-Host "Unregistered '$TaskName'."
     }
-} elseif ($Action -eq "Status") {
-    schtasks /Query /TN $TaskName /V /FO LIST 2>$null
+    'Status' {
+        schtasks /Query /TN $TaskName /V /FO LIST 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Task '$TaskName' not registered."
+            exit 0
+        }
+    }
 }
