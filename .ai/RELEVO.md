@@ -20,3 +20,6 @@
 
 ## No tocar
 - Solo `main`. PASS ≠ deploy. Hold-out una vez. Autopilot sin órdenes.
+
+Escrito al cerrar turno cursor 2026-10-24 13:13.
+
