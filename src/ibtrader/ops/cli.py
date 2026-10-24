@@ -401,6 +401,39 @@ def paper_run(
     rprint(out)
 
 
+@app.command("autopilot")
+def autopilot(
+    use_ai: bool = typer.Option(
+        False,
+        "--use-ai/--no-ai",
+        help="Optional low-token brief via puerta IA (needs ANTHROPIC_*). Default: deterministic.",
+    ),
+    open_ui: bool = typer.Option(
+        False,
+        "--open/--no-open",
+        help="Open the one-screen HTML in the browser.",
+    ),
+    language: str = typer.Option("es", "--lang", help="Brief language for PromptPack."),
+    max_tokens: int = typer.Option(400, "--max-tokens", help="AI max_tokens (low-token by design)."),
+) -> None:
+    """Run heavy backend triage + one-screen UI. Zero broker orders."""
+    import json as _json
+
+    from ..intelligence.prompt_pack import default_pack
+    from .autopilot import run_autopilot
+
+    pack = default_pack(language=language, max_tokens=max_tokens)
+    payload = run_autopilot(use_ai=use_ai, pack=pack, open_ui=open_ui)
+    slim = {
+        "exp_id": payload.get("exp_id"),
+        "orders_sent": payload.get("orders_sent", 0),
+        "brief_source": (payload.get("brief") or {}).get("source"),
+        "artifact_html": payload.get("latest_html") or payload.get("artifact_html"),
+        "disclaimer": payload.get("disclaimer"),
+    }
+    typer.echo(_json.dumps(_noneify(slim), ensure_ascii=False, separators=(",", ":")))
+
+
 @app.command("paper-reconcile")
 def paper_reconcile(
     window_days: int = typer.Option(

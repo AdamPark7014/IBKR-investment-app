@@ -1,27 +1,24 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — Fase 3 cimiento + market radar PIT)
-- `ops/slippage_ledger.py`: JSONL decisión vs fill + `summarize`.
-- `SimulatedBroker`: `prob_fill_on_limit` (default 0.7) + ledger en fills.
-- CLI `ibtrader paper-reconcile` (desired vs `paper_positions.json`, 0 órdenes).
-- `intelligence/market_radar.py`: snapshot PIT (trend/vol/VIX/rates/commod/breadth) — triage, no predicción.
-- `market-analyze` incluye `market_radar` en el JSON.
-- Tests focal: ledger, prob-fill, radar, paper-reconcile, broker sim.
+## Hecho (2026-10-24, cursor — low-token AI + autopilot UI)
+- `PromptPack`: model/max_tokens/effort/idioma/tono/prohibiciones parametrizados.
+- `brief.py`: comprime radar+paper → hechos; brief determinista (0 tokens); IA opcional vía puerta (`--use-ai`, haiku, ≤400 tokens).
+- `ibtrader autopilot [--open]`: backend pesado → HTML de una pantalla (`reports/autopilot/latest.html`).
+- Extra opcional: `pip install '.[ai]'` (anthropic). Sin clave → siempre determinista.
+- Tests: `test_ai_brief_autopilot.py`.
 
 ## Hecho (previo)
-- tsmom/MR OOS costos, CI portfolio smoke, sim IBKR, Fase 2 CLI, shadow, hardening.
+- Fase 3: slippage ledger, prob-fill, paper-reconcile, market radar PIT.
 
 ## A medias
-- Tiingo real + hold-out: inputs de Adam (token, DD, capital, horizonte).
-- Paper vivo prolongado sin retocar parámetros (disciplina Fase 3).
+- Tiingo + hold-out (Adam: token, DD, capital, horizonte).
+- Token `pia_ibtrader_…` en env si se quiere brief con IA real.
 
 ## Siguiente
-- Push main + vigilar CI.
-- Cuando haya Tiingo: confirmación OOS una sola vez.
-- Ampliar universe de radar (más proxies) solo con datos PIT ya en disco.
+- Programar Task Scheduler: `ibtrader autopilot --open` diario (paper, 0 órdenes).
+- Ampliar facts del brief solo con métricas ya calculadas (no noticias).
 
 ## No tocar
-- Solo `main`. PASS ≠ deploy. Hold-out una vez. Paper-run / paper-reconcile sin órdenes broker.
-- No LLM sobre titulares / alt-data de pago / intradía / apalancados (playbook §119).
-
-Escrito al cerrar turno cursor 2026-10-24 12:44.
+- Solo `main`. PASS ≠ deploy. Hold-out una vez.
+- No LLM sobre titulares / alt-data de pago / intradía / apalancados.
+- Autopilot no envía órdenes broker.

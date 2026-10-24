@@ -50,6 +50,9 @@ dev = [
   "ruff==0.6.2",
   "mypy==1.11.2",
 ]
+ai = [
+  "anthropic>=0.40.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/adam/ibkr-investment-app"
