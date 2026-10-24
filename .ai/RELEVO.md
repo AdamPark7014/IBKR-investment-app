@@ -1,21 +1,20 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — F3++ cableado)
-- Autopilot: `config_freeze` + `decide_urgency` en facts/payload/alerts.
-- `scripts/schedule-reconcile.ps1` (16:35, paper-reconcile).
-- `ibtrader ibc-checklist` (JSON manual Gateway/IBC).
-- Tests: freeze/urgency, ibc checklist.
+## Hecho (2026-10-24, cursor — schedule-reconcile)
+- `scripts/schedule-reconcile.ps1`: Action Register|Unregister|Status (default Status); Time 16:35 local (tras autopilot 16:30); task `ibtrader-paper-reconcile`; prefer `.venv\Scripts\python.exe -m ibtrader.ops.cli paper-reconcile` else `ibtrader paper-reconcile`; Set-Location repo; schtasks /F; banner paper triage / zero orders / no LIVE.
+- README: 2 líneas bajo schedule-autopilot (Register 16:35 + Status|Unregister|Time).
+- Smoke Status OK (task not registered). NO commit (pedido Adam). NO edité `src/`.
+
+## Hecho (previo — schedule-autopilot)
+- `scripts/schedule-autopilot.ps1` + README autopilot bullets.
 
 ## A medias
-- Tiingo + hold-out + pia (Adam).
-- Registrar tasks: schedule-autopilot + schedule-reconcile (elevación schtasks).
+- Tiingo + hold-out (Adam). pia token opcional.
+- Adam: Register de ambas tareas schtasks (puede pedir elevación).
 
 ## Siguiente
-- Paper vivo congelado sin retocar params.
-- Cuando haya Tiingo: OOS hold-out una vez.
+- Adam: `pwsh -File scripts/schedule-reconcile.ps1 -Action Register` (y autopilot si aún no).
+- Cablear `decide_urgency` al paper path cuando toque (sin órdenes).
 
 ## No tocar
-- Solo main. PASS ≠ deploy. Autopilot/reconcile sin órdenes LIVE.
-
-Escrito al cerrar turno cursor 2026-10-24 16:04.
-
+- Solo `main`. Schedule = paper triage, zero broker orders, no LIVE. PASS ≠ deploy.
