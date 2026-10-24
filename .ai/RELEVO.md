@@ -1,13 +1,14 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — W11a paper max DD)
-- NEW `src/ibtrader/ops/paper_curve.py`: load_equity_points / max_drawdown / paper_max_drawdown.
-- NEW `tests/test_paper_curve.py`: empty, rising, 100→80→90 DD=0.2.
-- `autopilot.py`: evaluate_paper_alerts max_drawdown from paper_equity.jsonl if exists else None.
-- pytest test_paper_curve + test_ai_brief_autopilot OK. NO commit. No toqué cli/simulated/stack/schedule.
+## Hecho (2026-10-24, cursor — W11b paper stack)
+- NEW `src/ibtrader/ops/stack.py`: PaperStack SQLite (`data/paper_stack.sqlite` injectable); upsert_desired/held; snapshot (desired/held/drift); sync_from_json; cmd_paper_stack (orders_sent=0).
+- NEW `tests/test_paper_stack.py`: roundtrip + drift + orders_sent=0.
+- CLI: append-only `@app.command("paper-stack")` at end of `cli.py` (~15 lines).
+- pytest tests/test_paper_stack.py -q → 3 passed. NO commit/push.
+- No toqué autopilot.py, simulated.py, paper_curve, schedule scripts, brief.py.
 
 ## Hecho (previo)
-- brief urgency; ibc-checklist / freeze+urgency / schedule scripts.
+- W11a paper_curve / brief urgency / ibc-checklist / freeze+urgency / schedule scripts.
 
 ## A medias
 - Tiingo + hold-out + pia (Adam).

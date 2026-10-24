@@ -1460,5 +1460,19 @@ def golden_regen(
     typer.echo(_json.dumps(_noneify(digest), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("paper-stack")
+def paper_stack(
+    db_path: Optional[str] = typer.Option(
+        None, "--db", help="SQLite path (default: data/paper_stack.sqlite)."
+    ),
+) -> None:
+    """Print paper desired/held/drift snapshot JSON. PAPER ONLY — orders_sent always 0."""
+    import json as _json
+
+    from .stack import cmd_paper_stack
+
+    typer.echo(_json.dumps(_noneify(cmd_paper_stack(db_path)), ensure_ascii=False, separators=(",", ":")))
+
+
 if __name__ == "__main__":
     app()
