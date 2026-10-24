@@ -8,6 +8,7 @@ import pandas as pd
 
 from ..backtest.engine import backtest, restricted_counts
 from ..backtest.metrics import compute_stats as _cs
+from ..backtest.metrics import copy_oos_cost_metrics
 from ..backtest.reasons import TradeReason
 from ..config import AppSettings, CommissionConfig
 from ..regime.gmm import build_regime_features, fit_gmm_regime
@@ -48,6 +49,10 @@ def _stats_to_dict(stats) -> dict:
         "turnover": stats.turnover,
         "profit_factor": stats.profit_factor,
         "expectancy": stats.expectancy,
+        "total_costs": float(getattr(stats, "total_costs", 0.0) or 0.0),
+        "avg_cost_bps_per_order": float(getattr(stats, "avg_cost_bps_per_order", 0.0) or 0.0),
+        "cost_drag_annual_pct": float(getattr(stats, "cost_drag_annual_pct", 0.0) or 0.0),
+        "total_reg_fees": float(getattr(stats, "total_reg_fees", 0.0) or 0.0),
     }
 
 
@@ -142,7 +147,33 @@ def _enrich_window_stats(
     out["turnover"] = _turnover_for_fills(trades, initial_equity)
     out["profit_factor"] = pf
     out["expectancy"] = exp
+    copy_oos_cost_metrics(out, base_stats_dict)
     return out
+
+
+def _aggregate_stitched_cost_metrics(
+    stitched: Dict[str, Any],
+    folds_detail: List[dict],
+    *,
+    initial_equity: float,
+    n_oos_periods: int,
+) -> None:
+    total_costs = 0.0
+    notional = 0.0
+    for fd in folds_detail:
+        oos = fd.get("oos") or {}
+        total_costs += float(oos.get("total_costs") or 0.0)
+        notional += float(oos.get("notional_traded") or 0.0)
+    if total_costs <= 0.0 and notional <= 0.0:
+        return
+    stitched["total_costs"] = total_costs
+    if notional > 0.0:
+        stitched["notional_traded"] = notional
+        stitched["avg_cost_bps_per_order"] = float(total_costs / notional * 1e4)
+    years = max(int(n_oos_periods), 1) / 252.0
+    if initial_equity > 0.0 and years > 0.0:
+        stitched["cost_drag_annual_pct"] = float(total_costs / initial_equity / years * 100.0)
+
 
 
 def walk_forward_sma(
@@ -354,6 +385,11 @@ def walk_forward_sma(
         oos_fold_stats = _enrich_window_stats(
             res_test_stats.__dict__, oos_trades_list, comm_fold, initial_equity
         )
+        copy_oos_cost_metrics(oos_fold_stats, res_test_span.stats)
+        oos_fold_stats["total_costs"] = float(getattr(res_test_span.stats, "total_costs", 0.0) or 0.0)
+        oos_fold_stats["notional_traded"] = float(
+            getattr(res_test_span.stats, "notional_traded", 0.0) or 0.0
+        )
         oos_fold_stats["restricted_bar_frac"] = _restricted_frac(restricted_fold, bars_fold)
         # Stitch OOS equity and B&H for this fold
         stitched_eq = pd.concat([stitched_eq, test_eq]) if not stitched_eq.empty else test_eq.copy()
@@ -430,6 +466,12 @@ def walk_forward_sma(
             stitched_oos_stats["trade_count"] = int(oos_trade_count)
             stitched_oos_stats["restricted_bar_frac"] = _restricted_frac(
                 total_oos_restricted_bars, total_oos_bars
+            )
+            _aggregate_stitched_cost_metrics(
+                stitched_oos_stats,
+                folds_detail,
+                initial_equity=initial_equity,
+                n_oos_periods=len(stitched_rets),
             )
     per_fold_params = [
         {"fold": fd["fold"], "fast": fd["chosen_params"]["fast"], "slow": fd["chosen_params"]["slow"]}

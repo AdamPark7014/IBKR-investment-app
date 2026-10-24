@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import pandas as pd
 
+from ..backtest.metrics import copy_oos_cost_metrics
 from ..config import AppSettings
 from ..validation.walkforward import walk_forward_sma
 from .gates import OOSGateResult, evaluate_candidate_gates
@@ -134,6 +135,8 @@ def run_sma_research(
             n_folds=n_folds,
         )
         oos = dict(wf.stitched_oos or {})
+        copy_oos_cost_metrics(oos, wf.test_stats)
+        copy_oos_cost_metrics(oos, wf.stitched_oos)
         bh = summary.get("buy_hold_oos")
         gate = evaluate_gates_with_restricted_frac(
             oos,

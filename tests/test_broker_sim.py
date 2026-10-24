@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import date
+
 from ibtrader.broker.base import Order
 from ibtrader.broker.simulated import SimulatedBroker, SimulatedMarketState
-from ibtrader.config import CommissionConfig, SlippageConfig
+from ibtrader.config import CommissionConfig, RegFeesConfig, SlippageConfig
+from ibtrader.execution.costs import commission, reg_fees
 
 
 def test_simulated_broker_places_order_and_updates_equity() -> None:
@@ -14,3 +17,37 @@ def test_simulated_broker_places_order_and_updates_equity() -> None:
     assert positions["SPY"] == 10
     assert broker.account_info()["equity"] < 100_000.0  # spent cash + commission
 
+
+def test_simulated_broker_fixed_commission_min_per_order() -> None:
+    """Small order: IBKR Fixed minimum USD 1.00 dominates per-share schedule."""
+    comm_cfg = CommissionConfig(model="fixed", per_share=0.005, min_per_order=1.0)
+    slip_cfg = SlippageConfig(model="bps", bps=0.0)
+    market = SimulatedMarketState(last_prices={"SPY": 100.0}, equity=50_000.0)
+    broker = SimulatedBroker(market, comm_cfg, slip_cfg, dry_run=False)
+    start = market.equity
+    broker.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="MKT"))
+    expected_comm = commission(comm_cfg, 1, 100.0)
+    assert expected_comm == 1.0
+    assert market.equity == start - 100.0 - expected_comm
+
+
+def test_simulated_broker_sell_charges_sec_reg_fee() -> None:
+    """Sells deduct SEC Section 31 (TAF paused in default config through 2026-12-31)."""
+    reg_cfg = RegFeesConfig(
+        sec_fee_rate=0.0000206,
+        finra_taf_per_share=0.000195,
+        finra_taf_paused_until="2026-12-31",
+        cat_per_share=0.0,
+    )
+    comm_cfg = CommissionConfig(model="fixed", min_per_order=0.0, per_share=0.0)
+    slip_cfg = SlippageConfig(model="bps", bps=0.0)
+    market = SimulatedMarketState(last_prices={"SPY": 100.0}, equity=50_000.0)
+    broker = SimulatedBroker(
+        market, comm_cfg, slip_cfg, dry_run=False, reg_fees=reg_cfg,
+    )
+    broker.place_order(Order(symbol="SPY", side="BUY", quantity=100, order_type="MKT"))
+    equity_after_buy = market.equity
+    broker.place_order(Order(symbol="SPY", side="SELL", quantity=100, order_type="MKT"))
+    sec = reg_fees(reg_cfg, 100, 100.0, date.today(), is_sell=True)
+    assert sec > 0.0
+    assert market.equity == equity_after_buy + 10_000.0 - sec

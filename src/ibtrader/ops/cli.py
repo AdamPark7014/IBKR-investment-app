@@ -385,9 +385,19 @@ def paper_run(
         "decisions": [d.__dict__ for d in decisions],
     }
     if shadow:
+        import json as _json
+        from pathlib import Path as _Path
+
         from .shadow import desired_from_decisions, log_shadow_snapshot
 
-        out["shadow"] = log_shadow_snapshot(desired_from_decisions(decisions), held={})
+        held: dict[str, float] = {}
+        held_path = _Path(s.data.data_dir) / "paper_positions.json"
+        if held_path.exists():
+            raw = _json.loads(held_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                held = {str(k): float(v) for k, v in raw.items()}
+        out["shadow"] = log_shadow_snapshot(desired_from_decisions(decisions), held=held)
+        out["shadow_held_source"] = str(held_path) if held_path.exists() else None
     rprint(out)
 
 

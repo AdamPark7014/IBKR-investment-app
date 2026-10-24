@@ -272,7 +272,7 @@ def _window_stats(res: BacktestResult, start: pd.Timestamp, capital: float) -> D
             "total_costs": total_costs,
             "total_commission": float(getattr(res.stats, "total_commission", 0.0) or 0.0),
             "avg_cost_bps_per_order": float(getattr(res.stats, "avg_cost_bps_per_order", 0.0) or 0.0),
-            "cost_drag_annual_pct": float(total_costs / capital / years * 100.0) if (capital and years > 0) else 0.0,
+            "cost_drag_annual_pct": float(getattr(res.stats, "cost_drag_annual_pct", total_costs / capital / years * 100.0 if (capital and years > 0) else 0.0) or 0.0),
             "years": float(years),
             "oos_start": str(eq.index.min()) if len(eq) else None,
             "oos_end": str(eq.index.max()) if len(eq) else None,
@@ -362,6 +362,19 @@ def run_portfolio_research(
     rows: List[Dict[str, Any]] = []
     bench_cache: Dict[pd.Timestamp, Dict[str, Any]] = {}
     for candidate_id, rules, weighting in candidates:
+        smoke_kw = (
+            {
+                "scalar_min_periods": 60,
+                "fdm_min_periods": 60,
+                "idm_min_periods": 60,
+                "box_min_periods": 40,
+                "hrp_min_periods": 60,
+                "vol_span": 20,
+                "step": 5,
+            }
+            if profile == "smoke"
+            else {}
+        )
         cfg = SystemConfig(
             rules=tuple(rules),
             instrument_weighting=weighting,  # type: ignore[arg-type]
@@ -369,6 +382,7 @@ def run_portfolio_research(
             capital=capital,
             long_only=long_only,
             max_leverage=1.0,
+            **smoke_kw,
         )
         strategy = PipelineStrategy(cfg)
         res = backtest(

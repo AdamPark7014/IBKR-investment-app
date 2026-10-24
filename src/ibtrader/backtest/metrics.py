@@ -114,6 +114,27 @@ def cost_metrics_dict(stats: PerformanceStats) -> Dict[str, Any]:
     return {k: getattr(stats, k) for k in COST_METRIC_FIELDS}
 
 
+
+
+OOS_COST_METRIC_KEYS = ("avg_cost_bps_per_order", "cost_drag_annual_pct")
+
+
+def copy_oos_cost_metrics(into: Dict[str, Any], source: Any) -> Dict[str, Any]:
+    """Copy OOS cost headline fields from backtest PerformanceStats or a mapping."""
+    if source is None:
+        return into
+    for key in OOS_COST_METRIC_KEYS:
+        raw = source.get(key) if isinstance(source, dict) else getattr(source, key, None)
+        if raw is None:
+            continue
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if val == val:
+            into[key] = val
+    return into
+
 def stats_to_dict(stats: PerformanceStats) -> Dict[str, Any]:
     """Every metric as a plain dict (dataclass fields, JSON-friendly scalars)."""
     return dict(asdict(stats))

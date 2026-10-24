@@ -1,22 +1,22 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — Fase 2 CLI)
-- Cableado `ibtrader research-portfolio` → `run_portfolio_research` (smoke/full, universe JSON, hold-out `--confirmation`).
-- Fix KeyError de benchmark en `signal-validate` si el símbolo no está en `data`.
-- `test_research_portfolio_cli_smoke` en verde (~55s). Packet Fase 2 marcado [x].
+## Hecho (2026-10-24, cursor — a medias costos)
+- `broker/simulated.py` usa `execution.costs.total_order_cost` (+ `RegFeesConfig`); tests BUY/SELL con reg fees.
+- Walk-forward `_stats_to_dict` expone `avg_cost_bps_per_order`, `total_costs`, `cost_drag_annual_pct`, `total_reg_fees` → filas OOS de research.
+- Smoke `SystemConfig` en `portfolio_runner`: warm-ups cortos (scalar/fdm/idm 60, step 5).
+- `paper-run --shadow` lee `data/paper_positions.json` si existe (si no, held={}).
 
 ## Hecho (previo)
-- Ola D shadow / restricted_bar_frac / hashes; playbook fase 1; pipeline stages + HRP/boxes + portfolio_runner en main.
+- Fase 2 CLI `research-portfolio`; Ola D; playbook fase 1; pipeline stages.
 
 ## A medias
-- `broker/simulated.py` comisiones legadas; runners research sin `avg_cost_bps_per_order` por fila.
-- Shadow `held={}` en paper-run (sin posiciones broker).
-- Primera descarga Tiingo real + hold-out de confirmación: esperan inputs de Adam (token, DD, capital).
+- Agentes en paralelo pueden seguir tocando costos/smoke — revisar si hay diff extra al integrar.
+- Tiingo real + hold-out confirmación: inputs de Adam.
+- Push `main` pendiente (`ahead` local).
 
 ## Siguiente
-- Push `main` si Adam lo pide (`ahead` local).
-- Paper 2–3 meses solo si algún candidate PASS en datos reales + confirmation hold-out.
-- Opcional: acortar warm-ups en smoke SystemConfig para CI más rápida.
+- Push si Adam lo pide.
+- Confirmación OOS con datos reales cuando haya token Tiingo.
 
 ## No tocar
-- Solo `main`. PASS ≠ deploy. Hold-out una sola vez. Paper-run no envía órdenes.
+- Solo `main`. PASS ≠ deploy. Hold-out una vez. Paper-run no envía órdenes.
