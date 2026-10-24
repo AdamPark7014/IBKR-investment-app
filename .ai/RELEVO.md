@@ -23,3 +23,5 @@
 ## No tocar
 - Solo `main`. PASS ≠ deploy. Hold-out una vez. Paper-run / paper-reconcile sin órdenes broker.
 - No LLM sobre titulares / alt-data de pago / intradía / apalancados (playbook §119).
+
+Escrito al cerrar turno cursor 2026-10-24 12:44.
