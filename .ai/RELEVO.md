@@ -1,19 +1,19 @@
 # RELEVO
 
-## Hecho (2026-10-25, cursor — W14d)
-- `src/ibtrader/broker/simulated.py`: ctor `order_age_seconds` / `max_passive_seconds`; LMT calls `decide_urgency`; aggressive → MKT-like `total_order_cost` fill; `partial_fill_frac` solo path no-aggressive; RTH reject no limpia `last_latency_ms`
-- `tests/test_sim_prob_fill.py`: `test_aged_lmt_fills_aggressive_even_if_limit_far` (limit far + age≥window + prob_fill=0 → fill; young control → no fill)
-- pytest `test_sim_prob_fill` + `test_broker_sim` → 9 passed
-- Sin commit/push. No toqué cli/autopilot/simple_ui.
+## Hecho (2026-10-25)
+- W11–W14 en `origin/main` (`97ebf17`): paper triage stack (sim, ledger, schedules, freeze, urgency, equity, vs-oos, stack, UI, ops-smoke, config-freeze CLI, aged LMT).
+- W15 LANZADA (4 agentes).
 
-## A medias
-- W14a simple_ui cards / W14b ops-smoke / W14c config-freeze (otros agentes)
-- Adam: Tiingo + hold-out + pia + Task Scheduler Register
-- Calendario: paper congelado meses
+## A medias — W15
+- W15a `schedule-register-all.ps1`
+- W15b `paper-equity` CLI
+- W15c `docs/PAPER-OPS.md` + README config-freeze
+- W15d `open_orders` helper + touchable en autopilot
 
-## Siguiente
-- Integrar/heal/push W14 cuando cierren a–c
-- Si no quedan huecos Fase 3 código → parar oleadas
+## Adam (bloquea edge, no más código)
+- Tiingo API · hold-out una vez · `pia_…` opcional
+- `Register` Task Scheduler (o `schedule-register-all`)
+- Meses de paper congelado sin retocar params
 
 ## No tocar
 - Solo main. Cero LIVE. No reescribir `cli.py` entero con Ollama.
