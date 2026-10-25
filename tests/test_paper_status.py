@@ -8,9 +8,22 @@ from ibtrader.ops.paper_curve import append_equity_point
 from ibtrader.ops.open_orders import write_sample
 from ibtrader.ops.stack import PaperStack
 
+_SCHEDULE_KEYS = ("ibtrader-autopilot", "ibtrader-paper-reconcile", "ibtrader-ibc-check")
+
+
+def _assert_schedules(payload: dict) -> None:
+    assert "schedules" in payload
+    schedules = payload["schedules"]
+    assert isinstance(schedules, dict)
+    for key in _SCHEDULE_KEYS:
+        assert key in schedules
+        assert isinstance(schedules[key], bool) or schedules[key] is None
+
+
 def test_build_paper_status_empty(tmp_path: Path) -> None:
     out = build_paper_status(tmp_path)
     assert out["orders_sent"] == 0
+    _assert_schedules(out)
     assert out["presence"] == {
         "freeze": False, "equity": False, "stack": False, "open_orders": False, "slippage": False
     }
@@ -45,6 +58,7 @@ def test_build_paper_status_with_artifacts(tmp_path: Path) -> None:
     )
     out = build_paper_status(tmp_path)
     assert out["orders_sent"] == 0
+    _assert_schedules(out)
     assert all(out["presence"].values())
     assert out["summaries"]["freeze"]["hash"] == "abc123"
     assert out["summaries"]["freeze"]["has_snapshot"] is True
@@ -64,5 +78,6 @@ def test_paper_status_cli(tmp_path: Path) -> None:
     assert res.exit_code == 0, res.stdout + str(res.exception)
     payload = json.loads(res.stdout)
     assert payload["orders_sent"] == 0
+    _assert_schedules(payload)
     assert payload["presence"]["equity"] is False
     assert payload["summaries"] == {}

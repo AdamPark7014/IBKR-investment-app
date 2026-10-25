@@ -52,9 +52,12 @@ pwsh -File scripts/schedule-ibc-check.ps1 -Action Register
 Smoke (sin LIVE):
 
 ```powershell
+pwsh -File scripts/bootstrap-paper.ps1           # open-orders sample + freeze --write + paper-status (no schtasks)
 pwsh -File scripts/ops-smoke.ps1                 # Status de las 3 tareas
 pwsh -File scripts/ops-smoke.ps1 -Action RunOnce # ibc-checklist → reconcile → vs-oos → stack
 ```
+
+`bootstrap-paper.ps1` = triage only (0 órdenes, NO LIVE); no registra Task Scheduler.
 
 Atajo (las tres tareas):
 

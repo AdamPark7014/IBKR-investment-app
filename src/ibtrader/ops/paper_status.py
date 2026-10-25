@@ -1,9 +1,22 @@
 from __future__ import annotations
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 __all__ = ["build_paper_status"]
+
+
+def _task_registered(name: str) -> bool | None:
+    """Windows schtasks query; True/False registered, None if query fails (non-Windows)."""
+    if sys.platform != 'win32':
+        return None
+    try:
+        r = subprocess.run(['schtasks', '/Query', '/TN', name], capture_output=True, text=True, timeout=15)
+        return r.returncode == 0
+    except Exception:
+        return None
 
 
 def build_paper_status(data_dir: str | Path) -> dict[str, Any]:
@@ -67,4 +80,9 @@ def build_paper_status(data_dir: str | Path) -> dict[str, Any]:
         "presence": presence,
         "summaries": summaries,
         "orders_sent": 0,
+        "schedules": {
+            "ibtrader-autopilot": _task_registered('ibtrader-autopilot'),
+            "ibtrader-paper-reconcile": _task_registered('ibtrader-paper-reconcile'),
+            "ibtrader-ibc-check": _task_registered('ibtrader-ibc-check'),
+        },
     }
