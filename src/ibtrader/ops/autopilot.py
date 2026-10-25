@@ -14,9 +14,10 @@ from ..intelligence.market_radar import build_market_radar
 from ..intelligence.prompt_pack import PromptPack, default_pack
 from .alerts import Alert, evaluate_paper_alerts
 from .config_freeze import verify_freeze, write_freeze
-from .paper_curve import paper_max_drawdown
+from .paper_curve import append_equity_point, estimate_mark_to_market, paper_max_drawdown
 from .shadow import desired_from_decisions, log_shadow_snapshot
 from .simple_ui import write_simple_console
+from .urgency_age import load_open_order_age_seconds
 
 
 def _load_held(path: Path) -> Dict[str, float]:
@@ -67,8 +68,10 @@ def run_autopilot(
     if not freeze_path.is_file():
         write_freeze(freeze_path, s)
     freeze = verify_freeze(freeze_path, s)
-    # age_seconds=0.0 -> triage snapshot; no órdenes ejecutables
-    urgency = decide_urgency(age_seconds=0.0, max_passive_seconds=60.0, touchable=True)
+
+    open_orders_path = Path(s.data.data_dir) / 'paper_open_orders.json'
+    age_seconds = load_open_order_age_seconds(open_orders_path)
+    urgency = decide_urgency(age_seconds=age_seconds, max_passive_seconds=60.0, touchable=True)
     # ------------------------------------
 
     slip = _slippage_summary(Path(s.data.data_dir))
@@ -93,6 +96,23 @@ def run_autopilot(
 
     n_drift_val = int(paper.get("n_drift") or 0)
     paper_equity_path = Path(s.data.data_dir) / "paper_equity.jsonl"
+    
+    last_prices: Dict[str, float] = {}
+    for sym, df in (data or {}).items():
+        try:
+            if df is None or len(df) == 0:
+                continue
+            col = "close" if hasattr(df, "columns") and "close" in df.columns else (df.columns[0] if hasattr(df, "columns") and len(df.columns) else None)
+            if col is None:
+                continue
+            last_prices[str(sym)] = float(df[col].iloc[-1])
+        except Exception:
+            continue
+    
+    mtm = estimate_mark_to_market(held, last_prices)
+    if mtm is not None:
+        append_equity_point(paper_equity_path, mtm)
+
     max_dd = paper_max_drawdown(paper_equity_path) if paper_equity_path.is_file() else None
     alerts = evaluate_paper_alerts(
         max_drawdown=max_dd,

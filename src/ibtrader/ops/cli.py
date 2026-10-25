@@ -1497,5 +1497,36 @@ def paper_stack(
     typer.echo(_json.dumps(_noneify(cmd_paper_stack(db_path)), ensure_ascii=False, separators=(",", ":")))
 
 
+
+@app.command("paper-vs-oos")
+def paper_vs_oos(
+    equity_path: str = typer.Option(
+        "data/paper_equity.jsonl",
+        "--equity-path",
+        help="Paper equity JSONL path.",
+    ),
+    assumed_sharpe: float = typer.Option(0.8, "--assumed-sharpe"),
+    expected_oos_sharpe: Optional[float] = typer.Option(None, "--expected-oos-sharpe"),
+    expected_oos_max_dd: Optional[float] = typer.Option(None, "--expected-oos-max-dd"),
+) -> None:
+    """Compare paper equity DD vs OOS/assumed Sharpe. Zero orders."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from .paper_curve import load_equity_points, paper_max_drawdown
+    from .paper_vs_oos import compare_paper_vs_oos
+
+    eq = _Path(equity_path)
+    pts = load_equity_points(eq)
+    out = compare_paper_vs_oos(
+        paper_max_dd=paper_max_drawdown(eq) if eq.is_file() else None,
+        paper_n_points=len(pts),
+        assumed_sharpe=assumed_sharpe,
+        expected_oos_sharpe=expected_oos_sharpe,
+        expected_oos_max_dd=expected_oos_max_dd,
+    )
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
+
+
 if __name__ == "__main__":
     app()
