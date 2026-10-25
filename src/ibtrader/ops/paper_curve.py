@@ -5,7 +5,13 @@ import math
 from pathlib import Path
 from typing import Any
 
-__all__ = ["load_equity_points", "max_drawdown", "paper_max_drawdown"]
+__all__ = [
+    "load_equity_points",
+    "max_drawdown",
+    "paper_max_drawdown",
+    "append_equity_point",
+    "estimate_mark_to_market",
+]
 
 _TS_ALIASES = ("ts", "timestamp", "t", "as_of", "time")
 _EQUITY_ALIASES = ("equity", "nav", "value")
@@ -73,3 +79,43 @@ def max_drawdown(equities: list[float]) -> float | None:
 def paper_max_drawdown(path: str | Path) -> float | None:
     equities = [pt["equity"] for pt in load_equity_points(path)]
     return max_drawdown(equities)
+
+
+def append_equity_point(path: str | Path, equity: float, ts: str | None = None) -> None:
+    """Append one JSONL ``{ts, equity}`` line. Skip non-finite or non-positive equity."""
+    try:
+        eq = float(equity)
+    except (TypeError, ValueError):
+        return
+    if not math.isfinite(eq) or eq <= 0:
+        return
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if ts is None:
+        from datetime import datetime, timezone
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": str(ts), "equity": eq}, ensure_ascii=False) + "\n")
+
+
+def estimate_mark_to_market(
+    held: dict[str, float],
+    last_prices: dict[str, float],
+    cash: float = 0.0,
+) -> float | None:
+    """``cash + Σ qty*price`` for priced holdings; None if nothing priced and cash≤0."""
+    total = float(cash)
+    priced = False
+    for sym, qty in (held or {}).items():
+        px = (last_prices or {}).get(sym)
+        if px is None:
+            continue
+        try:
+            total += float(qty) * float(px)
+            priced = True
+        except (TypeError, ValueError):
+            continue
+    if not priced and total <= 0:
+        return None
+    return total
