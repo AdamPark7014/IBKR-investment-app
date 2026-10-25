@@ -1620,5 +1620,22 @@ def open_orders_cmd(
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("paper-status")
+def paper_status_cmd(
+    data_dir: str = typer.Option(
+        "data",
+        "--data-dir",
+        help="Paper data directory (freeze/equity/stack/open-orders/slippage).",
+    ),
+) -> None:
+    """Aggregate paper ops presence + summaries as JSON. Zero orders."""
+    import json as _json
+
+    from .paper_status import build_paper_status
+
+    out = build_paper_status(data_dir)
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
+
+
 if __name__ == "__main__":
     app()

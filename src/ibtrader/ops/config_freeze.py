@@ -6,6 +6,41 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
+def load_assumed_sharpe(freeze_path: str | Path, default: float = 0.8) -> float:
+    p = Path(freeze_path)
+    if not p.is_file():
+        return default
+    try:
+        raw = json.loads(p.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return default
+
+    def get_float(v) -> float | None:
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str) and v.strip():
+            try:
+                return float(v)
+            except ValueError:
+                return None
+        return None
+
+    if isinstance(raw, dict) and 'assumed_sharpe' in raw:
+        val = get_float(raw['assumed_sharpe'])
+        if val is not None:
+            return val
+    if isinstance(raw, dict) and 'snapshot' in raw and isinstance(raw['snapshot'], dict):
+        snap = raw['snapshot']
+        if 'assumed_sharpe' in snap:
+            val = get_float(snap['assumed_sharpe'])
+            if val is not None:
+                return val
+
+    return default
+
+
 def snapshot_settings(settings: Any) -> dict[str, Any]:
     '''Extrae subset estable de AppSettings (risk, commission, slippage, engine, universe symbols).'''
     def dump(obj: Any) -> Any:
@@ -53,4 +88,4 @@ def verify_freeze(path: str | Path, settings: Any) -> dict[str, Any]:
         'actual': actual,
     }
 
-__all__ = ['snapshot_settings', 'config_hash', 'write_freeze', 'verify_freeze']
+__all__ = ['snapshot_settings', 'config_hash', 'write_freeze', 'verify_freeze', 'load_assumed_sharpe']

@@ -22,6 +22,7 @@ ibtrader slippage-report        # resumen de data/slippage_ledger.jsonl
 ibtrader ibc-checklist          # checklist Gateway/IBC (manual; no instala)
 ibtrader config-freeze          # --verify (default) o --write → paper_config_freeze.json
 ibtrader paper-equity           # curva/resumen de data/paper_equity.jsonl (--append opcional)
+ibtrader paper-status           # presencia + resúmenes freeze/equity/stack/open-orders/slippage
 ```
 
 Notas breves:
