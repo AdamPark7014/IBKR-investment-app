@@ -47,6 +47,8 @@ Requisitos (Windows 11, Python 3.12):
      - Estado/quitar/hora: mismos `-Action Status|Unregister` y `-Time` que autopilot.
      - Registrar tarea `ibtrader-ibc-check` (08:00 local): `pwsh -File scripts/schedule-ibc-check.ps1 -Action Register`
      - Estado/quitar/hora/RunOnce: mismos `-Action Status|Unregister|RunOnce` y `-Time` (default 08:00).
+     - Smoke paper triage (Status de las 3 tareas; RunOnce: ibc-checklist → paper-reconcile → paper-vs-oos → paper-stack; 0 órdenes, no LIVE): `pwsh -File scripts/ops-smoke.ps1` / `-Action RunOnce`
+     - Estado por defecto no falla si alguna tarea no está registrada.
    - Checklist Gateway/IBC (JSON manual, no instala nada): `ibtrader ibc-checklist`
    - Kill switch: `ibtrader kill` / limpiar: `ibtrader clear-kill`
 

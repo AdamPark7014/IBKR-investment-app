@@ -44,6 +44,30 @@ def render_simple_console(payload: Mapping[str, Any], *, title: str = "ibtrader"
             if r > max_rank:
                 max_rank = r
                 worst = sev
+
+    urgency_raw = payload.get("urgency")
+    if isinstance(urgency_raw, dict):
+        urgency_str = urgency_raw.get("mode")
+    elif isinstance(urgency_raw, str):
+        urgency_str = urgency_raw
+    else:
+        urgency_str = None
+    if urgency_str is None:
+        urgency_str = (facts.get("extra") or {}).get("urgency_mode")
+    urgency_lbl = _esc(urgency_str if urgency_str is not None else "—")
+
+    stack_drift_val = (payload.get("paper_stack") or {}).get("n_drift")
+    stack_drift = _esc(stack_drift_val if stack_drift_val is not None else "—")
+
+    dd_ok = (payload.get("paper_vs_oos") or {}).get("dd_ok")
+    if dd_ok is True:
+        vs_oos_lbl = "OK"
+    elif dd_ok is False:
+        vs_oos_lbl = "BREACH"
+    else:
+        vs_oos_lbl = "—"
+    vs_oos_lbl = _esc(vs_oos_lbl)
+
     return f"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>{_esc(title)}</title>
@@ -72,6 +96,9 @@ h1 {{ font-size:1.25rem; font-weight:600; letter-spacing:0.02em; margin:0 0 0.25
   <div class="card"><div class="k">Risk proxy</div><div class="v">{_esc(risk_lbl)}</div></div>
   <div class="card"><div class="k">Paper drift</div><div class="v">{drift}</div></div>
   <div class="card"><div class="k">Alerts</div><div class="v">{_esc(n)} · {_esc(worst)}</div></div>
+  <div class="card"><div class="k">Urgency</div><div class="v">{urgency_lbl}</div></div>
+  <div class="card"><div class="k">Stack drift</div><div class="v">{stack_drift}</div></div>
+  <div class="card"><div class="k">vs OOS</div><div class="v">{vs_oos_lbl}</div></div>
 </div>
 <div class="brief">{text}</div>
 <div class="meta">as_of={as_of} · breadth={_esc(breadth)} · brief={source}</div>
