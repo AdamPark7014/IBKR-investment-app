@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 from ..config import CommissionConfig, RegFeesConfig, SlippageConfig
 from ..execution.costs import total_order_cost
+from ..execution.passive_aggressive import decide_urgency
 from ..execution.session import is_rth
 from ..ops.slippage_ledger import record_slip
 from .base import Broker, Order, Quote
@@ -23,6 +24,7 @@ class SimulatedBroker(Broker):
     Simple simulated broker for backtesting and dry-run.
     Fills market orders via ``total_order_cost``; limit orders if touchable
     (probabilistic fill when ``prob_fill_on_limit`` < 1).
+    Aged LMTs may switch to aggressive (MKT-like) fill via ``decide_urgency``.
     """
 
     def __init__(
@@ -40,6 +42,8 @@ class SimulatedBroker(Broker):
         latency_ms: float = 0.0,
         require_rth: bool = False,
         now_fn: Any | None = None,
+        order_age_seconds: float = 0.0,
+        max_passive_seconds: float = 60.0,
     ) -> None:
         self.market_state = market_state
         self.commission_cfg = commission
@@ -54,6 +58,8 @@ class SimulatedBroker(Broker):
         self.require_rth = bool(require_rth)
         self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
         self.last_latency_ms: float | None = None
+        self.order_age_seconds = float(order_age_seconds)
+        self.max_passive_seconds = float(max_passive_seconds)
         self._positions: Dict[str, int] = {}
         self._connected = True
         self._order_seq = 0
@@ -96,31 +102,40 @@ class SimulatedBroker(Broker):
             reg_fees_cfg=self.reg_fees_cfg,
         )
         fill_price: Optional[float] = None
-        touchable = False
+        aggressive_lmt = False
         if order.order_type == "MKT":
             fill_price = float(probe.fill_price)
         elif order.order_type == "LMT" and order.limit_price is not None:
-            lim = float(order.limit_price)
-            if order.side.upper() == "BUY" and lim >= float(last):
-                touchable = True
-                fill_price = min(lim, float(probe.fill_price))
-            elif order.side.upper() == "SELL" and lim <= float(last):
-                touchable = True
-                fill_price = max(lim, float(probe.fill_price))
-            if touchable and self._rng.random() >= self.prob_fill_on_limit:
-                fill_price = None
+            urgency = decide_urgency(
+                age_seconds=self.order_age_seconds,
+                max_passive_seconds=self.max_passive_seconds,
+            )
+            if urgency.mode == "aggressive":
+                fill_price = float(probe.fill_price)
+                aggressive_lmt = True
+            else:
+                lim = float(order.limit_price)
+                touchable = False
+                if order.side.upper() == "BUY" and lim >= float(last):
+                    touchable = True
+                    fill_price = min(lim, float(probe.fill_price))
+                elif order.side.upper() == "SELL" and lim <= float(last):
+                    touchable = True
+                    fill_price = max(lim, float(probe.fill_price))
+                if touchable and self._rng.random() >= self.prob_fill_on_limit:
+                    fill_price = None
 
         if fill_price is None:
             return order_id
 
-        if order.order_type == "LMT" and self.partial_fill_frac is not None:
+        if order.order_type == "LMT" and not aggressive_lmt and self.partial_fill_frac is not None:
             qty = abs(signed)
             fill_qty = int(qty * self.partial_fill_frac)
             if qty >= 1:
                 fill_qty = max(1, fill_qty)
             signed = fill_qty if signed > 0 else -fill_qty
 
-        if order.order_type == "LMT":
+        if order.order_type == "LMT" and not aggressive_lmt:
             oc = total_order_cost(
                 order.symbol,
                 signed,

@@ -1528,5 +1528,40 @@ def paper_vs_oos(
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("config-freeze")
+def config_freeze_cmd(
+    path: str = typer.Option(
+        "data/paper_config_freeze.json",
+        "--path",
+        help="Freeze JSON path.",
+    ),
+    write: bool = typer.Option(
+        False,
+        "--write/--verify",
+        help="Write freeze file; default is verify.",
+    ),
+) -> None:
+    """Write or verify paper config freeze. Zero orders."""
+    import json as _json
+
+    from ..config import AppSettings
+    from .config_freeze import verify_freeze, write_freeze
+
+    s = AppSettings()
+    if write:
+        payload = write_freeze(path, s)
+        out = {
+            "ok": True,
+            "expected": payload.get("hash"),
+            "actual": payload.get("hash"),
+            "reason": None,
+            "orders_sent": 0,
+        }
+    else:
+        out = dict(verify_freeze(path, s))
+        out["orders_sent"] = 0
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
+
+
 if __name__ == "__main__":
     app()
