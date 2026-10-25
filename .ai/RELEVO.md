@@ -1,23 +1,19 @@
 # RELEVO
 
-## Hecho (2026-10-25, cursor — W14a)
-- `simple_ui.py`: 3 cards extra en `render_simple_console` — Urgency / Stack drift / vs OOS
-- Urgency: `payload.urgency.mode` (o str) → fallback `facts.extra.urgency_mode`
-- Stack drift: `paper_stack.n_drift` (preserva 0)
-- vs OOS: `paper_vs_oos.dd_ok` → OK / BREACH / —
-- Nuevo `tests/test_simple_ui.py` (3 tests) — pytest 3 passed
-- Sin commit/push (relevo cerrar auto-commiteó; undid `git reset HEAD~1` → tip sigue `7e3a3fc`)
-- No toqué `autopilot.py`, `cli.py`, `simulated.py`
+## Hecho (2026-10-25, cursor — W14b)
+- NEW `scripts/ops-smoke.ps1`: Status (default) | RunOnce; banner PAPER triage; Status llama schedule-autopilot/reconcile/ibc-check; RunOnce: ibc-checklist → paper-reconcile → paper-vs-oos → paper-stack vía venv python -m ibtrader.ops.cli (continúa si non-zero; 0 órdenes / no LIVE)
+- README.md: +2 líneas bajo schedule documentando ops-smoke.ps1
+- Smoke Status: EXIT=0 con tareas no registradas
+- Sin commit/push. No toqué autopilot/cli/simulated.
 
 ## A medias
 - Tiingo + hold-out + pia + Task Scheduler Register (Adam)
 - Fase 3 calendario paper congelado (no código)
-- Otros WIP en árbol ajenos a W14a: `README.md`, `scripts/ops-smoke.ps1`, drafts
 
 ## Siguiente
-- Commit W14a solo si Adam pide (solo simple_ui + test_simple_ui)
-- No incluir ops-smoke/README de otros agentes en el mismo commit
+- Adam: Register tareas si quiere; RunOnce cuando venv/datos listos
+- Commit/push solo si Adam pide
 
 ## No tocar
 - Solo main. PASS ≠ deploy. Cero órdenes LIVE.
-- No dejar que Ollama reescriba `cli.py` entero (ni truncar `autopilot.py`).
+- No editar autopilot/cli/simulated en este hilo W14b.
