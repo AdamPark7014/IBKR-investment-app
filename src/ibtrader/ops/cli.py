@@ -1596,5 +1596,29 @@ def paper_equity(
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("open-orders")
+def open_orders_cmd(
+    path: str = typer.Option(
+        "data/paper_open_orders.json",
+        "--path",
+        help="Open orders JSON path.",
+    ),
+    write_sample_flag: bool = typer.Option(
+        False,
+        "--write-sample",
+        help="Write example open-orders JSON then print summary.",
+    ),
+) -> None:
+    """Summarize paper open orders (age/touchable). Zero orders."""
+    import json as _json
+
+    from .open_orders import summary, write_sample
+
+    if write_sample_flag:
+        write_sample(path)
+    out = summary(path)
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
+
+
 if __name__ == "__main__":
     app()
