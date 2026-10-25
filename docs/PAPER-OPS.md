@@ -21,7 +21,7 @@ ibtrader paper-vs-oos           # DD paper vs Sharpe/DD OOS asumidos (kill_recom
 ibtrader slippage-report        # resumen de data/slippage_ledger.jsonl
 ibtrader ibc-checklist          # checklist Gateway/IBC (manual; no instala)
 ibtrader config-freeze          # --verify (default) o --write → paper_config_freeze.json
-ibtrader paper-equity           # solo si el CLI existe; si no, equity via autopilot
+ibtrader paper-equity           # curva/resumen de data/paper_equity.jsonl (--append opcional)
 ```
 
 Notas breves:
@@ -29,8 +29,7 @@ Notas breves:
 - `autopilot` escribe/verifica freeze, sync de stack, append a `paper_equity.jsonl`,
   compara vs OOS y abre HTML de una pantalla (`--open`).
 - `config-freeze --write` una vez al congelar; luego solo `--verify` (o default).
-- `paper-equity`: hoy la curva la alimenta `autopilot`; el subcomando CLI es
-  opcional (W15b). Úsalo solo si `ibtrader paper-equity --help` responde.
+- `paper-equity` lee/resume la curva; autopilot sigue haciendo el append diario.
 
 ## Schedules (Task Scheduler, Windows)
 
@@ -56,8 +55,11 @@ pwsh -File scripts/ops-smoke.ps1                 # Status de las 3 tareas
 pwsh -File scripts/ops-smoke.ps1 -Action RunOnce # ibc-checklist → reconcile → vs-oos → stack
 ```
 
-Si existe `scripts/schedule-register-all.ps1`, úsalo para registrar las tres de un
-golpe; si no, los tres `Register` de arriba.
+Atajo (las tres tareas):
+
+```powershell
+pwsh -File scripts/schedule-register-all.ps1 -Action Register   # Status|Unregister igual
+```
 
 ## Archivos bajo `data/`
 
@@ -80,7 +82,7 @@ No commitear secretos ni dumps LIVE. Estos JSON/SQLite son locales de ops.
    idea muerta — no retocar con esas barras.
 3. **`pia_…` opcional** (pack / brief IA) solo sobre JSON ya comprimido; sin
    titulares ni noticias.
-4. **Register** Task Scheduler (tres scripts o `schedule-register-all` si hay).
+4. **Register** Task Scheduler (`schedule-register-all` o los tres scripts).
 5. **Meses congelados**: tras `config-freeze --write`, no cambiar params porque
    el DD del mes “no cuadra”. Matar solo si `paper-vs-oos` / alertas lo dicen.
 

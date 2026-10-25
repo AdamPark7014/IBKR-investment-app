@@ -19,6 +19,7 @@ from .paper_vs_oos import compare_paper_vs_oos
 from .simple_ui import write_simple_console
 from .shadow import desired_from_decisions, log_shadow_snapshot
 from .stack import PaperStack
+from .open_orders import load_touchable
 from .urgency_age import load_open_order_age_seconds
 
 
@@ -81,7 +82,8 @@ def run_autopilot(
 
     open_orders_path = Path(s.data.data_dir) / 'paper_open_orders.json'
     age_seconds = load_open_order_age_seconds(open_orders_path)
-    urgency = decide_urgency(age_seconds=age_seconds, max_passive_seconds=60.0, touchable=True)
+    touchable = load_touchable(open_orders_path)
+    urgency = decide_urgency(age_seconds=age_seconds, max_passive_seconds=60.0, touchable=touchable)
     # ------------------------------------
 
     slip = _slippage_summary(Path(s.data.data_dir))
