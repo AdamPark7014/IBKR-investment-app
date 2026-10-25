@@ -15,10 +15,10 @@ from ..intelligence.prompt_pack import PromptPack, default_pack
 from .alerts import Alert, evaluate_paper_alerts
 from .config_freeze import verify_freeze, write_freeze
 from .paper_curve import append_equity_point, estimate_mark_to_market, paper_max_drawdown, load_equity_points
-from .stack import PaperStack
 from .paper_vs_oos import compare_paper_vs_oos
-from .shadow import desired_from_decisions, log_shadow_snapshot
 from .simple_ui import write_simple_console
+from .shadow import desired_from_decisions, log_shadow_snapshot
+from .stack import PaperStack
 from .urgency_age import load_open_order_age_seconds
 
 
@@ -63,11 +63,15 @@ def run_autopilot(
     held = _load_held(held_path)
     paper = log_shadow_snapshot(desired, held, tag="autopilot")
     paper["orders_sent"] = 0
-    stack = PaperStack(Path(s.data.data_dir) / 'paper_stack.sqlite')
+    paper["shadow_held_source"] = str(held_path) if held_path.exists() else None
+    stack = PaperStack(Path(s.data.data_dir) / "paper_stack.sqlite")
     stack.sync_from_json(desired, held)
     stack_snap = stack.snapshot()
-    paper_stack_info = {'n_drift': sum(1 for row in stack_snap.get('drift', []) if float(row.get('delta', 0)) != 0.0)}
-    paper["shadow_held_source"] = str(held_path) if held_path.exists() else None
+    paper_stack_info = {
+        "n_drift": sum(
+            1 for row in stack_snap.get("drift", []) if float(row.get("delta", 0)) != 0.0
+        )
+    }
 
     # --- Cableado freeze + urgency: ANTES de compress_facts ---
     freeze_path = Path(s.data.data_dir) / 'paper_config_freeze.json'
@@ -100,7 +104,7 @@ def run_autopilot(
     out_dir = Path(s.data.reports_dir) / "autopilot"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    n_drift_val = int(paper_stack_info.get('n_drift') or 0)
+    n_drift_val = int(paper_stack_info.get("n_drift") or 0)
     paper_equity_path = Path(s.data.data_dir) / "paper_equity.jsonl"
     
     last_prices: Dict[str, float] = {}
@@ -190,4 +194,12 @@ def run_autopilot(
 
 
 def _build_brief_dict(brief: Dict[str, Any]) -> Dict[str, Any]:
-    base_keys = ("text", "source
+    base_keys = ("text", "source", "model", "pack")
+    keys_to_use = [k for k in base_keys if k in brief]
+    note_key = "note"
+    if note_key in brief and "note" not in keys_to_use:
+        keys_to_use.append(note_key)
+    return {k: brief[k] for k in keys_to_use}
+
+
+__all__ = ["run_autopilot"]
