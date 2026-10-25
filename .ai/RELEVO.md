@@ -1,19 +1,17 @@
 # RELEVO
 
-## Hecho (2026-10-25)
-- W11–W15 en `origin/main` (`90730f5`): paper triage code cerrado.
-- **W16a** (este turno, sin commit/push): `build_paper_status` + CLI `paper-status` + `tests/test_paper_status.py` (3 passed) + línea en `docs/PAPER-OPS.md`. `cli.py` append-only (64670 B > 50k).
+## Hecho
+- W11–W15 en `origin/main`.
+- **W16b** (este turno): `load_assumed_sharpe(freeze_path, default=0.8)` en `config_freeze.py` (top-level o `snapshot.assumed_sharpe`, sin tocar hash schema); autopilot usa ese valor en `compare_paper_vs_oos` + `evaluate_paper_alerts`; `tests/test_assumed_sharpe.py`. `pytest -q` verde. Sin push. Sin tocar `cli.py`.
 
-## A medias / Adam
-- Schedules **no** registradas aún (`schedule-register-all -Action Register`)
-- W16b assumed_sharpe desde freeze (otro agente / `config_freeze.py` en vuelo — no tocar)
-- Tiingo · hold-out · `pia_…` opcional
-- `ibtrader config-freeze --write` una vez; meses paper sin retocar
+## A medias — W16
+- W16a `paper-status` CLI (si sigue pendiente en otro agente)
 
-## Siguiente
-- Commit W16a cuando Adam pida. No push en este turno.
-- No pisar `config_freeze.py` / W16b.
+## Adam (ya no es código)
+1. `pwsh -File scripts/schedule-register-all.ps1 -Action Register`
+2. Opcional en freeze JSON: `"assumed_sharpe": 0.8` (top-level, fuera del snapshot hasheado)
+3. Tiingo + hold-out + pia opcional
+4. Meses paper sin retocar
 
 ## No tocar
-- Solo main. Cero LIVE. No reescribir `cli.py` entero con Ollama.
-- `src/ibtrader/ops/config_freeze.py` (W16b paralelo)
+- Solo main. Cero LIVE. No reescribir `cli.py` entero.

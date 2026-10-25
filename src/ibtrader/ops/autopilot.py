@@ -13,7 +13,7 @@ from ..intelligence.brief import ai_brief, compress_facts
 from ..intelligence.market_radar import build_market_radar
 from ..intelligence.prompt_pack import PromptPack, default_pack
 from .alerts import Alert, evaluate_paper_alerts
-from .config_freeze import verify_freeze, write_freeze
+from .config_freeze import verify_freeze, write_freeze, load_assumed_sharpe
 from .paper_curve import append_equity_point, estimate_mark_to_market, paper_max_drawdown, load_equity_points
 from .paper_vs_oos import compare_paper_vs_oos
 from .simple_ui import write_simple_console
@@ -127,15 +127,16 @@ def run_autopilot(
 
     max_dd = paper_max_drawdown(paper_equity_path) if paper_equity_path.is_file() else None
     load_n_points = len(load_equity_points(paper_equity_path)) if paper_equity_path.is_file() else 0
+    assumed = load_assumed_sharpe(freeze_path)
     paper_vs_oos = compare_paper_vs_oos(
         paper_max_dd=max_dd,
         paper_n_points=load_n_points,
-        assumed_sharpe=0.8,
+        assumed_sharpe=assumed,
     )
     
     alerts = evaluate_paper_alerts(
         max_drawdown=max_dd,
-        assumed_sharpe=0.8,
+        assumed_sharpe=assumed,
         n_drift=n_drift_val,
         orders_sent=0,
     )
