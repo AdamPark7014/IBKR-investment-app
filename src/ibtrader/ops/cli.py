@@ -1563,5 +1563,38 @@ def config_freeze_cmd(
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("paper-equity")
+def paper_equity(
+    path: str = typer.Option(
+        "data/paper_equity.jsonl",
+        "--path",
+        help="Paper equity JSONL path.",
+    ),
+    append: Optional[float] = typer.Option(
+        None,
+        "--append",
+        help="Optional equity float to append.",
+    ),
+) -> None:
+    """Load/append paper equity curve. Zero orders."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from .paper_curve import append_equity_point, load_equity_points, paper_max_drawdown
+
+    p = _Path(path)
+    if append is not None:
+        append_equity_point(p, float(append))
+    pts = load_equity_points(p)
+    last_equity = pts[-1]["equity"] if pts else None
+    out = {
+        "n_points": len(pts),
+        "max_dd": paper_max_drawdown(p),
+        "last_equity": last_equity,
+        "orders_sent": 0,
+    }
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
+
+
 if __name__ == "__main__":
     app()

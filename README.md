@@ -39,6 +39,7 @@ Requisitos (Windows 11, Python 3.12):
    - Paper stack (desired/held/drift en SQLite, JSON a stdout, cero órdenes): `ibtrader paper-stack`
    - Slippage report (resumen del ledger, JSON, cero órdenes): `ibtrader slippage-report`
    - Paper vs OOS (compara curva paper vs hold-out, JSON, cero órdenes): `ibtrader paper-vs-oos`
+   - Congelar/verificar config paper (JSON, cero órdenes): `ibtrader config-freeze` (`--write` una vez; default `--verify`). Freeze en `data/paper_config_freeze.json`.
    - Autopilot (backend pesado + UI de una pantalla, cero órdenes): ibtrader autopilot · opcional --use-ai via puerta IA (pocos tokens sobre JSON ya comprimido; sin noticias).
    - Schedule diario (Task Scheduler, paper triage only, 0 órdenes, no LIVE):
      - Registrar tarea `ibtrader-autopilot` (16:30 local por defecto): `pwsh -File scripts/schedule-autopilot.ps1 -Action Register`
@@ -47,6 +48,8 @@ Requisitos (Windows 11, Python 3.12):
      - Estado/quitar/hora: mismos `-Action Status|Unregister` y `-Time` que autopilot.
      - Registrar tarea `ibtrader-ibc-check` (08:00 local): `pwsh -File scripts/schedule-ibc-check.ps1 -Action Register`
      - Estado/quitar/hora/RunOnce: mismos `-Action Status|Unregister|RunOnce` y `-Time` (default 08:00).
+     - Register-all (las 3 tareas a la vez; defaults 16:30 / 16:35 / 08:00): `pwsh -File scripts/schedule-register-all.ps1 -Action Register`
+     - Estado/quitar/horas: `-Action Status|Unregister`; opcionales `-AutopilotTime` `-ReconcileTime` `-IbcTime`.
      - Smoke paper triage (Status de las 3 tareas; RunOnce: ibc-checklist → paper-reconcile → paper-vs-oos → paper-stack; 0 órdenes, no LIVE): `pwsh -File scripts/ops-smoke.ps1` / `-Action RunOnce`
      - Estado por defecto no falla si alguna tarea no está registrada.
    - Checklist Gateway/IBC (JSON manual, no instala nada): `ibtrader ibc-checklist`
