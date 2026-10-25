@@ -36,6 +36,9 @@ Requisitos (Windows 11, Python 3.12):
      - Comparar modos (P5): `ibtrader compare-directions --exp-id p1p5_compare`
    - Motor de papel (BUY/SELL/WATCH/NO_TRADE, sin órdenes): `ibtrader paper-run`
    - Reconciliación paper (desired vs `data/paper_positions.json`, JSON a stdout, cero órdenes): `ibtrader paper-reconcile`. Fase 3 = cimiento disciplinado (drift + slippage ledger opcional); **no LIVE**. El playbook institucional excluye LLM sobre titulares, alt-data de pago e intradía — aquí solo comparas cartera objetivo vs held.
+   - Paper stack (desired/held/drift en SQLite, JSON a stdout, cero órdenes): `ibtrader paper-stack`
+   - Slippage report (resumen del ledger, JSON, cero órdenes): `ibtrader slippage-report`
+   - Paper vs OOS (compara curva paper vs hold-out, JSON, cero órdenes): `ibtrader paper-vs-oos`
    - Autopilot (backend pesado + UI de una pantalla, cero órdenes): ibtrader autopilot · opcional --use-ai via puerta IA (pocos tokens sobre JSON ya comprimido; sin noticias).
    - Schedule diario (Task Scheduler, paper triage only, 0 órdenes, no LIVE):
      - Registrar tarea `ibtrader-autopilot` (16:30 local por defecto): `pwsh -File scripts/schedule-autopilot.ps1 -Action Register`

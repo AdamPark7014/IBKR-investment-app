@@ -17,6 +17,7 @@ from .config_freeze import verify_freeze, write_freeze
 from .paper_curve import append_equity_point, estimate_mark_to_market, paper_max_drawdown
 from .shadow import desired_from_decisions, log_shadow_snapshot
 from .simple_ui import write_simple_console
+from .stack import PaperStack
 from .urgency_age import load_open_order_age_seconds
 
 
@@ -62,6 +63,15 @@ def run_autopilot(
     paper = log_shadow_snapshot(desired, held, tag="autopilot")
     paper["orders_sent"] = 0
     paper["shadow_held_source"] = str(held_path) if held_path.exists() else None
+
+    stack = PaperStack(Path(s.data.data_dir) / "paper_stack.sqlite")
+    stack.sync_from_json(desired, held)
+    stack_snap = stack.snapshot()
+    paper_stack_info = {
+        "n_drift": sum(
+            1 for row in stack_snap.get("drift", []) if float(row.get("delta", 0)) != 0.0
+        )
+    }
 
     # --- Cableado freeze + urgency: ANTES de compress_facts ---
     freeze_path = Path(s.data.data_dir) / 'paper_config_freeze.json'
@@ -143,6 +153,7 @@ def run_autopilot(
         # Payload añade 'config_freeze' y urgencia según instrucción
         "config_freeze": freeze,
         "urgency": {'mode': urgency.mode, 'reason': urgency.reason},
+        "paper_stack": paper_stack_info,
     }
 
     json_path = out_dir / f"autopilot_{run_id}.json"
