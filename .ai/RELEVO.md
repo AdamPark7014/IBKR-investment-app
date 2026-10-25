@@ -1,19 +1,15 @@
 # RELEVO
 
-## Hecho (2026-10-25, cursor — W15a)
-- `scripts/schedule-register-all.ps1`: Actions Register|Unregister|Status (default Status); llama `schedule-autopilot.ps1` / `schedule-reconcile.ps1` / `schedule-ibc-check.ps1` con el mismo `-Action`; banner PAPER triage only — zero broker orders — NO LIVE; opcionales `-AutopilotTime`/`-ReconcileTime`/`-IbcTime` (defaults 16:30 / 16:35 / 08:00)
-- README: +2 líneas under schedule (Register-all + Status/Unregister/horas)
-- Smoke `-Action Status` → EXIT=0 (tareas no registradas = OK)
-- Sin push propio. No toqué `.py`.
+## Hecho (2026-10-25)
+- W11–W15 en `origin/main` (`96e4585`): paper triage code stack cerrado (sim, ledger, schedules, register-all, ops-smoke, freeze, equity, vs-oos, stack, UI, open-orders, PAPER-OPS.md).
 
-## A medias — W15
-- W15c `docs/PAPER-OPS.md` + README config-freeze
-- W15d `open_orders` helper + touchable en autopilot
+## A medias / Adam
+- Tiingo · hold-out una vez · `pia_…` opcional
+- `pwsh -File scripts/schedule-register-all.ps1 -Action Register`
+- Meses de paper congelado sin retocar (`config-freeze --write` primero)
 
-## Adam (bloquea edge, no más código)
-- Tiingo API · hold-out una vez · `pia_…` opcional
-- `Register` Task Scheduler (o `schedule-register-all`)
-- Meses de paper congelado sin retocar params
+## Siguiente
+- Ops Adam + calendario. Solo más código si aparece un hueco concreto.
 
 ## No tocar
 - Solo main. Cero LIVE. No reescribir `cli.py` entero con Ollama.
