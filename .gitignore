@@ -26,3 +26,11 @@ data/KILL_SWITCH
 data/vintages/
 
 uv.lock
+
+# paper triage local state (bootstrap / autopilot; do not commit)
+data/paper_open_orders.json
+data/paper_config_freeze.json
+data/paper_equity.jsonl
+data/paper_positions.json
+data/paper_stack.sqlite
+data/slippage_ledger.jsonl
