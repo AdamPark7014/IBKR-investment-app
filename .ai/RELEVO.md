@@ -1,18 +1,22 @@
 # RELEVO
 
-## Hecho (2026-10-24, cursor — W11d)
-- `scripts/schedule-ibc-check.ps1`: Register|Status|Unregister|RunOnce, task `ibtrader-ibc-check`, default 08:00, runs `ibc-checklist`. Status smoke OK.
-- README: 2 líneas bajo schedule para Register ibc-check.
-- `src/ibtrader/ops/slippage_report.py` + CLI `slippage-report` (JSON, 0 órdenes).
-- `tests/test_slippage_report_cli.py` + pytest verdes. NO commit/push pedido.
-- No toqué simulated/autopilot/paper_curve/stack/brief.
+## Hecho (2026-10-24, cursor — W12)
+- `paper_curve`: `append_equity_point` + `estimate_mark_to_market`
+- `urgency_age.load_open_order_age_seconds` ← `data/paper_open_orders.json`
+- Autopilot: age real + MTM append a `paper_equity.jsonl` + DD alerts
+- `paper_vs_oos.compare_paper_vs_oos` + CLI `ibtrader paper-vs-oos`
+- Tests: urgency_age, paper_vs_oos, paper_curve_append — verdes
+- Push: `ba0468c` en origin/main (incluye f8d8222 modules)
 
 ## A medias
-- Tiingo + hold-out + pia (Adam).
+- W13 agentes: README + stack sync autopilot + paper_vs_oos en payload
+- Tiingo + hold-out + pia + Task Scheduler Register (Adam)
+- Fase 3 calendario paper congelado (no código)
 
 ## Siguiente
-- Paper vivo congelado sin retocar params.
-- Cuando haya Tiingo: OOS hold-out una vez.
+- Integrar/heal W13 → push
+- Si código Fase 3 cerrado: solo ops Adam + meses paper
 
 ## No tocar
-- Solo main. PASS ≠ deploy. Autopilot/reconcile/ibc-check sin órdenes LIVE.
+- Solo main. PASS ≠ deploy. Cero órdenes LIVE.
+- No dejar que Ollama reescriba `cli.py` entero (ya pasó; restaurar de HEAD).
