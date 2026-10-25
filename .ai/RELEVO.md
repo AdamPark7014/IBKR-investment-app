@@ -1,13 +1,12 @@
 # RELEVO
 
-## Hecho (2026-10-25, cursor — W15b)
-- `src/ibtrader/ops/cli.py`: APPEND-ONLY `paper-equity` (~30 líneas) — `--path` default `data/paper_equity.jsonl`, `--append` float opcional; JSON `{n_points, max_dd, last_equity, orders_sent:0}` vía `paper_curve` (`load_equity_points`, `paper_max_drawdown`, `append_equity_point`). cli size 63468 (>50k).
-- `tests/test_paper_equity_cli.py`: tmp_path empty + append 100/80/90 → max_dd 0.2
-- pytest `tests/test_paper_equity_cli.py` → 1 passed
-- Sin commit/push. No toqué simulated/autopilot/simple_ui/schedule.
+## Hecho (2026-10-25, cursor — W15a)
+- `scripts/schedule-register-all.ps1`: Actions Register|Unregister|Status (default Status); llama `schedule-autopilot.ps1` / `schedule-reconcile.ps1` / `schedule-ibc-check.ps1` con el mismo `-Action`; banner PAPER triage only — zero broker orders — NO LIVE; opcionales `-AutopilotTime`/`-ReconcileTime`/`-IbcTime` (defaults 16:30 / 16:35 / 08:00)
+- README: +2 líneas under schedule (Register-all + Status/Unregister/horas)
+- Smoke `-Action Status` → EXIT=0 (tareas no registradas = OK)
+- Sin push propio. No toqué `.py`.
 
 ## A medias — W15
-- W15a `schedule-register-all.ps1`
 - W15c `docs/PAPER-OPS.md` + README config-freeze
 - W15d `open_orders` helper + touchable en autopilot
 
