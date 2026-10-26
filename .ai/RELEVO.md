@@ -5,7 +5,8 @@
   en `ruff`, así que mypy y pytest **no corrieron en CI** en ese tramo. Arreglado: ruff 0 errores, mypy limpio
   (97 archivos), pytest offline 511 pasan (red bloqueada, 0 conexiones). La primera corrida con lint verde
   (40273486757) destapó lo que la CI roja escondía: `test_portfolio_runner_cli.py` importa `tests.…` y con el
-  `pytest` plano de CI no se podía importar → `pythonpath = ["."]` en `pyproject.toml`.
+  `pytest` plano de CI no se podía importar → `pythonpath = ["."]` en `pyproject.toml` (`d56bf3d`).
+  **CI verde** en `d56bf3d`: corrida 40274125812, 4/4 jobs (lint+types+tests y CLI smoke, ubuntu y macOS).
 - **Investigación (`94a3a6c`)**:
   - Escalar de forecast sin `bfill` (look-ahead de hasta 500 barras en la ventana evaluada); `warmup_end`
     espera a un escalar point-in-time.
