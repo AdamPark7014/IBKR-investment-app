@@ -21,16 +21,20 @@ data/KILL_SWITCH
 
 .firecrawl/
 .ai/index/
+# borradores de Ollama/flota: locales, nunca al repo (es público)
+.ai/drafts/
 
 # vintages point-in-time (parquet + manifest); se regeneran desde el proveedor
 data/vintages/
 
 uv.lock
 
-# paper triage local state (bootstrap / autopilot; do not commit)
+# paper triage local state (bootstrap / autopilot; never committed: the repo is public)
+data/paper_account.json
 data/paper_open_orders.json
 data/paper_config_freeze.json
 data/paper_equity.jsonl
 data/paper_positions.json
 data/paper_stack.sqlite
 data/slippage_ledger.jsonl
+data/*.sample.json
