@@ -80,6 +80,9 @@ addopts = "-q --color=yes"
 testpaths = [
     "tests",
 ]
+# Repo root on sys.path so tests can share helpers (``from tests.test_pipeline_system import ...``)
+# with the plain ``pytest`` entry point CI uses, not only with ``python -m pytest``.
+pythonpath = ["."]
 
 [tool.mypy]
 python_version = "3.12"

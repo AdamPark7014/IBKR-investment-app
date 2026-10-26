@@ -3,7 +3,9 @@
 ## Hecho (2026-10-25 noche, claude-code — revisión y arreglo de lo de Cursor 23–25 oct)
 - **CI**: estuvo roja del 24-10 (`7eabf12`) al 25-10 (`6a5bc12`): 20 corridas fallidas + 5 canceladas, todas
   en `ruff`, así que mypy y pytest **no corrieron en CI** en ese tramo. Arreglado: ruff 0 errores, mypy limpio
-  (97 archivos), pytest offline 511 pasan (red bloqueada, 0 conexiones). Resultado de CI tras el push: ver abajo.
+  (97 archivos), pytest offline 511 pasan (red bloqueada, 0 conexiones). La primera corrida con lint verde
+  (40273486757) destapó lo que la CI roja escondía: `test_portfolio_runner_cli.py` importa `tests.…` y con el
+  `pytest` plano de CI no se podía importar → `pythonpath = ["."]` en `pyproject.toml`.
 - **Investigación (`94a3a6c`)**:
   - Escalar de forecast sin `bfill` (look-ahead de hasta 500 barras en la ventana evaluada); `warmup_end`
     espera a un escalar point-in-time.
