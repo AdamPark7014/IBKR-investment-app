@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 import subprocess
 import sys
@@ -33,10 +34,14 @@ def build_paper_status(data_dir: str | Path) -> dict[str, Any]:
     summaries: dict[str, Any] = {}
 
     if presence["equity"]:
-        from .paper_curve import load_equity_points, paper_max_drawdown
+        from .paper_curve import MIN_POINTS_FOR_KILL, REAL_BASES, load_equity_points, paper_max_drawdown
+
         pts = load_equity_points(paths["equity"])
+        real = load_equity_points(paths["equity"], bases=REAL_BASES)
         summaries["equity"] = {
             "n_points": len(pts),
+            "n_real_points": len(real),
+            "kill_alerts_ready": len(real) >= MIN_POINTS_FOR_KILL,
             "max_dd": paper_max_drawdown(paths["equity"]),
             "last_equity": pts[-1]["equity"] if pts else None,
         }
@@ -50,6 +55,7 @@ def build_paper_status(data_dir: str | Path) -> dict[str, Any]:
             raw = json.loads(paths["freeze"].read_text(encoding="utf-8"))
             summaries["freeze"] = {
                 "hash": raw.get("hash"),
+                "schema": int(raw.get("schema") or 1),
                 "has_snapshot": isinstance(raw.get("snapshot"), dict),
             }
         except Exception:

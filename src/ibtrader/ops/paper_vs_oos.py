@@ -12,12 +12,21 @@ def compare_paper_vs_oos(
     assumed_sharpe: float = 0.8,
     expected_oos_sharpe: float | None = None,
     expected_oos_max_dd: float | None = None,
+    min_points: int = 0,
 ) -> dict[str, Any]:
+    """``kill_recommend`` only when there are at least ``min_points`` points of real paper equity.
+
+    Autopilot and the CLI pass ``paper_curve.MIN_POINTS_FOR_KILL``: a drawdown over a handful of
+    points (or over a curve that is not money) must not recommend killing anything.
+    """
     notes: list[str] = ["paper triage only; do not retune live from this JSON"]
     dd_ok: bool | None = None
     kill_recommend = False
+    enough = int(paper_n_points) >= int(min_points)
 
-    if paper_max_dd is not None and expected_oos_max_dd is not None:
+    if paper_max_dd is not None and not enough:
+        notes.append(f"kill check off: {int(paper_n_points)} paper points < {int(min_points)} required")
+    elif paper_max_dd is not None and expected_oos_max_dd is not None:
         dd_ok = paper_max_dd <= float(expected_oos_max_dd) * 1.25
         kill_recommend = not dd_ok
         notes.append(
@@ -45,6 +54,8 @@ def compare_paper_vs_oos(
         "orders_sent": 0,
         "paper_max_dd": paper_max_dd,
         "paper_n_points": int(paper_n_points),
+        "min_points": int(min_points),
+        "kill_check_active": bool(enough and paper_max_dd is not None),
         "assumed_sharpe": float(assumed_sharpe),
         "expected_oos_sharpe": expected_oos_sharpe,
         "expected_oos_max_dd": expected_oos_max_dd,

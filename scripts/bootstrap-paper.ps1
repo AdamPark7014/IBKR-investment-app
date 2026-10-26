@@ -1,10 +1,13 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  One-shot PAPER triage bootstrap: sample open-orders, config freeze, paper-status.
+  One-shot PAPER triage bootstrap: config freeze + paper-status.
 .NOTES
   PAPER triage only — zero broker orders — NO LIVE.
   Does NOT Register Task Scheduler (Adam does that via schedule-register-all.ps1).
+  No sample data goes into data/: data/paper_open_orders.json is for real paper orders only
+  (`ibtrader open-orders --write-sample` writes data/paper_open_orders.sample.json, ignored by triage).
+  config-freeze --write refuses to overwrite a freeze whose config changed (exit 1): that is drift.
 #>
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -19,7 +22,6 @@ if (-not (Test-Path -LiteralPath $VenvPy)) {
 }
 
 $cmds = @(
-    @('open-orders', '--write-sample'),
     @('config-freeze', '--write'),
     @('paper-status')
 )

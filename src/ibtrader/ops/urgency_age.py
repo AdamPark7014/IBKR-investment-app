@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 
 def _parse_iso(s: str) -> datetime | None:
@@ -14,8 +15,13 @@ def _parse_iso(s: str) -> datetime | None:
         return None
 
 
+def is_sample_payload(data: Any) -> bool:
+    """Example files written by ``open-orders --write-sample`` carry ``"sample": true``."""
+    return isinstance(data, dict) and data.get("sample") is True
+
+
 def load_open_order_age_seconds(path: Path | str, *, now: datetime | None = None) -> float:
-    """Max age in seconds from open-orders JSON; missing/invalid → 0.0.
+    """Max age in seconds from open-orders JSON; missing/invalid/sample → 0.0.
 
     Accepted shapes:
     - ``{\"age_seconds\": 12.3}``
@@ -28,6 +34,8 @@ def load_open_order_age_seconds(path: Path | str, *, now: datetime | None = None
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return 0.0
+    if is_sample_payload(data):
         return 0.0
 
     n_dt = now or datetime.now(timezone.utc)
@@ -65,4 +73,4 @@ def load_open_order_age_seconds(path: Path | str, *, now: datetime | None = None
     return max_age
 
 
-__all__ = ["load_open_order_age_seconds"]
+__all__ = ["is_sample_payload", "load_open_order_age_seconds"]

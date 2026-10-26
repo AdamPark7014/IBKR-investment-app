@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Dict, Mapping, Optional
+from urllib.parse import urlparse
 
 from .prompt_pack import PromptPack, default_pack
 
@@ -109,62 +110,87 @@ def deterministic_brief(facts: Mapping[str, Any]) -> str:
     return '\n'.join(lines)
 
 
+#: Hosts of the single gateway to Claude (C:\dev\scripts\ai-os\IA-CLAUDE.md). Nothing else is allowed.
+PUERTA_HOSTS = ("ia.zynoratek.com", "puerta-ia:8080")
+PUERTA_TOKEN_PREFIX = "pia_"
+
+
+def puerta_config_error(env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """Why ``--use-ai`` cannot run, or None when the environment points at the puerta.
+
+    ibtrader never holds the Anthropic key: ``ANTHROPIC_BASE_URL`` must be the puerta and
+    ``ANTHROPIC_API_KEY`` the project token (``pia_ibtrader_…``). The key itself is never printed.
+    """
+    e = os.environ if env is None else env
+    base = str(e.get("ANTHROPIC_BASE_URL") or "").strip()
+    key = str(e.get("ANTHROPIC_API_KEY") or "").strip()
+    if not base:
+        return "ANTHROPIC_BASE_URL is not set: --use-ai only goes through the puerta (https://ia.zynoratek.com)"
+    host = (urlparse(base).netloc or "").lower()
+    if host not in PUERTA_HOSTS:
+        return f"ANTHROPIC_BASE_URL points at {host or base!r}, not at the puerta ({', '.join(PUERTA_HOSTS)})"
+    if not key:
+        return "ANTHROPIC_API_KEY is not set (needs the project token pia_ibtrader_… from the puerta)"
+    if not key.startswith(PUERTA_TOKEN_PREFIX):
+        return "ANTHROPIC_API_KEY is not a puerta token (pia_…); the real Anthropic key never goes in a project"
+    return None
+
+
 def ai_brief(
     facts: Mapping[str, Any], *, pack: Optional[PromptPack] = None, use_ai: bool = True
 ) -> Dict[str, Any]:
-    '''Devuelve {text, source, model, pack}. source=deterministic|ai|ai_fallback.'''
+    """Devuelve {text, source, model, pack}. source=deterministic|ai|ai_fallback.
+
+    Con ``use_ai`` solo llama a Claude por la puerta (``puerta_config_error``); sin puerta configurada
+    se queda en el texto determinista y lo dice en ``note``. Sin ``temperature`` (la puerta y la API
+    2026-10-21 la rechazan), sin prefill, ``max_tokens`` justo y ``stop_reason`` revisado.
+    """
     pack = pack or default_pack()
     det = deterministic_brief(facts)
     out: Dict[str, Any] = {
-        'text': det,
-        'source': 'deterministic',
-        'model': None,
-        'pack': pack.name,
-        'facts': dict(facts),
+        "text": det,
+        "source": "deterministic",
+        "model": None,
+        "pack": pack.name,
+        "facts": dict(facts),
     }
     if not use_ai:
         return out
-    if not os.environ.get('ANTHROPIC_API_KEY'):
-        out['source'] = 'deterministic'
-        out['note'] = 'no ANTHROPIC_API_KEY'
+    problem = puerta_config_error()
+    if problem is not None:
+        out["note"] = f"puerta_not_configured: {problem}"
         return out
     try:
         import anthropic
     except ImportError:
-        out['note'] = 'anthropic SDK not installed (pip install anthropic)'
+        out["note"] = "anthropic SDK not installed (pip install -e .[ai])"
         return out
     try:
-        client = anthropic.Anthropic()
-        kwargs: Dict[str, Any] = dict(
+        client = anthropic.Anthropic()  # ANTHROPIC_BASE_URL (puerta) + ANTHROPIC_API_KEY (pia_ token)
+        r = client.messages.create(
             model=pack.model,
             max_tokens=int(pack.max_tokens),
-            temperature=float(pack.temperature),
-            system=[{'type': 'text', 'text': pack.render_system(), 'cache_control': {'type': 'ephemeral'}}],
-            messages=[{'role': 'user', 'content': pack.render_user(facts)}],
-            extra_headers={'x-proceso': pack.proceso},
+            system=[{"type": "text", "text": pack.render_system(), "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": pack.render_user(facts)}],
+            extra_headers={"x-proceso": pack.proceso},
+            extra_body={"output_config": {"effort": pack.effort}},
         )
-        # effort si el SDK lo soporta
-        try:
-            kwargs['output_config'] = {'effort': pack.effort}
-        except Exception:  # noqa: BLE001
-            pass
-        r = client.messages.create(**kwargs)
-        text = ''.join(
-            b.text
-            for b in r.content
-            if getattr(b, 'type', None) == 'text'
-        )
-        if text.strip():
-            out['text'] = text.strip()
-            out['source'] = 'ai'
-            out['model'] = pack.model
+        stop = getattr(r, "stop_reason", None)
+        text = "".join(b.text for b in r.content if getattr(b, "type", None) == "text")
+        if stop in ("refusal", "max_tokens"):
+            out["source"] = "ai_fallback"
+            out["note"] = f"stop_reason={stop}"
+        elif text.strip():
+            out["text"] = text.strip()
+            out["source"] = "ai"
+            out["model"] = pack.model
         else:
-            out['source'] = 'ai_fallback'
-            out['note'] = 'empty model response'
+            out["source"] = "ai_fallback"
+            out["note"] = "empty model response"
     except Exception as exc:  # noqa: BLE001 — fall closed to deterministic
-        out['source'] = 'ai_fallback'
-        out['note'] = f'{type(exc).__name__}: {exc}'
+        out["source"] = "ai_fallback"
+        out["note"] = f"{type(exc).__name__}: {exc}"
     return out
 
 
-__all__ = ['compress_facts', 'deterministic_brief', 'ai_brief']
+__all__ = ["compress_facts", "deterministic_brief", "ai_brief", "puerta_config_error", "PUERTA_HOSTS"]

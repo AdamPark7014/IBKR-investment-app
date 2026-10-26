@@ -416,11 +416,23 @@ def autopilot(
     language: str = typer.Option("es", "--lang", help="Brief language for PromptPack."),
     max_tokens: int = typer.Option(400, "--max-tokens", help="AI max_tokens (low-token by design)."),
 ) -> None:
-    """Run heavy backend triage + one-screen UI. Zero broker orders."""
+    """Run heavy backend triage + one-screen UI. Zero broker orders.
+
+    ``--use-ai`` only talks to Claude through the puerta (ANTHROPIC_BASE_URL=https://ia.zynoratek.com,
+    ANTHROPIC_API_KEY=pia_… project token); otherwise it exits 2 with the reason instead of
+    silently falling back.
+    """
     import json as _json
 
+    from ..intelligence.brief import puerta_config_error
     from ..intelligence.prompt_pack import default_pack
     from .autopilot import run_autopilot
+
+    if use_ai:
+        problem = puerta_config_error()
+        if problem is not None:
+            typer.echo(f"--use-ai: {problem}. See C:\\dev\\scripts\\ai-os\\IA-CLAUDE.md §3.", err=True)
+            raise typer.Exit(code=2)
 
     pack = default_pack(language=language, max_tokens=max_tokens)
     payload = run_autopilot(use_ai=use_ai, pack=pack, open_ui=open_ui)
@@ -1497,7 +1509,6 @@ def paper_stack(
     typer.echo(_json.dumps(_noneify(cmd_paper_stack(db_path)), ensure_ascii=False, separators=(",", ":")))
 
 
-
 @app.command("paper-vs-oos")
 def paper_vs_oos(
     equity_path: str = typer.Option(
@@ -1509,21 +1520,26 @@ def paper_vs_oos(
     expected_oos_sharpe: Optional[float] = typer.Option(None, "--expected-oos-sharpe"),
     expected_oos_max_dd: Optional[float] = typer.Option(None, "--expected-oos-max-dd"),
 ) -> None:
-    """Compare paper equity DD vs OOS/assumed Sharpe. Zero orders."""
+    """Compare paper equity DD vs OOS/assumed Sharpe. Zero orders.
+
+    Only real equity points count (``cash+shares`` or broker ``nav``) and the kill check needs at
+    least ``MIN_POINTS_FOR_KILL`` of them.
+    """
     import json as _json
     from pathlib import Path as _Path
 
-    from .paper_curve import load_equity_points, paper_max_drawdown
+    from .paper_curve import MIN_POINTS_FOR_KILL, REAL_BASES, load_equity_points, max_drawdown
     from .paper_vs_oos import compare_paper_vs_oos
 
     eq = _Path(equity_path)
-    pts = load_equity_points(eq)
+    pts = load_equity_points(eq, bases=REAL_BASES)
     out = compare_paper_vs_oos(
-        paper_max_dd=paper_max_drawdown(eq) if eq.is_file() else None,
+        paper_max_dd=max_drawdown([p["equity"] for p in pts]),
         paper_n_points=len(pts),
         assumed_sharpe=assumed_sharpe,
         expected_oos_sharpe=expected_oos_sharpe,
         expected_oos_max_dd=expected_oos_max_dd,
+        min_points=MIN_POINTS_FOR_KILL,
     )
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
@@ -1540,25 +1556,45 @@ def config_freeze_cmd(
         "--write/--verify",
         help="Write freeze file; default is verify.",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="With --write: replace a freeze whose config differs (re-baselines the paper period).",
+    ),
 ) -> None:
-    """Write or verify paper config freeze. Zero orders."""
+    """Write or verify paper config freeze. Zero orders.
+
+    ``--write`` only writes when there is no freeze, the config is unchanged, or the freeze is the
+    old schema with the same sections. A freeze whose config changed is never overwritten silently:
+    that is the drift the freeze exists to catch (exit 1 unless ``--force``).
+    """
     import json as _json
 
     from ..config import AppSettings
     from .config_freeze import verify_freeze, write_freeze
 
     s = AppSettings()
+    current = dict(verify_freeze(path, s))
     if write:
+        if current.get("reason") == "hash_mismatch" and not force:
+            current["orders_sent"] = 0
+            current["written"] = False
+            current["note"] = "config differs from the freeze; refusing to overwrite without --force"
+            typer.echo(_json.dumps(_noneify(current), ensure_ascii=False, separators=(",", ":")))
+            raise typer.Exit(code=1)
         payload = write_freeze(path, s)
         out = {
             "ok": True,
             "expected": payload.get("hash"),
             "actual": payload.get("hash"),
             "reason": None,
+            "schema": payload.get("schema"),
+            "previous_reason": current.get("reason"),
+            "written": True,
             "orders_sent": 0,
         }
     else:
-        out = dict(verify_freeze(path, s))
+        out = current
         out["orders_sent"] = 0
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
@@ -1573,22 +1609,32 @@ def paper_equity(
     append: Optional[float] = typer.Option(
         None,
         "--append",
-        help="Optional equity float to append.",
+        help="Append today's paper NAV as read from the broker (basis 'nav').",
     ),
 ) -> None:
     """Load/append paper equity curve. Zero orders."""
     import json as _json
     from pathlib import Path as _Path
 
-    from .paper_curve import append_equity_point, load_equity_points, paper_max_drawdown
+    from .paper_curve import (
+        BASIS_NAV,
+        MIN_POINTS_FOR_KILL,
+        REAL_BASES,
+        append_equity_point,
+        load_equity_points,
+        paper_max_drawdown,
+    )
 
     p = _Path(path)
     if append is not None:
-        append_equity_point(p, float(append))
+        append_equity_point(p, float(append), basis=BASIS_NAV)
     pts = load_equity_points(p)
+    real = load_equity_points(p, bases=REAL_BASES)
     last_equity = pts[-1]["equity"] if pts else None
     out = {
         "n_points": len(pts),
+        "n_real_points": len(real),
+        "kill_alerts_ready": len(real) >= MIN_POINTS_FOR_KILL,
         "max_dd": paper_max_drawdown(p),
         "last_equity": last_equity,
         "orders_sent": 0,
@@ -1606,16 +1652,19 @@ def open_orders_cmd(
     write_sample_flag: bool = typer.Option(
         False,
         "--write-sample",
-        help="Write example open-orders JSON then print summary.",
+        help="Write an example file (marked sample, ignored by triage) next to --path and summarize it.",
     ),
 ) -> None:
-    """Summarize paper open orders (age/touchable). Zero orders."""
+    """Summarize paper open orders (age/touchable). Zero orders.
+
+    ``--write-sample`` never touches the operational file: it writes ``<stem>.sample.json``.
+    """
     import json as _json
 
-    from .open_orders import summary, write_sample
+    from .open_orders import sample_path_for, summary, write_sample
 
     if write_sample_flag:
-        write_sample(path)
+        path = str(write_sample(sample_path_for(path)))
     out = summary(path)
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 

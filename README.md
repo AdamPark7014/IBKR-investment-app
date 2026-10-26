@@ -39,8 +39,8 @@ Requisitos (Windows 11, Python 3.12):
    - Paper stack (desired/held/drift en SQLite, JSON a stdout, cero órdenes): `ibtrader paper-stack`
    - Slippage report (resumen del ledger, JSON, cero órdenes): `ibtrader slippage-report`
    - Paper vs OOS (compara curva paper vs hold-out, JSON, cero órdenes): `ibtrader paper-vs-oos`
-   - Congelar/verificar config paper (JSON, cero órdenes): `ibtrader config-freeze` (`--write` una vez; default `--verify`). Freeze en `data/paper_config_freeze.json`.
-   - Autopilot (backend pesado + UI de una pantalla, cero órdenes): ibtrader autopilot · opcional --use-ai via puerta IA (pocos tokens sobre JSON ya comprimido; sin noticias).
+   - Congelar/verificar config paper (JSON, cero órdenes): `ibtrader config-freeze` (`--write` una vez; default `--verify`). Freeze en `data/paper_config_freeze.json`; cubre riesgo, costos, universo, `mode`, `trading` y `strategy`. `--write` no pisa un freeze cuya config cambió (sale 1; `--force` para re-baselinar a propósito) y el autopilot nunca lo escribe solo.
+   - Autopilot (backend pesado + UI de una pantalla, cero órdenes): ibtrader autopilot · opcional --use-ai solo por la puerta IA (`ANTHROPIC_BASE_URL=https://ia.zynoratek.com` + token `pia_…`; si no, sale 2 con el motivo). Curva paper = caja + acciones × precio desde `data/paper_account.json` (o NAV del broker con `paper-equity --append`); las alertas de «matar» por drawdown se encienden con 20 días de equity real.
    - Schedule diario (Task Scheduler, paper triage only, 0 órdenes, no LIVE):
      - Registrar tarea `ibtrader-autopilot` (16:30 local por defecto): `pwsh -File scripts/schedule-autopilot.ps1 -Action Register`
      - Opcional hora: `-Time 17:00`. Estado: `-Action Status`. Quitar: `-Action Unregister`.
@@ -62,7 +62,7 @@ Calidad:
 - Lint: ruff; Tipos: mypy; Tests: pytest. CI ejecuta los tres. Los tests no dependen de una conexión IBKR.
 
 CI (GitHub Actions):
-- PRs contra `dev` ejecutan lint + mypy + tests.
+- Cada push a `main` ejecuta ruff + mypy + pytest (ubuntu y macOS) y un smoke de CLIs con fixtures.
 
 Datos (P2):
 - Todos los comandos (`download-data`, `backtest-sample`, `compare-directions`) usan un pipeline de proveedores con puerta de calidad:

@@ -24,7 +24,10 @@ class SimulatedBroker(Broker):
     Simple simulated broker for backtesting and dry-run.
     Fills market orders via ``total_order_cost``; limit orders if touchable
     (probabilistic fill when ``prob_fill_on_limit`` < 1).
-    Aged LMTs may switch to aggressive (MKT-like) fill via ``decide_urgency``.
+    Aged LMTs turn aggressive via ``decide_urgency``: they cross the spread like a marketable
+    limit (certain fill at the modelled price) but **never through the limit** — a BUY LMT at 90
+    with the market at 100 stays unfilled however old it is.
+    The fill draw uses ``random.Random(seed)`` (seed 0 by default), so runs are reproducible.
     """
 
     def __init__(
@@ -44,6 +47,7 @@ class SimulatedBroker(Broker):
         now_fn: Any | None = None,
         order_age_seconds: float = 0.0,
         max_passive_seconds: float = 60.0,
+        seed: int = 0,
     ) -> None:
         self.market_state = market_state
         self.commission_cfg = commission
@@ -53,7 +57,7 @@ class SimulatedBroker(Broker):
         self.prob_fill_on_limit = float(prob_fill_on_limit)
         self.partial_fill_frac = None if partial_fill_frac is None else float(partial_fill_frac)
         self.ledger_path = ledger_path
-        self._rng = rng if rng is not None else random.Random()
+        self._rng = rng if rng is not None else random.Random(int(seed))
         self.latency_ms = float(latency_ms)
         self.require_rth = bool(require_rth)
         self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
@@ -110,11 +114,14 @@ class SimulatedBroker(Broker):
                 age_seconds=self.order_age_seconds,
                 max_passive_seconds=self.max_passive_seconds,
             )
+            lim = float(order.limit_price)
             if urgency.mode == "aggressive":
-                fill_price = float(probe.fill_price)
-                aggressive_lmt = True
+                marketable = float(probe.fill_price)
+                within_limit = marketable <= lim if order.side.upper() == "BUY" else marketable >= lim
+                if within_limit:
+                    fill_price = marketable
+                    aggressive_lmt = True
             else:
-                lim = float(order.limit_price)
                 touchable = False
                 if order.side.upper() == "BUY" and lim >= float(last):
                     touchable = True

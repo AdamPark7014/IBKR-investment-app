@@ -54,3 +54,13 @@ def test_cmd_paper_stack_orders_sent_zero(tmp_path: Path) -> None:
     assert "desired" in out
     assert "held" in out
     assert "drift" in out
+
+
+def test_sync_replaces_snapshot_and_drops_stale_symbols(tmp_path: Path) -> None:
+    stack = PaperStack(tmp_path / "paper_stack.sqlite")
+    stack.sync_from_json(desired={"AAA": 0.5, "OLD": 0.2}, held={"OLD": 0.2})
+    stack.sync_from_json(desired={"AAA": 0.6}, held={"AAA": 0.6})
+    snap = stack.snapshot()
+    assert snap["desired"] == {"AAA": 0.6}
+    assert snap["held"] == {"AAA": 0.6}
+    assert all(row["delta"] == 0.0 for row in snap["drift"])

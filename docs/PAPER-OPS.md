@@ -21,15 +21,19 @@ ibtrader paper-vs-oos           # DD paper vs Sharpe/DD OOS asumidos (kill_recom
 ibtrader slippage-report        # resumen de data/slippage_ledger.jsonl
 ibtrader ibc-checklist          # checklist Gateway/IBC (manual; no instala)
 ibtrader config-freeze          # --verify (default) o --write → paper_config_freeze.json
-ibtrader paper-equity           # curva/resumen de data/paper_equity.jsonl (--append opcional)
+ibtrader paper-equity           # curva/resumen de data/paper_equity.jsonl (--append = NAV del broker)
 ibtrader paper-status           # presencia + resúmenes freeze/equity/stack/open-orders/slippage
 ```
 
 Notas breves:
 
-- `autopilot` escribe/verifica freeze, sync de stack, append a `paper_equity.jsonl`,
-  compara vs OOS y abre HTML de una pantalla (`--open`).
-- `config-freeze --write` una vez al congelar; luego solo `--verify` (o default).
+- `autopilot` **verifica** el freeze (nunca lo escribe), sincroniza el stack y, si existe
+  `paper_account.json`, agrega el punto del día = caja + acciones × precio. Las alertas de «matar» por
+  drawdown (`dd_vs_sharpe`, `paper_vs_oos_dd`) están apagadas hasta tener 20 días de equity real y lo dice
+  una alerta `paper_kill_alerts_inactive`. Cambiar la config (incluidos `mode`, `trading`, `strategy`)
+  con el freeze puesto da `config_drift` aunque el archivo exista.
+- `config-freeze --write` una vez al congelar; luego solo `--verify` (o default). Si la config cambió,
+  `--write` se niega (sale 1); `--force` solo para re-baselinar a propósito.
 - `paper-equity` lee/resume la curva; autopilot sigue haciendo el append diario.
 
 ## Schedules (Task Scheduler, Windows)
@@ -52,7 +56,7 @@ pwsh -File scripts/schedule-ibc-check.ps1 -Action Register
 Smoke (sin LIVE):
 
 ```powershell
-pwsh -File scripts/bootstrap-paper.ps1           # open-orders sample + freeze --write + paper-status (no schtasks)
+pwsh -File scripts/bootstrap-paper.ps1           # freeze --write + paper-status (no schtasks, sin datos de ejemplo)
 pwsh -File scripts/ops-smoke.ps1                 # Status de las 3 tareas
 pwsh -File scripts/ops-smoke.ps1 -Action RunOnce # ibc-checklist → reconcile → vs-oos → stack
 ```
@@ -69,9 +73,10 @@ pwsh -File scripts/schedule-register-all.ps1 -Action Register   # Status|Unregis
 
 | Archivo | Rol |
 |---------|-----|
-| `paper_positions.json` | Posiciones held (paper) |
-| `paper_equity.jsonl` | Curva MTM (append diario vía autopilot) |
-| `paper_open_orders.json` | Órdenes abiertas simuladas / shadow |
+| `paper_account.json` | Libro paper real: `{"cash": 100000, "shares": {"SPY": 120}}` (base de la curva) |
+| `paper_positions.json` | Pesos held (fracción del NAV) para el drift; **no** es equity |
+| `paper_equity.jsonl` | Curva: un punto por día de mercado, `basis` `cash+shares` (autopilot) o `nav` (`paper-equity --append`) |
+| `paper_open_orders.json` | Solo órdenes paper reales; el ejemplo va a `paper_open_orders.sample.json` y se ignora |
 | `paper_config_freeze.json` | Hash de config congelada |
 | `paper_stack.sqlite` | Desired / held / drift |
 | `slippage_ledger.jsonl` | Fills sim: decisión vs fill |

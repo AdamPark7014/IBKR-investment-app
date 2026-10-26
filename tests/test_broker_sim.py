@@ -98,7 +98,7 @@ def test_simulated_broker_writes_slippage_ledger_on_fill(tmp_path: Path) -> None
 
 
 def test_simulated_broker_rejects_outside_rth() -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
     from zoneinfo import ZoneInfo
 
     ET = ZoneInfo("America/New_York")

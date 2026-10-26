@@ -17,7 +17,6 @@ class PromptPack:
     name: str = 'ibtrader-brief-v1'
     model: str = 'claude-haiku-5-5'
     max_tokens: int = 400
-    temperature: float = 0.0
     effort: str = 'low'
     language: str = 'es'
     tone: str = 'claro, directo, sin jerga innecesaria'

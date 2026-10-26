@@ -59,33 +59,54 @@ def test_lmt_partial_fill_frac(tmp_path: Path) -> None:
     assert abs(broker.get_positions().get("SPY", 0)) == 5
 
 
-def test_aged_lmt_fills_aggressive_even_if_limit_far() -> None:
-    # Aged past max_passive_seconds → aggressive MKT-like fill even if limit far and prob_fill=0
-    market = SimulatedMarketState(last_prices={"SPY": 100.0}, equity=50_000.0)
-    aged = SimulatedBroker(
-        market,
+def _sim(prob: float, age: float, **kw: object) -> SimulatedBroker:
+    return SimulatedBroker(
+        SimulatedMarketState(last_prices={"SPY": 100.0}, equity=50_000.0),
         CommissionConfig(model="fixed", per_share=0.0, min_per_order=0.0),
         SlippageConfig(model="bps", bps=0.0),
         dry_run=False,
-        prob_fill_on_limit=0.0,
-        order_age_seconds=120.0,
+        prob_fill_on_limit=prob,
+        order_age_seconds=age,
         max_passive_seconds=60.0,
-        rng=random.Random(1),
+        **kw,  # type: ignore[arg-type]
     )
-    aged.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="LMT", limit_price=90.0))
-    assert aged.get_positions().get("SPY", 0) == 1
 
-    # Control: young order, same far LMT + prob_fill=0 → no fill
-    market2 = SimulatedMarketState(last_prices={"SPY": 100.0}, equity=50_000.0)
-    young = SimulatedBroker(
-        market2,
-        CommissionConfig(model="fixed", per_share=0.0, min_per_order=0.0),
-        SlippageConfig(model="bps", bps=0.0),
-        dry_run=False,
-        prob_fill_on_limit=0.0,
-        order_age_seconds=0.0,
-        max_passive_seconds=60.0,
-        rng=random.Random(1),
-    )
-    young.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="LMT", limit_price=90.0))
+
+def test_aged_lmt_never_fills_through_its_limit() -> None:
+    # Aged past max_passive_seconds → aggressive, but a BUY LMT at 90 with the market at 100 must not
+    # fill (before: it filled at ~100, 11 % above its own limit).
+    aged = _sim(prob=0.0, age=120.0, rng=random.Random(1))
+    aged.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="LMT", limit_price=90.0))
+    assert aged.get_positions().get("SPY", 0) == 0
+    sell = _sim(prob=0.0, age=120.0, rng=random.Random(1))
+    sell.place_order(Order(symbol="SPY", side="SELL", quantity=1, order_type="LMT", limit_price=110.0))
+    assert sell.get_positions().get("SPY", 0) == 0
+
+
+def test_aged_marketable_lmt_fills_for_sure_within_limit() -> None:
+    # Marketable limit (101 ≥ modelled fill 100) and aged: certain fill even with prob_fill=0, at ≤ limit.
+    aged = _sim(prob=0.0, age=120.0, rng=random.Random(1))
+    before = aged.market_state.equity
+    aged.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="LMT", limit_price=101.0))
+    assert aged.get_positions().get("SPY", 0) == 1
+    assert before - aged.market_state.equity <= 101.0 + 1e-9
+    # Young order, same marketable limit, prob_fill=0 → passive draw misses.
+    young = _sim(prob=0.0, age=0.0, rng=random.Random(1))
+    young.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="LMT", limit_price=101.0))
     assert young.get_positions().get("SPY", 0) == 0
+
+
+def test_default_rng_is_seeded_and_reproducible() -> None:
+    def fills(seed: int | None) -> list[int]:
+        kw = {} if seed is None else {"seed": seed}
+        b = _sim(prob=0.5, age=0.0, **kw)
+        out = []
+        for _ in range(30):
+            before = b.get_positions().get("SPY", 0)
+            b.place_order(Order(symbol="SPY", side="BUY", quantity=1, order_type="LMT", limit_price=100.0))
+            out.append(b.get_positions().get("SPY", 0) - before)
+        return out
+
+    assert fills(None) == fills(None)  # default seed 0: same draws every run
+    assert fills(None) == fills(0)
+    assert 0 < sum(fills(None)) < 30

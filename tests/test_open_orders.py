@@ -64,12 +64,29 @@ def test_open_orders_cli(tmp_path: Path) -> None:
     w = json.loads(res_w.stdout)
     assert w["orders_sent"] == 0
     assert w["n_orders"] == 1
-    assert p.is_file()
+    assert w["sample"] is True
+    # The sample never lands in the operational file the autopilot reads.
+    assert not p.is_file()
+    assert (tmp_path / "paper_open_orders.sample.json").is_file()
 
     res = runner.invoke(cli_mod_app, ["open-orders", "--path", str(p)])
     assert res.exit_code == 0, res.stdout + str(res.exception)
     out = json.loads(res.stdout)
     assert out["orders_sent"] == 0
-    assert out["n_orders"] == 1
+    assert out["n_orders"] == 0
     assert "age_seconds" in out
     assert "touchable" in out
+
+
+def test_sample_payload_is_ignored_by_triage(tmp_path: Path) -> None:
+    from ibtrader.ops.urgency_age import load_open_order_age_seconds
+
+    p = tmp_path / "paper_open_orders.json"
+    p.write_text(
+        '{"sample": true, "touchable": false, "orders":[{"symbol":"SPY","opened_at":"2020-01-01T00:00:00Z"}]}',
+        encoding="utf-8",
+    )
+    # A years-old fake order would force "aggressive" urgency forever; samples count as nothing.
+    assert load_open_order_age_seconds(p) == 0.0
+    assert load_touchable(p) is True
+    assert summary(p)["sample"] is True

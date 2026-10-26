@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 from typer.testing import CliRunner
+
 from ibtrader.ops.cli import app as cli_mod_app
-from ibtrader.ops.paper_status import build_paper_status
-from ibtrader.ops.paper_curve import append_equity_point
 from ibtrader.ops.open_orders import write_sample
+from ibtrader.ops.paper_curve import append_equity_point
+from ibtrader.ops.paper_status import build_paper_status
 from ibtrader.ops.stack import PaperStack
 
 _SCHEDULE_KEYS = ("ibtrader-autopilot", "ibtrader-paper-reconcile", "ibtrader-ibc-check")
