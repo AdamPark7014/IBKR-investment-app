@@ -71,8 +71,15 @@ class SystemConfig:
     * ``instrument_weighting``: ``box_risk_parity`` (equal risk per box, equal inside the box),
       ``hrp`` (on vol-normalised returns) or ``equal``. ``box_inverse_vol`` is a legacy alias.
     * ``boxes``: symbol → box; a symbol missing from the mapping is its own box.
-    * ``long_only`` / ``max_leverage``: enforced on the portfolio positions and again on the
-      final target weights (the engine caps gross exposure at ``max_total_exposure_pct``).
+    * ``long_only`` / ``short_only`` / ``max_leverage``: enforced on the portfolio positions and
+      again on the final target weights (the engine caps gross exposure at ``max_total_exposure_pct``).
+      ``long_only`` and ``short_only`` are exclusive; both False = long/short.
+    * ``tau`` vs ``max_leverage``: ``tau`` is the volatility the system *asks for*; with
+      ``max_leverage = 1.0`` (cash account, no margin) a diversified ETF book with bonds cannot
+      reach 10 %: the cap binds most days and the realised volatility ends up around 4–6 %. That
+      lower figure is the effective target. ``SystemOutput.leverage_capped`` / ``gross_before_cap``
+      show how often the cap binds; raising ``max_leverage`` (e.g. 1.5×, margin account) is Adam's
+      decision, never a default.
     * ``buffer_frac``: no-trade band around the target as a fraction of the average absolute
       position (``position_buffer``); trades go to the edge of the band.
     """
@@ -89,8 +96,10 @@ class SystemConfig:
     idm_max: float = 2.5
     buffer_frac: float = 0.10
     long_only: bool = True
+    #: Gross exposure cap (fraction of capital). 1.0 = no leverage: see the ``tau`` note above.
     max_leverage: float = 1.0
     boxes: Optional[Dict[str, str]] = None
+    short_only: bool = False
     # Secondary knobs (pysystemtrade defaults); exposed so research can shorten warm-ups.
     vol_span: int = 35
     fdm_min_periods: int = 250
@@ -134,6 +143,8 @@ class SystemConfig:
             raise ValueError("SystemConfig.buffer_frac must be >= 0")
         if self.max_leverage <= 0.0:
             raise ValueError("SystemConfig.max_leverage must be > 0")
+        if self.long_only and self.short_only:
+            raise ValueError("SystemConfig.long_only and short_only are exclusive")
         if self.fdm_max < 1.0 or self.idm_max < 1.0:
             raise ValueError("SystemConfig.fdm_max / idm_max must be >= 1")
         if self.step < 1 or self.scalar_min_periods < 1:
@@ -160,8 +171,12 @@ class SystemOutput:
     * ``mtm_weights``: ``buffered_positions · price / capital`` every day (diagnostic).
     * ``target_weights``: what the engine consumes — ``mtm_weights`` sampled on the days the
       buffered position changes and held constant in between, so a fixed share count does
-      not look like a daily weight change (and does not trade on price drift); clipped to
-      ``[0, max_leverage]`` when ``long_only`` and scaled so gross ≤ ``max_leverage``.
+      not look like a daily weight change (and does not trade on price drift); sign-clipped
+      for ``long_only`` / ``short_only``. When a change pushes gross above ``max_leverage``
+      only the symbols that changed that day are scaled down: a symbol whose position did not
+      move keeps exactly its weight (rescaling it would be a trade without a signal).
+    * ``gross_before_cap`` / ``leverage_capped``: gross exposure of the portfolio positions
+      before the ``max_leverage`` cap and whether the cap bound that day.
     * ``warmup_end``: first date on which every stage has a value for ≥ 2 symbols (``None``
       when that never happens).
     * ``scalar_source``: rule → ``"estimate"`` | ``"fixed"`` (what was actually used).
@@ -185,6 +200,8 @@ class SystemOutput:
     warmup_end: Optional[pd.Timestamp]
     subsystem_returns: pd.DataFrame = field(default_factory=pd.DataFrame)
     mtm_weights: pd.DataFrame = field(default_factory=pd.DataFrame)
+    gross_before_cap: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    leverage_capped: pd.Series = field(default_factory=lambda: pd.Series(dtype=bool))
     scalar_source: Dict[str, str] = field(default_factory=dict)
     config: Optional[SystemConfig] = None
 
@@ -299,26 +316,48 @@ def _instrument_weights(px: pd.DataFrame, pct_vol: pd.DataFrame, cfg: SystemConf
     return w.reindex(columns=list(px.columns))
 
 
-def _piecewise_constant_weights(buffered: pd.DataFrame, mtm: pd.DataFrame) -> pd.DataFrame:
-    """``mtm`` sampled where the buffered position changes, held constant in between."""
-    prev = buffered.shift(1)
-    changed = buffered.notna() & (prev.isna() | (buffered != prev))
-    sampled = mtm.where(changed)
-    held = sampled.ffill()
-    return held.where(buffered.notna())
+def _capped_piecewise_weights(buffered: pd.DataFrame, mtm: pd.DataFrame, cfg: SystemConfig) -> pd.DataFrame:
+    """Engine target weights: ``mtm`` sampled where each symbol's buffered position changes.
 
-
-def _enforce_leverage(weights: pd.DataFrame, cfg: SystemConfig) -> pd.DataFrame:
-    w = weights.copy()
+    Held constant in between (a fixed share count must not look like a weight change), sign-clipped
+    for ``long_only`` / ``short_only`` and capped at ``max_leverage`` by scaling down **only the
+    symbols that changed that day**. The unchanged ones keep their exact weight, so the engine never
+    trades a symbol whose position did not move. Gross can only rise on a change day (held weights
+    are constants), and the unchanged part already fitted under the cap the day before, so scaling
+    the changed part is always enough.
+    """
+    cols = list(buffered.columns)
+    b = buffered.reindex(columns=cols).to_numpy(dtype=float)
+    w = mtm.reindex(index=buffered.index, columns=cols).to_numpy(dtype=float)
+    prev = np.vstack([np.full((1, len(cols)), np.nan), b[:-1]])
+    valid = ~np.isnan(b)
+    changed = valid & (np.isnan(prev) | (b != prev))
     if cfg.long_only:
-        w = w.clip(lower=0.0)
-    w = w.clip(lower=-cfg.max_leverage, upper=cfg.max_leverage)
-    gross = w.abs().sum(axis=1)
-    over = gross > cfg.max_leverage * (1.0 + 1e-12)
-    if bool(over.any()):
-        scale = (cfg.max_leverage / gross.where(over, 1.0)).where(over, 1.0)
-        w = w.mul(scale, axis=0)
-    return w
+        w = np.where(np.isnan(w), w, np.maximum(w, 0.0))
+    if cfg.short_only:
+        w = np.where(np.isnan(w), w, np.minimum(w, 0.0))
+    cap = float(cfg.max_leverage)
+    w = np.clip(w, -cap, cap)
+    out = np.full_like(w, np.nan)
+    held = np.full(len(cols), np.nan)
+    for i in range(w.shape[0]):
+        row = held.copy()
+        # A change on a bar without a price keeps the last sampled weight (as a forward-fill would).
+        ch = changed[i] & ~np.isnan(w[i])
+        row[ch] = w[i, ch]
+        row[~valid[i]] = np.nan
+        gross = float(np.nansum(np.abs(row)))
+        if gross > cap * (1.0 + 1e-12):
+            moved = ch & valid[i]
+            fixed_gross = float(np.nansum(np.abs(row[valid[i] & ~ch])))
+            moved_gross = float(np.nansum(np.abs(row[moved])))
+            if moved_gross > 0.0 and fixed_gross <= cap:
+                row[moved] *= max(cap - fixed_gross, 0.0) / moved_gross
+            else:  # cannot happen from a capped state; keep the cap anyway
+                row[valid[i]] *= cap / gross
+        out[i] = row
+        held = row
+    return pd.DataFrame(out, index=buffered.index, columns=cols, dtype=float)
 
 
 def _warmup_end(stage_validity: List[pd.DataFrame], idm: pd.Series, min_symbols: int = 2) -> Optional[pd.Timestamp]:
@@ -459,19 +498,21 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
         "rolling_idm",
     )
 
-    # 10. Portfolio positions (shares), long-only and leverage-capped.
-    positions = pd.DataFrame(
-        portfolio_positions(
-            subsystem,
-            instrument_weights,
-            idm,
-            px,
-            cfg.capital,
-            long_only=cfg.long_only,
-            max_leverage=cfg.max_leverage,
-        ),
-        dtype=float,
-    ).reindex(index=index, columns=symbols)
+    # 10. Portfolio positions (shares), sign-clipped and leverage-capped.
+    raw_positions = portfolio_positions(
+        subsystem,
+        instrument_weights,
+        idm,
+        px,
+        cfg.capital,
+        long_only=cfg.long_only,
+        max_leverage=cfg.max_leverage,
+        short_only=cfg.short_only,
+    )
+    gross_before_cap = pd.Series(raw_positions.attrs.get("gross_before_cap"), dtype=float).reindex(index)
+    leverage_capped = pd.Series(raw_positions.attrs.get("capped"), dtype=bool).reindex(index, fill_value=False)
+    raw_positions.attrs.clear()
+    positions = pd.DataFrame(raw_positions, dtype=float).reindex(index=index, columns=symbols)
 
     # 11. Buffering around the average absolute position.
     avg_abs = pd.DataFrame(
@@ -498,7 +539,7 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
     mtm = pd.DataFrame(positions_to_weights(buffered, px, cfg.capital), dtype=float).reindex(
         index=index, columns=symbols
     )
-    target = _enforce_leverage(_piecewise_constant_weights(buffered, mtm), cfg)
+    target = _capped_piecewise_weights(buffered, mtm, cfg)
 
     validity = [
         vol_price.notna(),
@@ -535,6 +576,8 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
         warmup_end=warmup_end,
         subsystem_returns=subsystem_returns,
         mtm_weights=mtm,
+        gross_before_cap=gross_before_cap,
+        leverage_capped=leverage_capped,
         scalar_source=scalar_source,
         config=cfg,
     )

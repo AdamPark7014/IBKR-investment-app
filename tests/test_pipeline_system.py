@@ -335,3 +335,59 @@ def test_pipeline_strategy_signals_and_engine_weight_mode(synthetic: Dict[str, p
     assert all(int(p.min()) >= 0 for p in res.positions.values())
     assert res.stats.trade_count == len(res.trades)
     assert np.isfinite(res.equity_curve.to_numpy()).all()
+
+
+# --------------------------------------------------------------------------- direction and leverage cap
+
+
+def test_short_only_system_and_engine_only_short(synthetic: Dict[str, pd.DataFrame]) -> None:
+    """short_only builds a short-only book (before: a long-only one the engine then zeroed)."""
+    cfg = SystemConfig(boxes=BOXES, long_only=False, short_only=True, forecast_scalar_mode="fixed")
+    out = run_system(closes(synthetic), cfg)
+    w = _valid_rows(out)
+    assert float(w.max().max()) <= 0.0
+    assert float(w.min().min()) < 0.0  # it does take short positions
+    assert float(w.abs().sum(axis=1).max()) <= cfg.max_leverage + 1e-9
+    s = AppSettings()
+    s.risk.killswitch_file = "./tests/__no_kill_switch__"
+    res = backtest(
+        data=synthetic,
+        strategy=PipelineStrategy(cfg),
+        commission_cfg=s.commission,
+        slippage_cfg=s.slippage,
+        initial_equity=100_000.0,
+        direction="short_only",
+        reg_fees_cfg=s.reg_fees,
+    )
+    assert len(res.trades) > 0
+    assert all(int(p.max()) <= 0 for p in res.positions.values())
+    with pytest.raises(ValueError):
+        SystemConfig(long_only=True, short_only=True)
+
+
+def test_target_weight_moves_only_with_its_own_position(synthetic: Dict[str, pd.DataFrame]) -> None:
+    """Per symbol: the engine weight changes only on days that symbol's buffered position changes.
+
+    The old row-level cap rescaled every symbol whenever gross went over the cap, so 28–45 % of the
+    weight changes happened without the symbol's position moving (trades without a signal).
+    """
+    out = run_system(closes(synthetic), SystemConfig(boxes=BOXES, instrument_weighting="equal"))
+    start = out.warmup_end
+    assert start is not None
+    assert bool(out.leverage_capped.loc[start:].any())  # the cap really binds in this sample
+    w = out.target_weights.loc[start:].fillna(0.0)
+    pos = out.buffered_positions.loc[start:].fillna(0.0)
+    w_moved = (w.diff().abs() > 1e-12).iloc[1:]
+    pos_moved = (pos.diff().abs() > 1e-12).iloc[1:]
+    assert int((w_moved & ~pos_moved).sum().sum()) == 0
+    assert int(w_moved.sum().sum()) > 0
+    assert float(out.target_weights.loc[start:].abs().sum(axis=1).max()) <= 1.0 + 1e-9
+
+
+def test_leverage_cap_diagnostics(base_output: SystemOutput) -> None:
+    out = base_output
+    assert out.gross_before_cap.index.equals(out.prices.index)
+    capped = out.leverage_capped
+    assert capped.dtype == bool
+    assert bool((out.gross_before_cap[capped] > 1.0).all())
+    assert bool((out.gross_before_cap[~capped].dropna() <= 1.0 + 1e-12).all())

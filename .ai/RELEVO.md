@@ -1,5 +1,20 @@
 # RELEVO
 
+## Hecho (2026-10-26, claude-code — los cinco pendientes de la revisión)
+- `short_only`: el runner armaba un sistema long-only que el motor short-only anulaba (cero operaciones).
+  Ahora `SystemConfig.short_only` (excluyente con `long_only`) recorta a ≤ 0 y el runner lo mapea desde
+  `TRADING__DIRECTION`.
+- Tope de apalancamiento: ya no reescala todo el renglón; solo se escalan los símbolos cuya posición cambió ese
+  día. Antes 43 % de los cambios de peso (989/2318) ocurrían sin que la posición del símbolo cambiara; ahora 0.
+- Benchmarks en la ventana exacta de la candidata (`start=warmup_end`); un ETF sin precio en la primera barra se
+  excluye de todos los benchmarks con aviso (`excluded_symbols`, `note`) en vez de mover la ventana.
+- Sesión del simulador con calendario NYSE: feriados (incl. Viernes Santo, Juneteenth, regla de Año Nuevo en
+  sábado), cierres a las 13:00 y cierres especiales (2025-01-09 Carter, etc.). Probado contra 2024–2027.
+- Vol target: con `max_leverage=1.0` el sistema pide 10 % y entrega ~6,6–6,9 % (el tope ata 43–49 % de los días,
+  datos sintéticos). Documentado en `SystemConfig`; `research-portfolio` reporta `vol_target`
+  (pedido, realizado = objetivo efectivo, fracción de días con tope, `shortfall`). **No se subió el apalancamiento**:
+  llegar a 10 % pide ~1,5× con margen, decisión de Adam.
+
 ## Hecho (2026-10-25 noche, claude-code — revisión y arreglo de lo de Cursor 23–25 oct)
 - **CI**: estuvo roja del 24-10 (`7eabf12`) al 25-10 (`6a5bc12`): 20 corridas fallidas + 5 canceladas, todas
   en `ruff`, así que mypy y pytest **no corrieron en CI** en ese tramo. Arreglado: ruff 0 errores, mypy limpio
@@ -34,8 +49,7 @@
 - `ibtrader-ibc-check` (08:00) solo imprime una lista fija que nadie ve: se puede quitar
   (`pwsh -File scripts/schedule-ibc-check.ps1 -Action Unregister`). Autopilot y reconcile: inofensivos (0 órdenes).
 - El paper sigue sobre el motor viejo SMA/SPY; nada de fase 2 ha pasado gates con datos reales (no hay corridas).
-- Vol target 10 % no se alcanza con `max_leverage=1.0` (realizada ~4–6 %); benchmarks con otra ventana si un ETF
-  cotiza tarde. No arreglado (fuera de esta ronda).
+- Cierres especiales futuros (duelo nacional, etc.) hay que agregarlos a mano en `SPECIAL_CLOSURES`.
 - `research-portfolio --profile full` tarda ~6–8 min por corrida de 9 configuraciones.
 
 ## Adam
@@ -43,6 +57,7 @@
 2. Para medir paper de verdad: `data/paper_account.json` con `{"cash": …, "shares": {…}}` o
    `ibtrader paper-equity --append <NAV>` cada día.
 3. Meses paper congelado.
+4. Decidir si el objetivo de vol es el efectivo (~6–7 % sin margen) o se pide margen para `max_leverage` 1,5×.
 
 ## No tocar
 - Solo main. Cero LIVE. No curve-fit al último fold. No re-baselinar el freeze para «arreglar» una alerta.

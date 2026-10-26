@@ -2,7 +2,8 @@
 
     posición = posición_subsistema · w_instr · IDM
 
-con ``long_only`` para ETFs sin cortos y un tope de exposición bruta ``max_leverage`` que escala
+con ``long_only`` para ETFs sin cortos (o ``short_only``: solo cortos) y un tope de exposición bruta
+``max_leverage`` que escala
 proporcionalmente las posiciones del día que lo supere. Posiciones en acciones fraccionarias;
 columnas = símbolos. Pesos e IDM se alinean por fecha con forward-fill (point-in-time).
 """
@@ -59,6 +60,7 @@ def portfolio_positions(
     capital: float,
     long_only: bool = True,
     max_leverage: float = 1.0,
+    short_only: bool = False,
 ) -> pd.DataFrame:
     """``pos = subsystem × w_instr × IDM`` en acciones, con recorte de cortos y tope de apalancamiento.
 
@@ -70,6 +72,8 @@ def portfolio_positions(
         raise ValueError("capital debe ser > 0")
     if not (max_leverage > 0):
         raise ValueError("max_leverage debe ser > 0")
+    if long_only and short_only:
+        raise ValueError("long_only y short_only son excluyentes")
     idx = subsystem_positions.index
     cols = _columns(subsystem_positions)
     sub = subsystem_positions.astype(float)
@@ -79,6 +83,8 @@ def portfolio_positions(
     pos = sub.mul(w).mul(m, axis=0)
     if long_only:
         pos = pos.clip(lower=0.0)
+    if short_only:
+        pos = pos.clip(upper=0.0)
     px = _align_prices(prices, idx, cols)
     notional = (pos.fillna(0.0) * px.fillna(0.0)).abs().sum(axis=1)
     gross = notional / float(capital)
@@ -88,6 +94,8 @@ def portfolio_positions(
     pos = pos.mul(scale, axis=0)
     pos.attrs["days_capped"] = int(over.sum())
     pos.attrs["max_gross_before_cap"] = float(gross.max()) if len(gross) else 0.0
+    pos.attrs["gross_before_cap"] = gross.astype(float)
+    pos.attrs["capped"] = over.astype(bool)
     return pos
 
 

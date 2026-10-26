@@ -356,3 +356,51 @@ def test_random_walk_no_longer_passes(tmp_path: Path, monkeypatch: pytest.Monkey
     again = run_portfolio_research(data, s, synthetic_universe(), profile="smoke", exp_id="rw2",
                                    reports_dir=s.data.reports_dir)
     assert again["n_trials"] == 3 and again["n_trials_run"] == 1 and again["n_trials_prior"] == 2
+
+
+# --------------------------------------------------------------------------- benchmarks window, vol target, direction
+
+
+def test_benchmarks_use_the_candidate_window_and_exclude_late_listers(synthetic: Dict[str, pd.DataFrame]) -> None:
+    """A late listing (PDBC 900 bars after the start) must not move the benchmark window."""
+    prices = pr.close_frame(synthetic)
+    prices.loc[prices.index[:900], "PDBC"] = float("nan")
+    start = prices.index[300]
+    bench = pr.compute_benchmarks(prices, synthetic_universe(), n_random=20, start=start)
+    n_bars = len(prices.loc[start:])
+    assert bench["window"]["start"] == str(start)
+    assert bench["window"]["n_bars"] == n_bars
+    assert bench["excluded_symbols"] == ["PDBC"]
+    assert "PDBC" in bench["note"]
+    # Every benchmark covers exactly the candidate window (returns start the bar after ``start``).
+    assert bench["sixty_forty"]["stats"]["n_days"] == n_bars - 1
+    assert bench["all_weather"]["stats"]["n_days"] == n_bars - 1
+    assert "PDBC" in bench["all_weather"]["dropped"]
+    assert abs(sum(bench["all_weather"]["weights"].values()) - 1.0) < 1e-12
+    assert "PDBC" not in bench["random"]["symbols"]
+    # Before: dropna(how="any") started every benchmark when PDBC listed (600 bars later).
+    late = pr.compute_benchmarks(prices, synthetic_universe(), n_random=20, start=prices.index[1000])
+    assert late["excluded_symbols"] == []
+
+
+def test_smoke_reports_the_effective_vol_target(smoke_summary: Dict[str, Any]) -> None:
+    vt = smoke_summary["vol_target"]
+    assert vt["tau_requested"] == 0.10 and vt["max_leverage"] == 1.0
+    assert 0.0 <= vt["leverage_cap_binding_frac"] <= 1.0
+    realised = vt["realised_vol_annual"]
+    assert realised is not None and realised > 0.0
+    assert vt["effective_vol_target"] == realised
+    assert vt["shortfall"] is (realised < pr.VOL_SHORTFALL_RATIO * 0.10)
+    if vt["shortfall"]:
+        assert "Adam" in vt["note"]
+
+
+def test_short_only_direction_builds_a_short_only_system(synthetic: Dict[str, pd.DataFrame], tmp_path: Path) -> None:
+    s = _settings(tmp_path)
+    s.trading.direction = "short_only"
+    out = run_portfolio_research(synthetic, s, synthetic_universe(), profile="smoke", exp_id="short",
+                                 reports_dir=None)
+    cand = out["candidates"][0]
+    assert cand["params"]["short_only"] is True and cand["params"]["long_only"] is False
+    # Before: a long-only system under a short-only engine → zero trades.
+    assert cand["oos"]["trade_count"] > 0

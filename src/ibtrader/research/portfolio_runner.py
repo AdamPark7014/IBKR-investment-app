@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -49,6 +50,8 @@ from .runner import build_experiment_records
 from .suite import apply_holdout
 
 Profile = Literal["smoke", "full"]
+
+log = logging.getLogger("ibtrader.research.portfolio_runner")
 
 PHASE = "phase2-portfolio"
 RANDOM_PORTFOLIOS = {"smoke": 100, "full": 1000}
@@ -218,36 +221,86 @@ def _benchmark_block(
     return block
 
 
+def benchmark_window_prices(
+    prices: pd.DataFrame, start: Optional[pd.Timestamp] = None
+) -> Tuple[pd.DataFrame, List[str]]:
+    """Prices of the evaluated window ``[start, end]`` and the symbols excluded from the benchmarks.
+
+    A symbol enters the benchmarks only if it has a price on the window's first bar (carrying its
+    last known close forward, so a bar it skipped does not exclude it). A symbol that lists later
+    would make every fixed-weight benchmark start when it lists — a different window from the
+    candidate's — so it is excluded instead, with a warning and in ``excluded_symbols``.
+    """
+    px = prices.astype(float).sort_index().ffill()
+    if start is not None:
+        px = px.loc[pd.Timestamp(start):]
+    if len(px) == 0:
+        raise ValueError("benchmark window is empty")
+    first = px.iloc[0]
+    excluded = [str(c) for c in px.columns if pd.isna(first[c])]
+    if excluded:
+        log.warning(
+            "benchmarks_excluded_late_listing symbols=%s window_start=%s", excluded, str(px.index[0])
+        )
+    keep = [c for c in px.columns if str(c) not in excluded]
+    if not keep:
+        raise ValueError(f"no symbol has a price on the first bar of the benchmark window {px.index[0]}")
+    return px[keep], excluded
+
+
 def compute_benchmarks(
     prices: pd.DataFrame,
     universe: Optional[UniverseSpec],
     capital: float = INITIAL_EQUITY,
     n_random: int = RANDOM_PORTFOLIOS["smoke"],
     seed: int = RANDOM_SEED,
+    start: Optional[pd.Timestamp] = None,
 ) -> Dict[str, Any]:
-    """60/40, static All Weather and random long-only portfolios over ``prices`` (one window).
+    """60/40, static All Weather and random long-only portfolios on exactly the candidate's window.
 
-    Returns ``{"sixty_forty", "all_weather", "random"}``; ``random["sharpes"]`` keeps the
-    full distribution for ``sharpe_percentile`` (dropped from the written summary).
-    A benchmark whose inputs are missing (e.g. All Weather without its ETFs) is reported
-    as ``None`` with ``*_error`` instead of silently substituted.
+    ``start`` (the candidate's ``warmup_end``) opens the window; every benchmark runs from that bar
+    to the last one (``benchmark_window_prices``). Symbols without a price on the first bar are
+    excluded from all benchmarks and listed in ``excluded_symbols`` / ``note``; a 60/40 leg or All
+    Weather component among them is replaced (leg) or dropped and renormalised (component), never
+    allowed to move the window.
+
+    Returns ``{"sixty_forty", "all_weather", "random", "window", "excluded_symbols"}``;
+    ``random["sharpes"]`` keeps the full distribution for ``sharpe_percentile`` (dropped from the
+    written summary). A benchmark whose inputs are missing is ``None`` with ``*_error``.
     """
-    equity_leg, bond_leg = sixty_forty_legs(list(prices.columns), universe)
-    out: Dict[str, Any] = {}
+    window_px, excluded = benchmark_window_prices(prices, start)
+    window = {
+        "start": str(window_px.index[0]),
+        "end": str(window_px.index[-1]),
+        "n_bars": int(len(window_px)),
+    }
+    equity_leg, bond_leg = sixty_forty_legs(list(window_px.columns), universe)
+    out: Dict[str, Any] = {"window": window, "excluded_symbols": excluded}
+    if excluded:
+        out["note"] = (
+            f"excluded from every benchmark (no price on the window's first bar {window['start']}): "
+            f"{', '.join(excluded)}"
+        )
     sf = sixty_forty(
-        prices, equity=equity_leg, bonds=bond_leg, rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS
+        window_px, equity=equity_leg, bonds=bond_leg, rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS
     )
     out["sixty_forty"] = _benchmark_block(
         "sixty_forty", sf, capital, {"equity": equity_leg, "bonds": bond_leg, "rebalance": BENCHMARK_REBALANCE}
     )
     try:
-        aw = all_weather_static(prices, rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS)
-        out["all_weather"] = _benchmark_block("all_weather", aw, capital, {"rebalance": BENCHMARK_REBALANCE})
+        aw = all_weather_static(window_px, rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS)
+        out["all_weather"] = _benchmark_block(
+            "all_weather",
+            aw,
+            capital,
+            {"rebalance": BENCHMARK_REBALANCE, "dropped": list(aw.attrs.get("dropped") or []),
+             "weights": dict(aw.attrs.get("weights") or {})},
+        )
     except Exception as exc:
         out["all_weather"] = None
         out["all_weather_error"] = f"{type(exc).__name__}: {exc}"
     rnd = random_long_only_portfolios(
-        prices, n=int(n_random), seed=int(seed), rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS
+        window_px, n=int(n_random), seed=int(seed), rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS
     )
     sharpes = _random_sharpes(rnd)
     s = pd.Series(sharpes, dtype=float)
@@ -255,6 +308,7 @@ def compute_benchmarks(
         "n": int(n_random),
         "n_valid": int(len(sharpes)),
         "seed": int(seed),
+        "symbols": [str(c) for c in window_px.columns],
         "sharpe_p5": float(s.quantile(0.05)) if len(s) else None,
         "sharpe_p50": float(s.quantile(0.50)) if len(s) else None,
         "sharpe_p95": float(s.quantile(0.95)) if len(s) else None,
@@ -479,6 +533,41 @@ def portfolio_extra_gates(
     return passed, reasons, checks
 
 
+#: Realised vol below this share of ``tau`` with the cap binding often = the target is not reachable.
+VOL_SHORTFALL_RATIO = 0.75
+
+
+def vol_target_diagnostics(
+    cfg: SystemConfig, out: Any, start: pd.Timestamp, oos: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Requested ``tau`` vs what the evaluated window delivered under the ``max_leverage`` cap.
+
+    With ``max_leverage = 1.0`` (no margin) the system asks for 10 % but the gross cap binds most
+    days and the realised volatility is the **effective** target. Raising the cap is Adam's call.
+    """
+    capped = getattr(out, "leverage_capped", None)
+    window = capped.loc[start:] if isinstance(capped, pd.Series) and len(capped) else pd.Series(dtype=bool)
+    binding = float(window.astype(float).mean()) if len(window) else 0.0
+    realised = _finite(oos.get("volatility"))
+    shortfall = bool(realised is not None and realised < VOL_SHORTFALL_RATIO * float(cfg.tau))
+    note = None
+    if shortfall:
+        note = (
+            f"tau {cfg.tau:.0%} requested, {realised:.1%} realised; the max_leverage {cfg.max_leverage:g} cap "
+            f"bound {binding:.0%} of days: the effective vol target is ~{realised:.1%}. Reaching {cfg.tau:.0%} "
+            "needs more gross exposure (e.g. 1.5x on margin) — Adam's decision, not a default."
+        )
+    return {
+        "tau_requested": float(cfg.tau),
+        "max_leverage": float(cfg.max_leverage),
+        "realised_vol_annual": realised,
+        "leverage_cap_binding_frac": binding,
+        "effective_vol_target": realised,
+        "shortfall": shortfall,
+        "note": note,
+    }
+
+
 def _trial_key(candidate_id: str, params: Mapping[str, Any]) -> str:
     """Identity of a configuration across runs (same rules/weighting/knobs = same trial)."""
     blob = json.dumps({"candidate_id": candidate_id, "params": params}, sort_keys=True, default=str)
@@ -523,7 +612,8 @@ def run_portfolio_research(
        ``settings.research.holdout_start`` are hidden unless ``confirmation_mode``.
     2. ``SystemConfig`` per candidate (``portfolio_candidates``) with the boxes of
        ``universe``, ``capital = 100 000``, ``max_leverage = 1.0`` (engine cap) and
-       ``long_only`` from ``settings.trading.direction``.
+       ``long_only`` / ``short_only`` from ``settings.trading.direction``. With the 1.0 cap the
+       10 % ``tau`` is not reachable: ``vol_target`` reports the realised (effective) target.
     3. ``backtest`` with ``PipelineStrategy`` and the commission / slippage / reg-fee /
        risk settings (RiskManager on, no regime veto: the pipeline has its own sizing).
     4. OOS window = ``[warmup_end, last bar]``; ``warmup_end is None`` → FAIL ``no_warmup``.
@@ -568,7 +658,10 @@ def run_portfolio_research(
     ledger_path = (Path(reports_dir) / "research" / TRIALS_LEDGER) if reports_dir is not None else None
     prior_trials = load_trials_ledger(ledger_path)
     n_random = RANDOM_PORTFOLIOS[profile]
-    long_only = settings.trading.direction != "long_short"
+    # long_only → longs only; short_only → shorts only; long_short → both. (Before, short_only built a
+    # long-only system that the engine's short-only direction then zeroed: no trades at all.)
+    long_only = settings.trading.direction == "long_only"
+    short_only = settings.trading.direction == "short_only"
 
     # Pass 1: run every configuration and measure its evaluated window.
     evaluated: List[Dict[str, Any]] = []
@@ -593,6 +686,7 @@ def run_portfolio_research(
             boxes=boxes,
             capital=capital,
             long_only=long_only,
+            short_only=short_only,
             max_leverage=1.0,
             **smoke_kw,
         )
@@ -620,6 +714,7 @@ def run_portfolio_research(
             "tau": cfg.tau,
             "buffer_frac": cfg.buffer_frac,
             "long_only": cfg.long_only,
+            "short_only": cfg.short_only,
             "max_leverage": cfg.max_leverage,
             "capital": cfg.capital,
             "symbols": symbols,
@@ -660,7 +755,7 @@ def run_portfolio_research(
         bench = bench_cache.get(warmup_end)
         if bench is None:
             bench = compute_benchmarks(
-                prices.loc[warmup_end:], universe, capital=capital, n_random=n_random, seed=RANDOM_SEED
+                prices, universe, capital=capital, n_random=n_random, seed=RANDOM_SEED, start=warmup_end
             )
             bench_cache[warmup_end] = bench
         sharpe = _finite(oos.get("sharpe"))
@@ -669,6 +764,7 @@ def run_portfolio_research(
         rets = _window_returns(res, warmup_end)
         row.update(
             {
+                "vol_target": vol_target_diagnostics(cfg, out, warmup_end, oos),
                 "oos": oos,
                 "buy_hold_oos": dict(bench["sixty_forty"]["stats"]),
                 "benchmarks": _public_benchmarks(bench),
@@ -805,6 +901,7 @@ def run_portfolio_research(
         "recommendation": recommendation,
         "best_candidate": best_id,
         "best_diagnostics": (best or {}).get("diagnostics"),
+        "vol_target": (best or {}).get("vol_target"),
         "benchmarks": (best or {}).get("benchmarks"),
         "random_sharpe_percentile": (best or {}).get("random_sharpe_percentile"),
         "cost_drag_annual_pct": (best or {}).get("cost_drag_annual_pct"),
