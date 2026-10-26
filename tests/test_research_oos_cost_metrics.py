@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import pandas as pd
+
 from ibtrader.backtest.metrics import PerformanceStats, copy_oos_cost_metrics
 from ibtrader.config import AppSettings
 from ibtrader.research.runner import run_sma_research
 from ibtrader.validation.walkforward import _enrich_window_stats, walk_forward_sma
-
-import pandas as pd
 
 
 def _wf_data() -> pd.DataFrame:
@@ -75,3 +75,38 @@ def test_run_sma_research_oos_includes_cost_headlines() -> None:
     oos = rows[0]["oos"]
     assert "avg_cost_bps_per_order" in oos
     assert "cost_drag_annual_pct" in oos
+
+
+def test_oos_costs_exclude_the_warmup_orders() -> None:
+    """On a steady uptrend the SMA enters during each span's warm-up and holds through the test
+    window: those entry orders are not OOS costs (before: they were charged to the OOS)."""
+    settings = AppSettings()
+    wf, _summary = walk_forward_sma(
+        settings,
+        {"SPY": _wf_data()},
+        "SPY",
+        param_grid=[(5, 20)],
+        n_folds=2,
+        warmup_bars=40,
+    )
+    for fd in wf.per_fold:
+        oos = fd["oos"]
+        if int(oos.get("trade_count") or 0) == 0:
+            assert float(oos["total_costs"]) == 0.0
+    assert float(wf.stitched_oos["total_costs"]) == 0.0
+    assert float(wf.stitched_oos["cost_drag_annual_pct"]) == 0.0
+
+
+def test_window_cost_totals_only_counts_orders_inside_the_window() -> None:
+    from ibtrader.backtest.metrics import window_cost_totals
+    from ibtrader.execution.costs import OrderCost
+
+    def oc(px: float) -> OrderCost:
+        return OrderCost(symbol="SPY", shares=10, reference_price=px, fill_price=px, commission=1.0,
+                         reg_fees=0.0, half_spread=0.5, impact=0.0)
+
+    log = [(pd.Timestamp("2024-01-02"), oc(100.0)), (pd.Timestamp("2024-02-01"), oc(110.0))]
+    w = window_cost_totals(log, "2024-01-15", "2024-03-01")
+    assert w["n_orders"] == 1
+    assert w["total_costs"] == 1.5
+    assert w["notional_traded"] == 1100.0

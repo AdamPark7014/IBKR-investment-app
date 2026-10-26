@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Dict, List, Mapping, Optional
+from typing import Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -112,6 +112,78 @@ def rolling_box_weights(
     rows: Dict[object, pd.Series] = {}
     for i in range(0, len(rets.index), step):
         w = box_inverse_vol_weights(vol.iloc[i], boxes, box_budgets)
+        if w.empty:
+            continue
+        rows[rets.index[i]] = w.reindex(cols).fillna(0.0)
+    out = pd.DataFrame(np.nan, index=rets.index, columns=cols, dtype=float)
+    if rows:
+        grid = pd.DataFrame.from_dict(rows, orient="index")
+        out.loc[grid.index, cols] = grid[cols].to_numpy(dtype=float)
+        out = out.ffill()
+    return out
+
+
+def box_risk_budget_weights(
+    present: Sequence[str],
+    boxes: Mapping[str, str],
+    box_budgets: Optional[Mapping[str, float]] = None,
+) -> pd.Series:
+    """Pesos de **riesgo** por caja para subsistemas ya normalizados por volatilidad.
+
+    ``w_i = b_k / n_k`` (suma 1), sin ``1/vol``: en el pipeline cada subsistema ya lleva
+    ``vol_scalar ∝ τ/σ``, así que su riesgo a forecast 10 es el mismo para todos los instrumentos y
+    el peso de instrumento es directamente su parte del presupuesto de riesgo. Volver a dividir por
+    la vol (``box_inverse_vol_weights``) daría riesgo ∝ 1/σ y cargaría la cartera a bonos.
+
+    Los símbolos sin caja en ``boxes`` quedan fuera. Sin símbolos válidos devuelve serie vacía.
+    """
+    members: Dict[str, List[str]] = {}
+    for sym in present:
+        s = str(sym)
+        if s in boxes:
+            members.setdefault(str(boxes[s]), []).append(s)
+    if not members:
+        return pd.Series(dtype=float, name="weight")
+    budgets = _box_budgets(sorted(members), box_budgets)
+    raw: Dict[str, float] = {}
+    for box, syms in members.items():
+        for s in syms:
+            raw[s] = budgets[box] / len(syms)
+    w = pd.Series(raw, dtype=float).reindex([str(s) for s in present if str(s) in raw])
+    total = float(w.sum())
+    if total > 0:
+        w = w / total
+    w.name = "weight"
+    return w
+
+
+def rolling_box_risk_weights(
+    returns: pd.DataFrame,
+    boxes: Mapping[str, str],
+    lookback: int = 252,
+    min_periods: int = 126,
+    step: int = 21,
+    box_budgets: Optional[Mapping[str, float]] = None,
+) -> pd.DataFrame:
+    """``box_risk_budget_weights`` recalculado cada ``step`` barras (point-in-time).
+
+    Un símbolo entra en la fecha t cuando tiene al menos ``min_periods`` retornos válidos en la
+    ventana ``lookback`` que termina en t (el mismo calentamiento que ``rolling_box_weights``).
+    Rejilla anclada en la primera barra, forward-fill entre recálculos, NaN antes del primero.
+    """
+    if step < 1:
+        raise ValueError("step debe ser >= 1")
+    if lookback < 1 or min_periods < 1:
+        raise ValueError("lookback y min_periods deben ser >= 1")
+    cols = [str(c) for c in returns.columns]
+    rets = returns.astype(float)
+    rets.columns = pd.Index(cols)
+    counts = rets.notna().astype(float).rolling(lookback, min_periods=1).sum()
+    rows: Dict[object, pd.Series] = {}
+    for i in range(0, len(rets.index), step):
+        row = counts.iloc[i]
+        present = [c for c in cols if float(row[c]) >= float(min_periods)]
+        w = box_risk_budget_weights(present, boxes, box_budgets)
         if w.empty:
             continue
         rows[rets.index[i]] = w.reindex(cols).fillna(0.0)

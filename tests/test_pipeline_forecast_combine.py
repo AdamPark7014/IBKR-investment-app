@@ -37,8 +37,12 @@ def test_forecast_scalar_pooled_brings_abs_forecast_near_ten(rule: str) -> None:
         vol = price_vol_daily(px)
         raws[f"S{seed}"] = ewmac(px, vol, 16, 64) if rule == "ewmac16_64" else tsmom_multi(px, vol)
     scalar = estimate_forecast_scalar(raws)
-    assert scalar.notna().all()
-    assert (scalar > 0).all()
+    # Default is point-in-time: NaN during the warm-up, never back-filled with a future estimate.
+    assert bool(scalar.iloc[:100].isna().all())
+    valid = scalar.dropna()
+    assert valid.index.min() > scalar.index[400]
+    assert bool(scalar.loc[valid.index.min():].notna().all())
+    assert (valid > 0).all()
     scaled = pd.DataFrame({sym: scale_and_cap(raw, scalar) for sym, raw in raws.items()})
     pooled_abs = float(scaled.abs().iloc[-1500:].stack().mean())
     assert 7.5 < pooled_abs < 12.5, pooled_abs
@@ -67,8 +71,8 @@ def test_forecast_scalar_known_values_and_backfill() -> None:
     # Backfill uses the first valid value (expanding mean at min_periods), not later ones.
     rng = np.random.default_rng(7)
     noisy = {"A": pd.Series(np.abs(rng.standard_normal(300)) + 0.5, index=idx)}
-    sc_noisy = estimate_forecast_scalar(noisy, min_periods=100)
-    sc_noisy_nb = estimate_forecast_scalar(noisy, min_periods=100, backfill=False)
+    sc_noisy = estimate_forecast_scalar(noisy, min_periods=100, backfill=True)
+    sc_noisy_nb = estimate_forecast_scalar(noisy, min_periods=100)  # default: no backfill
     assert sc_noisy.iloc[0] == pytest.approx(float(sc_noisy_nb.iloc[99]))
     pd.testing.assert_series_equal(sc_noisy.iloc[99:], sc_noisy_nb.iloc[99:])
 

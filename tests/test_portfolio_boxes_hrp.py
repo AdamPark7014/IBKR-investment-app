@@ -9,7 +9,12 @@ import pandas as pd
 import pytest
 
 from ibtrader.data.universe import load_universe_spec
-from ibtrader.portfolio.boxes import box_inverse_vol_weights, rolling_box_weights
+from ibtrader.portfolio.boxes import (
+    box_inverse_vol_weights,
+    box_risk_budget_weights,
+    rolling_box_risk_weights,
+    rolling_box_weights,
+)
 from ibtrader.portfolio.hrp import hrp_weights, quasi_diagonal_order, rolling_hrp_weights
 
 BOXES: Dict[str, str] = {
@@ -202,4 +207,35 @@ def test_rolling_hrp_nan_before_min_periods_sum_one_and_point_in_time() -> None:
     assert np.allclose(w.iloc[126:].sum(axis=1).to_numpy(), 1.0)
     assert (w.iloc[126:] > 0).all().all()
     cut = rolling_hrp_weights(rets.iloc[:400], lookback=252, min_periods=126, step=21)
+    pd.testing.assert_frame_equal(w.iloc[:400], cut)
+
+
+# ----------------------------------------------------------------------------------------------
+# Pesos de riesgo por caja (subsistemas ya normalizados por vol)
+# ----------------------------------------------------------------------------------------------
+
+
+def test_box_risk_budget_weights_ignore_volatility() -> None:
+    boxes = {"SPY": "eq", "VTI": "eq", "IEF": "bonds", "GLD": "gold"}
+    w = box_risk_budget_weights(["SPY", "VTI", "IEF", "GLD", "XXX"], boxes)
+    assert set(w.index) == {"SPY", "VTI", "IEF", "GLD"}  # XXX has no box
+    assert w.sum() == pytest.approx(1.0)
+    assert w["IEF"] == pytest.approx(1.0 / 3.0)
+    assert w["GLD"] == pytest.approx(1.0 / 3.0)
+    assert w["SPY"] == pytest.approx(1.0 / 6.0)
+    assert w["VTI"] == pytest.approx(1.0 / 6.0)
+    budgets = box_risk_budget_weights(["SPY", "IEF"], boxes, box_budgets={"eq": 0.75, "bonds": 0.25})
+    assert budgets["SPY"] == pytest.approx(0.75)
+    assert box_risk_budget_weights([], boxes).empty
+
+
+def test_rolling_box_risk_weights_warmup_and_point_in_time() -> None:
+    rets = _returns(seed=3, n=600)
+    w = rolling_box_risk_weights(rets, BOXES, lookback=252, min_periods=126, step=21)
+    assert w.iloc[:126].isna().all().all()
+    valid = w.dropna(how="all")
+    assert np.allclose(valid.sum(axis=1).to_numpy(), 1.0)
+    # Six boxes, one member each: equal risk budget whatever the volatility (IEF 6 % vs VNQ 20 %).
+    assert np.allclose(valid.to_numpy(), 1.0 / 6.0)
+    cut = rolling_box_risk_weights(rets.iloc[:400], BOXES, lookback=252, min_periods=126, step=21)
     pd.testing.assert_frame_equal(w.iloc[:400], cut)

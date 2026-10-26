@@ -4,14 +4,21 @@
 
     prices ─► vol ─► rules (raw forecasts) ─► scale/cap (pooled per rule)
            ─► FDM + combine (per symbol) ─► vol scalar ─► subsystem position
-           ─► instrument weights (box inverse-vol | HRP | equal) ─► IDM
+           ─► instrument weights (box risk parity | HRP | equal) ─► IDM
            ─► portfolio positions ─► buffering ─► target weights
 
 Every stage is point-in-time: the value at ``t`` only uses bars ``<= t``. The
-only exception by construction is the pooled forecast scalar (``estimate``
-mode), which uses the cross-section of the same day across symbols and, like
-pysystemtrade, back-fills the first ``scalar_min_periods`` bars with the first
-valid estimate. ``forecast_scalar_mode="fixed"`` removes that exception.
+pooled forecast scalar (``estimate`` mode) uses the cross-section of the same
+day across symbols and is **not** back-filled: before ``scalar_min_periods``
+bars it is NaN, the scaled forecasts are NaN and ``warmup_end`` cannot fall
+before the first valid scalar (pysystemtrade back-fills; that leaks up to
+``scalar_min_periods`` bars of future data into the evaluated window).
+
+Instrument weights are **risk** allocations: the subsystem positions are
+already vol-normalised (``vol_scalar ∝ τ/σ``), so box weights are the box risk
+budget split equally inside the box (no ``1/σ``) and HRP runs on vol-normalised
+returns (``r_t / σ_{t-1}``). Dividing by the volatility again would make each
+instrument's risk ∝ ``1/σ``.
 
 No global state: everything the stages need travels in ``SystemConfig``.
 """
@@ -25,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 from ..logging import setup_logging
-from ..portfolio.boxes import rolling_box_weights
+from ..portfolio.boxes import rolling_box_risk_weights
 from ..portfolio.hrp import rolling_hrp_weights
 from ..portfolio.multiplier import rolling_idm
 from .buffering import apply_buffer, position_buffer
@@ -38,7 +45,11 @@ from .vol import pct_vol_daily, price_vol_daily
 
 log = setup_logging()
 
-InstrumentWeighting = Literal["box_inverse_vol", "hrp", "equal"]
+InstrumentWeighting = Literal["box_risk_parity", "hrp", "equal"]
+
+#: Old name of ``box_risk_parity`` (it divided the vol-normalised subsystems by σ a second time).
+#: Still accepted so saved configs load, but it now means ``box_risk_parity``.
+LEGACY_WEIGHTING_ALIASES: Dict[str, str] = {"box_inverse_vol": "box_risk_parity"}
 ForecastScalarMode = Literal["estimate", "fixed"]
 
 #: Target absolute forecast after scaling (pysystemtrade convention: |f| averages 10).
@@ -53,11 +64,12 @@ class SystemConfig:
     * ``rule_weights``: forecast weights per rule (``None`` = equal). Keys must match ``rules``.
     * ``forecast_cap``: scaled and combined forecasts are capped at ``±forecast_cap``.
     * ``forecast_scalar_mode``: ``estimate`` = pooled expanding estimate across symbols
-      (``scalar_min_periods`` bars, back-filled); ``fixed`` = ``FIXED_FORECAST_SCALARS``
+      (NaN until ``scalar_min_periods`` bars, never back-filled); ``fixed`` = ``FIXED_FORECAST_SCALARS``
       (rules without a fixed scalar fall back to ``estimate`` and are reported in
       ``SystemOutput.scalar_source``).
     * ``tau``: annual volatility target as a fraction of ``capital``.
-    * ``instrument_weighting``: ``box_inverse_vol`` (risk parity by box), ``hrp`` or ``equal``.
+    * ``instrument_weighting``: ``box_risk_parity`` (equal risk per box, equal inside the box),
+      ``hrp`` (on vol-normalised returns) or ``equal``. ``box_inverse_vol`` is a legacy alias.
     * ``boxes``: symbol → box; a symbol missing from the mapping is its own box.
     * ``long_only`` / ``max_leverage``: enforced on the portfolio positions and again on the
       final target weights (the engine caps gross exposure at ``max_total_exposure_pct``).
@@ -73,7 +85,7 @@ class SystemConfig:
     fdm_max: float = 2.5
     tau: float = 0.10
     capital: float = 100_000.0
-    instrument_weighting: InstrumentWeighting = "box_inverse_vol"
+    instrument_weighting: InstrumentWeighting = "box_risk_parity"
     idm_max: float = 2.5
     buffer_frac: float = 0.10
     long_only: bool = True
@@ -92,6 +104,12 @@ class SystemConfig:
     step: int = 21
 
     def __post_init__(self) -> None:
+        legacy = LEGACY_WEIGHTING_ALIASES.get(str(self.instrument_weighting))
+        if legacy is not None:
+            log.warning("SystemConfig: instrument_weighting %r is now %r", self.instrument_weighting, legacy)
+            object.__setattr__(self, "instrument_weighting", legacy)
+        if self.instrument_weighting not in ("box_risk_parity", "hrp", "equal"):
+            raise ValueError(f"SystemConfig.instrument_weighting unknown: {self.instrument_weighting!r}")
         if not self.rules:
             raise ValueError("SystemConfig.rules must not be empty")
         if len(set(self.rules)) != len(self.rules):
@@ -101,7 +119,8 @@ class SystemConfig:
             extra = set(self.rule_weights) - set(self.rules)
             if missing or extra:
                 raise ValueError(
-                    f"SystemConfig.rule_weights keys must match rules (missing={sorted(missing)}, extra={sorted(extra)})"
+                    "SystemConfig.rule_weights keys must match rules "
+                    f"(missing={sorted(missing)}, extra={sorted(extra)})"
                 )
             if any(float(w) < 0.0 for w in self.rule_weights.values()):
                 raise ValueError("SystemConfig.rule_weights must be non-negative")
@@ -231,11 +250,12 @@ def _forecast_scalar(
     pooled = {sym: raw[sym].dropna() for sym in raw.columns if raw[sym].notna().any()}
     if not pooled:
         return pd.Series(np.nan, index=index, name=rule), "estimate"
+    # No backfill: a back-filled scalar is estimated with up to ``scalar_min_periods`` future bars.
     est = estimate_forecast_scalar(
         pooled,
         target_abs=TARGET_ABS_FORECAST,
         min_periods=cfg.scalar_min_periods,
-        backfill=True,
+        backfill=False,
     )
     scalar = _as_series(est, index, f"estimate_forecast_scalar[{rule}]").ffill()
     scalar.name = rule
@@ -248,20 +268,25 @@ def _equal_instrument_weights(px: pd.DataFrame) -> pd.DataFrame:
     return has.astype(float).div(n, axis=0)
 
 
-def _instrument_weights(px: pd.DataFrame, cfg: SystemConfig) -> pd.DataFrame:
+def _instrument_weights(px: pd.DataFrame, pct_vol: pd.DataFrame, cfg: SystemConfig) -> pd.DataFrame:
+    """Risk weights per instrument for vol-normalised subsystems (see the module docstring)."""
     returns = px.pct_change()
     if cfg.instrument_weighting == "equal":
         w = _equal_instrument_weights(px)
     elif cfg.instrument_weighting == "hrp":
+        # Yesterday's vol only (point-in-time): r_t / σ_{t-1} has ~unit variance for every symbol,
+        # so HRP allocates on correlations instead of dividing by σ a second time.
+        norm = returns.div(pct_vol.reindex(index=px.index, columns=px.columns).shift(1))
+        norm = norm.replace([np.inf, -np.inf], np.nan)
         w = rolling_hrp_weights(
-            returns,
+            norm,
             lookback=cfg.hrp_lookback,
             min_periods=cfg.hrp_min_periods,
             step=cfg.step,
         )
-    elif cfg.instrument_weighting == "box_inverse_vol":
+    elif cfg.instrument_weighting == "box_risk_parity":
         boxes = {sym: (cfg.boxes or {}).get(sym, sym) for sym in px.columns}
-        w = rolling_box_weights(
+        w = rolling_box_risk_weights(
             returns,
             boxes,
             lookback=cfg.box_lookback,
@@ -361,7 +386,9 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
             symbols,
             {
                 sym: _as_series(
-                    scale_and_cap(raw_forecasts[rule][sym], scalar, cap=cfg.forecast_cap), index, f"scale_and_cap[{rule}]"
+                    scale_and_cap(raw_forecasts[rule][sym], scalar, cap=cfg.forecast_cap),
+                    index,
+                    f"scale_and_cap[{rule}]",
                 )
                 for sym in symbols
             },
@@ -414,7 +441,7 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
     )
 
     # 7. Instrument weights on close-to-close returns.
-    instrument_weights = _instrument_weights(px, cfg)
+    instrument_weights = _instrument_weights(px, pct_vol, cfg)
 
     # 8./9. IDM on the subsystem returns (yesterday's shares × today's price change, over capital).
     subsystem_returns = subsystem.shift(1).mul(px.diff()).div(cfg.capital)

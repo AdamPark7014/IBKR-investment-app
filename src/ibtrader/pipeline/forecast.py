@@ -4,9 +4,9 @@ A raw forecast is multiplied by a *forecast scalar* so that its long-run average
 value is ``target_abs`` (10 by convention), then capped at ``+/- cap`` (20).
 
 Point-in-time: the pooled scalar at ``t`` is an expanding mean, so it only uses raw forecasts up
-to ``t``. The only deliberate exception is the optional backfill of the warm-up period with the
-first valid scalar, which is what pysystemtrade does and only affects the first ``min_periods``
-observations.
+to ``t``. ``backfill=True`` (off by default, never used by ``pipeline.system``) fills the warm-up
+with the first valid scalar like pysystemtrade does; that value is estimated with up to
+``min_periods`` future observations, so it is look-ahead and must not reach a backtest.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def estimate_forecast_scalar(
     raw_by_symbol: Mapping[str, pd.Series],
     target_abs: float = 10.0,
     min_periods: int = 500,
-    backfill: bool = True,
+    backfill: bool = False,
 ) -> pd.Series:
     """Pooled forecast scalar across symbols for one rule.
 

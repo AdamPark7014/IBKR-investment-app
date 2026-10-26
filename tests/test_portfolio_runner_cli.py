@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
+import numpy as np
 import pandas as pd
 import pytest
 from typer.testing import CliRunner
@@ -90,11 +92,11 @@ def smoke_summary(synthetic: Dict[str, pd.DataFrame], tmp_path_factory: pytest.T
 def test_portfolio_candidates_profiles() -> None:
     smoke = portfolio_candidates("smoke")
     assert len(smoke) == 1
-    assert smoke[0][2] == "box_inverse_vol"
+    assert smoke[0][2] == "box_risk_parity"
     full = portfolio_candidates("full")
     assert len(full) > 1
     assert len({c[0] for c in full}) == len(full)
-    assert {c[2] for c in full} == {"box_inverse_vol", "hrp", "equal"}
+    assert {c[2] for c in full} == {"box_risk_parity", "hrp", "equal"}
     with pytest.raises(ValueError):
         portfolio_candidates("nope")
 
@@ -145,7 +147,7 @@ def test_run_portfolio_research_registry_rows_and_artifact(smoke_summary: Dict[s
     assert len(rows) == 1
     rec = rows[0]
     assert rec["exp_id"] == "p2_smoke"
-    assert rec["candidate_id"] == "pipeline_default_box_inverse_vol"
+    assert rec["candidate_id"] == "pipeline_default_box_risk_parity"
     assert len(rec["dataset_hash"]) == 64 and len(rec["config_hash"]) == 64
     assert rec["n_trials"] == 1
     assert rec["params"]["family"] == "pipeline"
@@ -164,7 +166,7 @@ def test_run_portfolio_research_full_profile_counts_trials(
     synthetic: Dict[str, pd.DataFrame], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Keep the test fast: a 2-configuration grid and fewer random portfolios, but still > 1 trial.
-    monkeypatch.setattr(pr, "INSTRUMENT_WEIGHTINGS", ("box_inverse_vol", "equal"))
+    monkeypatch.setattr(pr, "INSTRUMENT_WEIGHTINGS", ("box_risk_parity", "equal"))
     monkeypatch.setattr(pr, "rule_sets", lambda: {"ewmac": ("ewmac16_64", "ewmac32_128", "ewmac64_256")})
     monkeypatch.setitem(pr.RANDOM_PORTFOLIOS, "full", 30)
     s = _settings(tmp_path)
@@ -172,7 +174,7 @@ def test_run_portfolio_research_full_profile_counts_trials(
                                  reports_dir=s.data.reports_dir)
     assert out["n_trials"] == 2
     assert out["n_candidates"] == 2
-    assert {c["candidate_id"] for c in out["candidates"]} == {"pipeline_ewmac_box_inverse_vol", "pipeline_ewmac_equal"}
+    assert {c["candidate_id"] for c in out["candidates"]} == {"pipeline_ewmac_box_risk_parity", "pipeline_ewmac_equal"}
     assert all(r["n_trials"] == 2 for r in out["registry_records"])
     assert out["years_needed"] > 0.0
     assert out["budget"]["n_trials"] == 2
@@ -218,7 +220,9 @@ def _json_payload(stdout: str) -> Dict[str, Any]:
     return json.loads(lines[-1])
 
 
-def test_research_portfolio_cli_smoke(synthetic: Dict[str, pd.DataFrame], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_research_portfolio_cli_smoke(
+    synthetic: Dict[str, pd.DataFrame], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     fixture_dir = tmp_path / "fixtures"
     _write_fixture_dir(synthetic, fixture_dir)
     universe_path = tmp_path / "universe.json"
@@ -259,3 +263,96 @@ def test_research_portfolio_cli_smoke(synthetic: Dict[str, pd.DataFrame], tmp_pa
     assert art.exists() and art.name == "portfolio_p2_cli.json"
     today = pd.Timestamp(datetime.now(timezone.utc).date())
     assert pd.Timestamp(payload["data_end"]) <= today
+
+
+# --------------------------------------------------------------------------- statistical gates
+
+
+def _noise_returns(n_candidates: int, n_days: int, seed: int, mu: float = 0.0) -> Dict[str, pd.Series]:
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2020-01-01", periods=n_days)
+    return {f"c{i}": pd.Series(rng.normal(mu, 0.01, n_days), index=idx) for i in range(n_candidates)}
+
+
+def test_daily_diagnostics_t_stat_is_sharpe_times_sqrt_n() -> None:
+    r = _noise_returns(1, 1000, seed=1, mu=0.0015)["c0"]
+    d = pr.daily_return_diagnostics(r)
+    assert d["n_obs"] == 1000
+    assert d["t_stat"] == pytest.approx(d["sr_daily"] * math.sqrt(1000))
+    assert d["sr_annual"] == pytest.approx(d["sr_daily"] * math.sqrt(252))
+    assert d["kurtosis"] == pytest.approx(3.0, abs=0.5)
+
+
+def test_noise_grid_best_sharpe_fails_t_dsr_and_percentile_gates() -> None:
+    """Nine configurations of pure noise: the best Sharpe is selection luck and must not pass."""
+    rets = _noise_returns(9, 750, seed=11)
+    diags = {cid: pr.daily_return_diagnostics(r) for cid, r in rets.items()}
+    best = max(diags, key=lambda c: diags[c]["sr_daily"])
+    trial_sharpes = [d["sr_daily"] for d in diags.values()]
+    dsr = pr.dsr_block(diags[best], trial_sharpes, n_trials=9)
+    assert dsr["method"] == "dsr"
+    assert dsr["dsr"] < 0.95
+    pbo = pr.pbo_block(rets)
+    assert pbo["applicable"] is True and 0.0 <= pbo["pbo"] <= 1.0
+    ok, reasons, checks = pr.portfolio_extra_gates(
+        diags[best], dsr, pbo, random_percentile=60.0, holdout={"holdout_start": "2023-01-01"}
+    )
+    assert ok is False
+    assert checks["t_stat_ok"] is False
+    assert any(r.startswith("t_stat=") for r in reasons)
+    assert any(r.startswith("random_sharpe_percentile=") for r in reasons)
+
+
+def test_real_edge_passes_the_statistical_gates() -> None:
+    """Positive control: one configuration with a genuine edge (t ≈ 4.7) clears t, DSR and percentile."""
+    r = _noise_returns(1, 1000, seed=3, mu=0.0015)["c0"]
+    diag = pr.daily_return_diagnostics(r)
+    dsr = pr.dsr_block(diag, [diag["sr_daily"]], n_trials=1)
+    assert dsr["method"] == "psr_single_trial"
+    assert dsr["dsr"] > 0.95
+    pbo = pr.pbo_block({"only": r})
+    assert pbo["applicable"] is False
+    ok, reasons, _ = pr.portfolio_extra_gates(diag, dsr, pbo, random_percentile=99.0,
+                                              holdout={"holdout_start": "2023-01-01"})
+    assert ok is True, reasons
+    ok2, reasons2, _ = pr.portfolio_extra_gates(diag, dsr, pbo, random_percentile=99.0, holdout={})
+    assert ok2 is False and any("holdout_not_declared" in x for x in reasons2)
+
+
+def test_pbo_unavailable_on_a_short_common_window_fails() -> None:
+    rets = _noise_returns(3, 100, seed=5)
+    pbo = pr.pbo_block(rets)
+    assert pbo["applicable"] is True and math.isnan(pbo["pbo"])
+    diag = pr.daily_return_diagnostics(rets["c0"])
+    ok, reasons, _ = pr.portfolio_extra_gates(diag, {"dsr": 0.99}, pbo, 99.0, {"holdout_start": "2020-01-01"})
+    assert ok is False and any(r.startswith("pbo_unavailable") for r in reasons)
+
+
+def test_random_walk_no_longer_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Random walks with drift (nothing for trend rules to predict) passed the old gates; not any more.
+
+    Same synthetic universe the review used (seed 11, 1 500 business days, fixed end date), a declared
+    hold-out so the verdict cannot hinge on that gate alone, and a 2-configuration grid to stay fast.
+    """
+    data = make_synthetic(n_days=1500, seed=11, end=pd.Timestamp("2026-10-23"))
+    monkeypatch.setattr(pr, "INSTRUMENT_WEIGHTINGS", ("box_risk_parity", "equal"))
+    monkeypatch.setattr(pr, "rule_sets", lambda: {"tsmom": ("tsmom_1_3_12",)})
+    monkeypatch.setitem(pr.RANDOM_PORTFOLIOS, "full", 50)
+    s = _settings(tmp_path)
+    s.research.holdout_start = str(data["SPY"].index[-60].date())
+    out = run_portfolio_research(data, s, synthetic_universe(), profile="full", exp_id="rw",
+                                 reports_dir=s.data.reports_dir)
+    assert out["verdict"] == "FAIL"
+    assert out["n_pass"] == 0
+    assert out["recommendation"] == RECOMMENDATION_FAIL
+    for cand in out["candidates"]:
+        assert cand["gate_passed"] is False
+        assert not any("holdout_not_declared" in r for r in cand["gate_reasons"])
+        assert cand["gate_checks"]["t_stat_ok"] is False, cand["gate_checks"]
+    # The cross-run ledger counts these trials for the next run.
+    ledger = Path(out["trials_ledger"])
+    assert ledger.is_file()
+    assert len([ln for ln in ledger.read_text(encoding="utf-8").splitlines() if ln.strip()]) == 2
+    again = run_portfolio_research(data, s, synthetic_universe(), profile="smoke", exp_id="rw2",
+                                   reports_dir=s.data.reports_dir)
+    assert again["n_trials"] == 3 and again["n_trials_run"] == 1 and again["n_trials_prior"] == 2

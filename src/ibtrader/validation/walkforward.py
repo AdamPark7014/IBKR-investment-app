@@ -8,7 +8,7 @@ import pandas as pd
 
 from ..backtest.engine import backtest, restricted_counts
 from ..backtest.metrics import compute_stats as _cs
-from ..backtest.metrics import copy_oos_cost_metrics
+from ..backtest.metrics import copy_oos_cost_metrics, window_cost_totals
 from ..backtest.reasons import TradeReason
 from ..config import AppSettings, CommissionConfig
 from ..regime.gmm import build_regime_features, fit_gmm_regime
@@ -164,16 +164,15 @@ def _aggregate_stitched_cost_metrics(
         oos = fd.get("oos") or {}
         total_costs += float(oos.get("total_costs") or 0.0)
         notional += float(oos.get("notional_traded") or 0.0)
-    if total_costs <= 0.0 and notional <= 0.0:
-        return
+    # Always report the headline (0.0 when the OOS windows held positions opened in the warm-up
+    # without trading): those warm-up orders are not OOS costs.
     stitched["total_costs"] = total_costs
-    if notional > 0.0:
-        stitched["notional_traded"] = notional
-        stitched["avg_cost_bps_per_order"] = float(total_costs / notional * 1e4)
+    stitched["notional_traded"] = notional
+    stitched["avg_cost_bps_per_order"] = float(total_costs / notional * 1e4) if notional > 0.0 else 0.0
+    stitched["cost_drag_annual_pct"] = 0.0
     years = max(int(n_oos_periods), 1) / 252.0
     if initial_equity > 0.0 and years > 0.0:
         stitched["cost_drag_annual_pct"] = float(total_costs / initial_equity / years * 100.0)
-
 
 
 def walk_forward_sma(
@@ -254,6 +253,7 @@ def walk_forward_sma(
                 risk_on_threshold=float(settings.risk.risk_on_threshold),
                 target_vol_annual=float(settings.risk.target_vol_annual),
                 risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=initial_equity)),
+                reg_fees_cfg=settings.reg_fees,
             )
             # Recompute stats on val window only
             eq = res_span.equity_curve.reindex(val_idx).dropna()
@@ -291,6 +291,7 @@ def walk_forward_sma(
             risk_on_threshold=float(settings.risk.risk_on_threshold),
             target_vol_annual=float(settings.risk.target_vol_annual),
             risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=initial_equity)),
+            reg_fees_cfg=settings.reg_fees,
         )
         train_eq = res_train_span.equity_curve.reindex(train_idx).dropna()
         train_rets = res_train_span.returns.reindex(train_idx).dropna()
@@ -321,6 +322,7 @@ def walk_forward_sma(
             risk_on_threshold=float(settings.risk.risk_on_threshold),
             target_vol_annual=float(settings.risk.target_vol_annual),
             risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=initial_equity)),
+            reg_fees_cfg=settings.reg_fees,
         )
         val_eq = res_val_span.equity_curve.reindex(val_idx).dropna()
         val_rets = res_val_span.returns.reindex(val_idx).dropna()
@@ -351,6 +353,7 @@ def walk_forward_sma(
             risk_on_threshold=float(settings.risk.risk_on_threshold),
             target_vol_annual=float(settings.risk.target_vol_annual),
             risk_manager=RiskManager(settings.risk, RiskState(starting_equity_today=initial_equity)),
+            reg_fees_cfg=settings.reg_fees,
         )
         test_idx = idx[test_start:test_end]
         test_eq = res_test_span.equity_curve.reindex(test_idx).dropna()
@@ -385,10 +388,25 @@ def walk_forward_sma(
         oos_fold_stats = _enrich_window_stats(
             res_test_stats.__dict__, oos_trades_list, comm_fold, initial_equity
         )
-        copy_oos_cost_metrics(oos_fold_stats, res_test_span.stats)
-        oos_fold_stats["total_costs"] = float(getattr(res_test_span.stats, "total_costs", 0.0) or 0.0)
-        oos_fold_stats["notional_traded"] = float(
-            getattr(res_test_span.stats, "notional_traded", 0.0) or 0.0
+        # Costs of the orders inside the test window only: the span also trades during its warm-up.
+        wc = (
+            window_cost_totals(res_test_span.order_costs, test_idx[0], test_idx[-1])
+            if len(test_idx)
+            else {"total_costs": 0.0, "notional_traded": 0.0}
+        )
+        test_years = max(len(test_rets), 1) / 252.0
+        oos_fold_stats["total_costs"] = float(wc["total_costs"])
+        oos_fold_stats["notional_traded"] = float(wc["notional_traded"])
+        copy_oos_cost_metrics(
+            oos_fold_stats,
+            {
+                "avg_cost_bps_per_order": (wc["total_costs"] / wc["notional_traded"] * 1e4)
+                if wc["notional_traded"] > 0
+                else 0.0,
+                "cost_drag_annual_pct": (wc["total_costs"] / initial_equity / test_years * 100.0)
+                if initial_equity > 0
+                else 0.0,
+            },
         )
         oos_fold_stats["restricted_bar_frac"] = _restricted_frac(restricted_fold, bars_fold)
         # Stitch OOS equity and B&H for this fold

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 import pandas as pd
 
 from ..backtest.engine import backtest, restricted_counts
-from ..backtest.metrics import compute_stats, copy_oos_cost_metrics
+from ..backtest.metrics import compute_stats, copy_oos_cost_metrics, window_cost_totals
 from ..config import AppSettings
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.mean_reversion import MeanReversion
@@ -94,12 +94,14 @@ def run_mean_reversion_research(
             rb, tb = restricted_counts(res, (test_idx[0], test_idx[-1])) if test_idx else (0, 0)
             restricted_bars += int(rb)
             total_bars += int(tb)
-            fold_st = res.stats
-            agg_total_costs += float(getattr(fold_st, "total_costs", 0.0) or 0.0)
-            agg_notional += float(getattr(fold_st, "notional_traded", 0.0) or 0.0)
-            agg_n_orders += int(getattr(fold_st, "n_orders", 0) or 0)
-            agg_commission += float(getattr(fold_st, "total_commission", 0.0) or 0.0)
-            agg_reg_fees += float(getattr(fold_st, "total_reg_fees", 0.0) or 0.0)
+            # Costs of the orders inside the test window only (the span also holds the warm-up).
+            if len(test_idx):
+                wc = window_cost_totals(res.order_costs, test_idx[0], test_idx[-1])
+                agg_total_costs += wc["total_costs"]
+                agg_notional += wc["notional_traded"]
+                agg_n_orders += wc["n_orders"]
+                agg_commission += wc["total_commission"]
+                agg_reg_fees += wc["total_reg_fees"]
         restricted_frac = (restricted_bars / total_bars) if total_bars > 0 else 0.0
 
         stitched_rets = pd.Series(dtype=float)

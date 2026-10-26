@@ -15,6 +15,7 @@ to it (``stats_returns``) for cross-checking, not for gating.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import asdict
@@ -22,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
+import numpy as np
 import pandas as pd
 
 from ..backtest.engine import BacktestResult, backtest, restricted_counts
@@ -40,7 +42,9 @@ from .benchmarks import (
     sharpe_percentile,
     sixty_forty,
 )
+from .dsr import deflated_sharpe_ratio, sharpe_std_error
 from .gates import compute_trial_budget, evaluate_strict_gates
+from .pbo import probability_of_backtest_overfitting
 from .runner import build_experiment_records
 from .suite import apply_holdout
 
@@ -58,7 +62,15 @@ RECOMMENDATION_FAIL = (
 )
 RECOMMENDATION_PASS = "Paper 2–3 meses con la configuración congelada antes de capital."
 
-INSTRUMENT_WEIGHTINGS: Tuple[str, ...] = ("box_inverse_vol", "hrp", "equal")
+INSTRUMENT_WEIGHTINGS: Tuple[str, ...] = ("box_risk_parity", "hrp", "equal")
+
+# Statistical gates on top of ``evaluate_strict_gates`` (playbook: t >= 3, DSR, PBO, frozen hold-out).
+MIN_T_STAT = 3.0
+MIN_RANDOM_PERCENTILE = 95.0
+PBO_BLOCKS = 10
+PBO_MIN_BLOCK_DAYS = 20
+TRIALS_LEDGER = "portfolio_trials.jsonl"
+SELECTION_RULE = "max DSR among gate-passing candidates (tie-break: t-stat, then shallower max_dd)"
 
 
 def rule_sets() -> Dict[str, Tuple[str, ...]]:
@@ -75,12 +87,12 @@ def rule_sets() -> Dict[str, Tuple[str, ...]]:
 def portfolio_candidates(profile: str) -> List[Tuple[str, Tuple[str, ...], str]]:
     """``(candidate_id, rules, instrument_weighting)`` per configuration of ``profile``.
 
-    * ``smoke``: one configuration (``DEFAULT_RULES`` × ``box_inverse_vol``).
+    * ``smoke``: one configuration (``DEFAULT_RULES`` × ``box_risk_parity``).
     * ``full``: small grid rules (default | ewmac only | tsmom only) × weighting
-      (box_inverse_vol | hrp | equal). Every configuration counts as one trial.
+      (box_risk_parity | hrp | equal). Every configuration counts as one trial.
     """
     if profile == "smoke":
-        return [("pipeline_default_box_inverse_vol", tuple(DEFAULT_RULES), "box_inverse_vol")]
+        return [("pipeline_default_box_risk_parity", tuple(DEFAULT_RULES), "box_risk_parity")]
     if profile == "full":
         return [
             (f"pipeline_{rs_name}_{weighting}", rules, weighting)
@@ -191,7 +203,9 @@ def sixty_forty_legs(symbols: Sequence[str], universe: Optional[UniverseSpec]) -
     return equity, bonds
 
 
-def _benchmark_block(name: str, returns: pd.Series, capital: float, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _benchmark_block(
+    name: str, returns: pd.Series, capital: float, extra: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     eq, r = _returns_to_equity(returns, capital)
     block: Dict[str, Any] = {"name": name, "stats": _equity_stats(eq, r)}
     try:
@@ -220,7 +234,9 @@ def compute_benchmarks(
     """
     equity_leg, bond_leg = sixty_forty_legs(list(prices.columns), universe)
     out: Dict[str, Any] = {}
-    sf = sixty_forty(prices, equity=equity_leg, bonds=bond_leg, rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS)
+    sf = sixty_forty(
+        prices, equity=equity_leg, bonds=bond_leg, rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS
+    )
     out["sixty_forty"] = _benchmark_block(
         "sixty_forty", sf, capital, {"equity": equity_leg, "bonds": bond_leg, "rebalance": BENCHMARK_REBALANCE}
     )
@@ -230,7 +246,9 @@ def compute_benchmarks(
     except Exception as exc:
         out["all_weather"] = None
         out["all_weather_error"] = f"{type(exc).__name__}: {exc}"
-    rnd = random_long_only_portfolios(prices, n=int(n_random), seed=int(seed), rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS)
+    rnd = random_long_only_portfolios(
+        prices, n=int(n_random), seed=int(seed), rebalance=BENCHMARK_REBALANCE, cost_bps=BENCHMARK_COST_BPS
+    )
     sharpes = _random_sharpes(rnd)
     s = pd.Series(sharpes, dtype=float)
     out["random"] = {
@@ -264,6 +282,8 @@ def _window_stats(res: BacktestResult, start: pd.Timestamp, capital: float) -> D
     notional = float(sum(abs(int(t[2])) * float(t[3]) for t in trades_in))
     turnover = notional / float(capital) if capital else 0.0
     total_costs = float(getattr(res.stats, "total_costs", 0.0) or 0.0)
+    # Cost drag over the evaluated window's years (``res.stats`` divides by the whole backtest span).
+    cost_drag = total_costs / capital / years * 100.0 if (capital and years > 0) else 0.0
     stats.update(
         {
             "trade_count": int(len(trades_in)),
@@ -272,7 +292,7 @@ def _window_stats(res: BacktestResult, start: pd.Timestamp, capital: float) -> D
             "total_costs": total_costs,
             "total_commission": float(getattr(res.stats, "total_commission", 0.0) or 0.0),
             "avg_cost_bps_per_order": float(getattr(res.stats, "avg_cost_bps_per_order", 0.0) or 0.0),
-            "cost_drag_annual_pct": float(getattr(res.stats, "cost_drag_annual_pct", total_costs / capital / years * 100.0 if (capital and years > 0) else 0.0) or 0.0),
+            "cost_drag_annual_pct": float(cost_drag),
             "years": float(years),
             "oos_start": str(eq.index.min()) if len(eq) else None,
             "oos_end": str(eq.index.max()) if len(eq) else None,
@@ -289,12 +309,198 @@ def _finite(value: Any) -> Optional[float]:
     return f if math.isfinite(f) else None
 
 
+def _selection_key(row: Mapping[str, Any]) -> Tuple[float, float, float]:
+    """DSR first (it already deflates for skew, kurtosis, sample length and the number of trials)."""
+    diag = row.get("diagnostics") or {}
+    dsr = _finite((diag.get("dsr") or {}).get("dsr"))
+    t_stat = _finite(diag.get("t_stat"))
+    max_dd = _finite((row.get("oos") or {}).get("max_dd"))
+    return (
+        dsr if dsr is not None else float("-inf"),
+        t_stat if t_stat is not None else float("-inf"),
+        max_dd if max_dd is not None else float("-inf"),  # drawdowns are negative: higher = shallower
+    )
+
+
 def _best_row(rows: Sequence[Mapping[str, Any]]) -> Optional[Mapping[str, Any]]:
+    """``SELECTION_RULE``: the gate-passing candidate with the highest DSR, never the raw best Sharpe.
+
+    With nothing passing, the highest-DSR candidate is still reported (for diagnosis) but the
+    verdict stays FAIL.
+    """
+    if not rows:
+        return None
     passed = [r for r in rows if r.get("gate_passed")]
-    pool = passed or [r for r in rows if _finite((r.get("oos") or {}).get("sharpe")) is not None]
-    if not pool:
-        return rows[0] if rows else None
-    return max(pool, key=lambda r: _finite((r.get("oos") or {}).get("sharpe")) or float("-inf"))
+    pool = passed or list(rows)
+    return max(pool, key=_selection_key)
+
+
+def _window_returns(res: BacktestResult, start: pd.Timestamp) -> pd.Series:
+    """Daily returns strictly after ``start`` (the return of ``start`` belongs to the warm-up book)."""
+    r = res.returns.loc[start:].astype(float)
+    return r.iloc[1:] if len(r) else r
+
+
+def daily_return_diagnostics(returns: pd.Series) -> Dict[str, Any]:
+    """Per-period Sharpe, its t-statistic (``SR·√n``), skew and Pearson kurtosis of daily returns."""
+    r = pd.Series(returns, dtype=float).replace([np.inf, -np.inf], np.nan).dropna()
+    n = int(len(r))
+    out: Dict[str, Any] = {"n_obs": n, "sr_daily": float("nan"), "t_stat": float("nan"), "skew": 0.0,
+                           "kurtosis": 3.0}
+    if n < 3:
+        return out
+    sd = float(r.std(ddof=1))
+    if not (sd > 0.0 and math.isfinite(sd)):
+        return out
+    sr = float(r.mean()) / sd
+    skew = float(r.skew())
+    kurt = float(r.kurt()) + 3.0  # pandas gives excess kurtosis
+    out.update(
+        {
+            "sr_daily": sr,
+            "sr_annual": sr * math.sqrt(252.0),
+            "t_stat": sr * math.sqrt(n),
+            "skew": skew if math.isfinite(skew) else 0.0,
+            "kurtosis": kurt if math.isfinite(kurt) else 3.0,
+        }
+    )
+    return out
+
+
+def dsr_block(diag: Mapping[str, Any], trial_sharpes: Sequence[float], n_trials: int) -> Dict[str, Any]:
+    """Deflated Sharpe (Bailey & López de Prado) on daily returns; PSR vs 0 when there is one trial."""
+    sr = _finite(diag.get("sr_daily"))
+    n_obs = int(diag.get("n_obs") or 0)
+    if sr is None or n_obs < 3:
+        return {"dsr": float("nan"), "method": "undefined", "note": "no finite daily Sharpe"}
+    skew = float(diag.get("skew") or 0.0)
+    kurt = float(diag.get("kurtosis") or 3.0)
+    trials = [float(x) for x in trial_sharpes if _finite(x) is not None]
+    if int(n_trials) < 2 or len(trials) < 2:
+        se = sharpe_std_error(sr, n_obs, skew=skew, kurtosis=kurt)
+        z = sr / se
+        return {
+            "dsr": float(0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))),
+            "method": "psr_single_trial",
+            "observed_sr": sr,
+            "sr0_benchmark": 0.0,
+            "sr_std_error": se,
+            "n_obs": n_obs,
+            "n_trials": int(n_trials),
+            "skew": skew,
+            "kurtosis": kurt,
+        }
+    out = deflated_sharpe_ratio(sr, n_obs=n_obs, n_trials=int(n_trials), trial_sharpes=trials, skew=skew,
+                                kurtosis=kurt)
+    out["method"] = "dsr"
+    return out
+
+
+def pbo_block(returns_by_candidate: Mapping[str, pd.Series]) -> Dict[str, Any]:
+    """CSCV PBO over ``PBO_BLOCKS`` contiguous blocks of the window every candidate shares.
+
+    Not applicable with a single configuration (nothing was selected). With several candidates but
+    a common window shorter than ``PBO_BLOCKS × PBO_MIN_BLOCK_DAYS`` the PBO is undefined and the
+    gate fails (``pbo_unavailable``): an unmeasured selection bias is not a pass.
+    """
+    frame = pd.DataFrame({cid: pd.Series(r, dtype=float) for cid, r in returns_by_candidate.items()})
+    frame = frame.dropna(how="any")
+    if frame.shape[1] < 2:
+        return {"pbo": float("nan"), "applicable": False, "note": "single configuration: no selection to overfit"}
+    n = int(len(frame))
+    if n < PBO_BLOCKS * PBO_MIN_BLOCK_DAYS:
+        return {
+            "pbo": float("nan"),
+            "applicable": True,
+            "n_days": n,
+            "note": f"common window {n} days < {PBO_BLOCKS}×{PBO_MIN_BLOCK_DAYS}",
+        }
+    mat = np.full((frame.shape[1], PBO_BLOCKS), np.nan, dtype=float)
+    for j, idx in enumerate(np.array_split(np.arange(n), PBO_BLOCKS)):
+        sub = frame.iloc[idx]
+        sd = sub.std(ddof=1).replace(0.0, np.nan)
+        mat[:, j] = (sub.mean() / sd).to_numpy(dtype=float)
+    out = probability_of_backtest_overfitting(mat)
+    out.update(
+        {
+            "applicable": True,
+            "n_days": n,
+            "blocks": PBO_BLOCKS,
+            "window_start": str(frame.index.min()),
+            "window_end": str(frame.index.max()),
+            "candidates": list(frame.columns),
+        }
+    )
+    return out
+
+
+def portfolio_extra_gates(
+    diag: Mapping[str, Any],
+    dsr: Mapping[str, Any],
+    pbo: Mapping[str, Any],
+    random_percentile: Optional[float],
+    holdout: Mapping[str, Any],
+) -> Tuple[bool, List[str], Dict[str, Any]]:
+    """Gates ``evaluate_strict_gates`` does not enforce by itself: t ≥ 3, defined DSR/PBO,
+    percentile ≥ 95 vs random long-only portfolios and a declared frozen hold-out."""
+    reasons: List[str] = []
+    t_stat = _finite(diag.get("t_stat"))
+    t_ok = t_stat is not None and t_stat >= MIN_T_STAT
+    if not t_ok:
+        reasons.append(f"t_stat={t_stat if t_stat is not None else float('nan'):.2f} < {MIN_T_STAT}")
+    dsr_val = _finite(dsr.get("dsr"))
+    dsr_defined = dsr_val is not None
+    if not dsr_defined:
+        reasons.append("dsr_undefined")
+    pbo_ok = True
+    if pbo.get("applicable") and _finite(pbo.get("pbo")) is None:
+        pbo_ok = False
+        reasons.append(f"pbo_unavailable ({pbo.get('note')})")
+    pct_ok = random_percentile is not None and float(random_percentile) >= MIN_RANDOM_PERCENTILE
+    if not pct_ok:
+        reasons.append(f"random_sharpe_percentile={random_percentile} < {MIN_RANDOM_PERCENTILE}")
+    holdout_declared = bool(holdout.get("holdout_start"))
+    if not holdout_declared:
+        reasons.append("holdout_not_declared: set RESEARCH__HOLDOUT_START before trusting a PASS")
+    checks = {
+        "t_stat": t_stat,
+        "min_t_stat": MIN_T_STAT,
+        "t_stat_ok": t_ok,
+        "dsr_defined": dsr_defined,
+        "pbo": _finite(pbo.get("pbo")),
+        "pbo_applicable": bool(pbo.get("applicable")),
+        "pbo_ok": pbo_ok,
+        "random_sharpe_percentile": random_percentile,
+        "min_random_percentile": MIN_RANDOM_PERCENTILE,
+        "random_percentile_ok": pct_ok,
+        "holdout_declared": holdout_declared,
+    }
+    passed = t_ok and dsr_defined and pbo_ok and pct_ok and holdout_declared
+    return passed, reasons, checks
+
+
+def _trial_key(candidate_id: str, params: Mapping[str, Any]) -> str:
+    """Identity of a configuration across runs (same rules/weighting/knobs = same trial)."""
+    blob = json.dumps({"candidate_id": candidate_id, "params": params}, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def load_trials_ledger(path: Optional[Path]) -> Dict[str, Dict[str, Any]]:
+    """Latest row per configuration key from the cross-run trial ledger (empty when absent)."""
+    out: Dict[str, Dict[str, Any]] = {}
+    if path is None or not path.is_file():
+        return out
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("trial_key"):
+            out[str(row["trial_key"])] = row
+    return out
 
 
 # --------------------------------------------------------------------------- the runner
@@ -323,13 +529,21 @@ def run_portfolio_research(
     4. OOS window = ``[warmup_end, last bar]``; ``warmup_end is None`` → FAIL ``no_warmup``.
     5. Benchmarks on the same window (``compute_benchmarks``); ``bh_stats`` for the
        gates = the 60/40 stats; ``restricted_bar_frac`` from ``restricted_counts``.
-    6. ``evaluate_strict_gates`` with the trial budget (``n_trials`` = configurations
-       run, ``years_available`` = span of the data used) and the hold-out block.
-    7. Registry rows via ``build_experiment_records`` (``dataset_hash`` / ``config_hash``
+    6. Diagnostics on the daily returns of the evaluated window: t-statistic
+       (``SR_daily·√n``), DSR over every trial (this run + ``<reports_dir>/research/
+       portfolio_trials.jsonl``), PBO (CSCV over ``PBO_BLOCKS`` blocks of the window
+       all candidates share) and the Sharpe percentile against random long-only
+       portfolios.
+    7. ``evaluate_strict_gates`` (beat the 60/40, DSR ≥ 0.95, PBO < 0.5, trial budget on
+       the evaluated window's years, hold-out discipline) plus ``portfolio_extra_gates``
+       (t ≥ 3, percentile ≥ 95, defined DSR/PBO, declared hold-out). All must hold.
+    8. Selection (``SELECTION_RULE``): highest DSR among passing candidates, never the
+       raw best Sharpe.
+    9. Registry rows via ``build_experiment_records`` (``dataset_hash`` / ``config_hash``
        mandatory) under ``registry_records``; summary written to
        ``<reports_dir>/research/portfolio_<exp_id>.json``.
 
-    ``verdict`` is PASS when any configuration passes the strict gates, else FAIL, and
+    ``verdict`` is PASS when any configuration passes every gate, else FAIL, and
     ``recommendation`` is the written consequence (index, or paper with the frozen
     configuration).
     """
@@ -348,21 +562,19 @@ def run_portfolio_research(
     prices = close_frame(data_used)
     symbols = list(prices.columns)
     boxes = {e.symbol: e.box for e in universe.entries if e.symbol in symbols}
-    years_available = _years_span(prices.index)
+    years_data = _years_span(prices.index)
 
     candidates = portfolio_candidates(profile)
-    n_trials = len(candidates)
-    budget = compute_trial_budget(
-        n_trials, years_available, target_sharpe=float(settings.research.trial_budget_target_sharpe)
-    )
-    budget["fail_on_budget_exceeded"] = bool(settings.research.fail_on_budget_exceeded)
+    ledger_path = (Path(reports_dir) / "research" / TRIALS_LEDGER) if reports_dir is not None else None
+    prior_trials = load_trials_ledger(ledger_path)
     n_random = RANDOM_PORTFOLIOS[profile]
     long_only = settings.trading.direction != "long_short"
 
-    rows: List[Dict[str, Any]] = []
+    # Pass 1: run every configuration and measure its evaluated window.
+    evaluated: List[Dict[str, Any]] = []
     bench_cache: Dict[pd.Timestamp, Dict[str, Any]] = {}
     for candidate_id, rules, weighting in candidates:
-        smoke_kw = (
+        smoke_kw: Dict[str, Any] = (
             {
                 "scalar_min_periods": 60,
                 "fdm_min_periods": 60,
@@ -414,7 +626,10 @@ def run_portfolio_research(
             "boxes": boxes,
             "direction": settings.trading.direction,
         }
+        if smoke_kw:
+            params["smoke_overrides"] = dict(smoke_kw)
         row: Dict[str, Any] = {"candidate_id": candidate_id, "params": params, "symbol": ref_symbol}
+        row["trial_key"] = _trial_key(candidate_id, params)
         warmup_end = out.warmup_end if out is not None else None
         if warmup_end is None or warmup_end >= prices.index.max():
             row.update(
@@ -426,6 +641,7 @@ def run_portfolio_research(
                     "gate_checks": {"gate_mode": "strict", "no_warmup": True},
                     "benchmarks": None,
                     "random_sharpe_percentile": None,
+                    "diagnostics": None,
                     "warmup_end": str(warmup_end) if warmup_end is not None else None,
                     "oos_start": None,
                     "oos_end": None,
@@ -435,7 +651,7 @@ def run_portfolio_research(
                     "restricted_bar_frac": None,
                 }
             )
-            rows.append(row)
+            evaluated.append({"row": row, "returns": None, "frac": None})
             continue
         oos = _window_stats(res, warmup_end, capital)
         r_bars, t_bars = restricted_counts(res, (warmup_end, prices.index.max()))
@@ -443,39 +659,21 @@ def run_portfolio_research(
         oos["restricted_bar_frac"] = frac
         bench = bench_cache.get(warmup_end)
         if bench is None:
-            bench = compute_benchmarks(prices.loc[warmup_end:], universe, capital=capital, n_random=n_random, seed=RANDOM_SEED)
+            bench = compute_benchmarks(
+                prices.loc[warmup_end:], universe, capital=capital, n_random=n_random, seed=RANDOM_SEED
+            )
             bench_cache[warmup_end] = bench
-        bh_stats = dict(bench["sixty_forty"]["stats"])
-        gate = evaluate_strict_gates(
-            stitched_oos_stats=oos,
-            bh_stats=bh_stats,
-            restricted_bar_frac=frac,
-            diagnostics=None,
-            budget=budget,
-            holdout=holdout_info,
-        )
         sharpe = _finite(oos.get("sharpe"))
         sharpes = list(bench["random"]["sharpes"])
         pct = float(sharpe_percentile(sharpe, sharpes)) if (sharpe is not None and sharpes) else None
-        checks: Dict[str, Any] = dict(gate.checks)
-        checks.update(
-            {
-                "gate_mode": "strict",
-                "restricted_bar_frac": frac,
-                "restricted_bars": int(r_bars),
-                "total_bars": int(t_bars),
-                "random_sharpe_percentile": pct,
-            }
-        )
+        rets = _window_returns(res, warmup_end)
         row.update(
             {
                 "oos": oos,
-                "buy_hold_oos": bh_stats,
-                "gate_passed": bool(gate.passed),
-                "gate_reasons": list(gate.reasons),
-                "gate_checks": checks,
+                "buy_hold_oos": dict(bench["sixty_forty"]["stats"]),
                 "benchmarks": _public_benchmarks(bench),
                 "random_sharpe_percentile": pct,
+                "diagnostics": daily_return_diagnostics(rets),
                 "warmup_end": str(warmup_end),
                 "oos_start": oos.get("oos_start"),
                 "oos_end": oos.get("oos_end"),
@@ -484,6 +682,64 @@ def run_portfolio_research(
                 "turnover_annual": oos.get("turnover_annual"),
                 "restricted_bar_frac": frac,
                 "holdout_overused": bool(holdout_info.get("holdout_overused")),
+            }
+        )
+        evaluated.append({"row": row, "returns": rets, "frac": frac})
+
+    # Every configuration ever evaluated counts as a trial (cross-run ledger), not just this grid.
+    keys_this_run = {str(e["row"]["trial_key"]) for e in evaluated}
+    n_trials_run = len(candidates)
+    n_trials = len(keys_this_run | set(prior_trials))
+    trial_sharpes: List[float] = []
+    for e in evaluated:
+        sr_val = _finite((e["row"].get("diagnostics") or {}).get("sr_daily"))
+        if sr_val is not None:
+            trial_sharpes.append(sr_val)
+    for key, prior in prior_trials.items():
+        sr_val = _finite(prior.get("sr_daily"))
+        if key not in keys_this_run and sr_val is not None:
+            trial_sharpes.append(sr_val)
+    pbo = pbo_block({e["row"]["candidate_id"]: e["returns"] for e in evaluated if e["returns"] is not None})
+    budget_target = float(settings.research.trial_budget_target_sharpe)
+    budget: Dict[str, Any] = compute_trial_budget(n_trials, years_data, target_sharpe=budget_target)
+    budget["fail_on_budget_exceeded"] = bool(settings.research.fail_on_budget_exceeded)
+
+    # Pass 2: statistical gates with the diagnostics (DSR, PBO, t-stat, percentile, hold-out).
+    rows: List[Dict[str, Any]] = []
+    for e in evaluated:
+        row = e["row"]
+        if e["returns"] is None:
+            rows.append(row)
+            continue
+        oos = row["oos"]
+        diag = dict(row["diagnostics"])
+        dsr = dsr_block(diag, trial_sharpes, n_trials)
+        diag["dsr"] = dsr
+        diag["pbo"] = pbo
+        row["diagnostics"] = diag
+        # Trial budget on the evaluated window's years, not on the warm-up.
+        cand_budget = compute_trial_budget(n_trials, float(oos.get("years") or 0.0), target_sharpe=budget_target)
+        cand_budget["fail_on_budget_exceeded"] = bool(settings.research.fail_on_budget_exceeded)
+        gate = evaluate_strict_gates(
+            stitched_oos_stats=oos,
+            bh_stats=row["buy_hold_oos"],
+            restricted_bar_frac=float(e["frac"]),
+            diagnostics={"dsr": dsr, "pbo": pbo if pbo.get("applicable") else None},
+            budget=cand_budget,
+            holdout=holdout_info,
+        )
+        extra_ok, extra_reasons, extra_checks = portfolio_extra_gates(
+            diag, dsr, pbo, row["random_sharpe_percentile"], holdout_info
+        )
+        checks: Dict[str, Any] = dict(gate.checks)
+        checks.update(extra_checks)
+        checks.update({"gate_mode": "strict", "restricted_bar_frac": float(e["frac"]), "n_trials": n_trials})
+        row.update(
+            {
+                "gate_passed": bool(gate.passed and extra_ok),
+                "gate_reasons": list(gate.reasons) + extra_reasons,
+                "gate_checks": checks,
+                "budget": dict(cand_budget),
             }
         )
         rows.append(row)
@@ -497,6 +753,25 @@ def run_portfolio_research(
         recommendation = f"{RECOMMENDATION_PASS} Configuración: {best_id}."
     else:
         recommendation = RECOMMENDATION_FAIL
+    if best is not None and best.get("budget"):
+        budget = dict(best["budget"])
+
+    if ledger_path is not None:
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            for r in rows:
+                diag_r = r.get("diagnostics") or {}
+                entry = {
+                    "ts": stamp,
+                    "exp_id": run_id,
+                    "trial_key": r.get("trial_key"),
+                    "candidate_id": r.get("candidate_id"),
+                    "profile": profile,
+                    "sr_daily": diag_r.get("sr_daily"),
+                    "n_obs": diag_r.get("n_obs"),
+                }
+                fh.write(json.dumps(_noneify(entry), separators=(",", ":")) + "\n")
 
     summary: Dict[str, Any] = {
         "exp_id": run_id,
@@ -509,14 +784,27 @@ def run_portfolio_research(
         "direction": settings.trading.direction,
         "capital": capital,
         "n_trials": n_trials,
+        "n_trials_run": n_trials_run,
+        "n_trials_prior": len(set(prior_trials) - keys_this_run),
+        "trials_ledger": str(ledger_path) if ledger_path is not None else None,
         "n_candidates": len(rows),
         "n_pass": n_pass,
         "n_fail": len(rows) - n_pass,
         "gate_mode": "strict",
+        "gates": {
+            "min_t_stat": MIN_T_STAT,
+            "min_dsr": 0.95,
+            "pbo_max": 0.5,
+            "min_random_percentile": MIN_RANDOM_PERCENTILE,
+            "holdout_required": True,
+        },
+        "pbo": pbo,
+        "selection_rule": SELECTION_RULE,
         "any_gate_passed": n_pass > 0,
         "verdict": verdict,
         "recommendation": recommendation,
         "best_candidate": best_id,
+        "best_diagnostics": (best or {}).get("diagnostics"),
         "benchmarks": (best or {}).get("benchmarks"),
         "random_sharpe_percentile": (best or {}).get("random_sharpe_percentile"),
         "cost_drag_annual_pct": (best or {}).get("cost_drag_annual_pct"),
@@ -527,7 +815,8 @@ def run_portfolio_research(
         "oos_end": (best or {}).get("oos_end"),
         "n_random_portfolios": n_random,
         # Research discipline (playbook phase 1): trial budget + frozen hold-out.
-        "years_available": years_available,
+        "years_available": float(budget["years_available"]),
+        "years_data": years_data,
         "years_needed": float(budget["years_needed"]),
         "budget_ok": bool(budget["budget_ok"]),
         "trial_budget_target_sharpe": float(budget["target_sharpe"]),
@@ -547,7 +836,9 @@ def run_portfolio_research(
         "candidates": rows,
         "note": (
             "Passing strict gates ≠ deploy. Stats via backtest.metrics.compute_stats on the engine "
-            "equity curve from warmup_end; benchmarks on the same window; max_leverage 1.0 (engine cap)."
+            "equity curve from warmup_end; benchmarks on the same window; max_leverage 1.0 (engine cap). "
+            "PASS also needs t ≥ 3, DSR ≥ 0.95 over every trial ever logged, PBO < 0.5, Sharpe in the top "
+            "5 % of random long-only portfolios and a declared hold-out."
         ),
     }
     records = build_experiment_records(

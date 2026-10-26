@@ -159,22 +159,82 @@ def test_no_lookahead_fixed_scalars(synthetic: Dict[str, pd.DataFrame]) -> None:
     pd.testing.assert_series_equal(full.idm.loc[:t], cut.idm, check_exact=False, atol=1e-9, rtol=1e-7)
 
 
-def test_no_lookahead_prescaling_stages_estimate_mode(synthetic: Dict[str, pd.DataFrame]) -> None:
-    """In ``estimate`` mode the pooled scalar is cross-sectional by design; the stages before it stay PIT."""
+@pytest.mark.parametrize("weighting", ["box_risk_parity", "hrp"])
+def test_no_lookahead_estimate_mode_end_to_end(synthetic: Dict[str, pd.DataFrame], weighting: str) -> None:
+    """``estimate`` mode is point-in-time through every stage: the scalar is never back-filled."""
     px = closes(synthetic)
-    cfg = SystemConfig(boxes=BOXES)
+    cfg = SystemConfig(boxes=BOXES, instrument_weighting=weighting)  # type: ignore[arg-type]
     full = run_system(px, cfg)
     t = px.index[1100]
     cut = run_system(px.loc[:t], cfg)
-    pd.testing.assert_frame_equal(full.vol_price.loc[:t], cut.vol_price, check_exact=False, atol=1e-9, rtol=1e-7)
-    pd.testing.assert_frame_equal(full.pct_vol.loc[:t], cut.pct_vol, check_exact=False, atol=1e-9, rtol=1e-7)
+    assert cut.warmup_end == full.warmup_end
     for rule in cfg.rules:
         pd.testing.assert_frame_equal(
             full.raw_forecasts[rule].loc[:t], cut.raw_forecasts[rule], check_exact=False, atol=1e-9, rtol=1e-7, obj=rule
         )
-    pd.testing.assert_frame_equal(
-        full.instrument_weights.loc[:t], cut.instrument_weights, check_exact=False, atol=1e-9, rtol=1e-7
-    )
+        pd.testing.assert_series_equal(
+            full.forecast_scalars[rule].loc[:t], cut.forecast_scalars[rule], check_exact=False, atol=1e-9, rtol=1e-7
+        )
+        pd.testing.assert_frame_equal(
+            full.scaled_forecasts[rule].loc[:t], cut.scaled_forecasts[rule], check_exact=False, atol=1e-9, rtol=1e-7
+        )
+    for name in ("vol_price", "pct_vol", "fdm", "combined_forecast", "subsystem_positions", "instrument_weights",
+                 "positions", "buffered_positions", "target_weights"):
+        pd.testing.assert_frame_equal(
+            getattr(full, name).loc[:t], getattr(cut, name), check_exact=False, atol=1e-9, rtol=1e-7, obj=name
+        )
+    pd.testing.assert_series_equal(full.idm.loc[:t], cut.idm, check_exact=False, atol=1e-9, rtol=1e-7)
+
+
+def test_warmup_end_waits_for_a_point_in_time_scalar(base_output: SystemOutput) -> None:
+    """No back-fill: before ``scalar_min_periods`` the scalar is NaN and nothing is traded on it."""
+    out = base_output
+    cfg = out.config
+    assert cfg is not None and cfg.forecast_scalar_mode == "estimate"
+    assert out.warmup_end is not None
+    firsts = [pd.Timestamp(s.first_valid_index()) for s in out.forecast_scalars.values()]
+    for rule, scalar in out.forecast_scalars.items():
+        assert bool(scalar.iloc[: cfg.scalar_min_periods - 1].isna().all()), rule
+    # Every rule must have a real (not back-filled) scalar before the evaluated window opens...
+    assert out.warmup_end >= max(firsts)
+    # ...and nothing is sized before the first scalar of any rule exists.
+    before = out.target_weights.loc[: min(firsts)].iloc[:-1]
+    assert float(before.fillna(0.0).abs().max().max()) == 0.0
+    assert bool(out.combined_forecast.loc[: min(firsts)].iloc[:-1].isna().all().all())
+
+
+@pytest.mark.parametrize("weighting", ["box_risk_parity", "hrp"])
+def test_instrument_risk_shares_are_not_inverse_vol(synthetic: Dict[str, pd.DataFrame], weighting: str) -> None:
+    """Subsystems are already vol-normalised: the instrument weight is the risk share, not ``1/σ`` of it.
+
+    Risk of the average position (forecast 10) = ``|avg position| · price · pct_vol``; with the old
+    box inverse-vol weights IEF (6 % vol) carried ~35 % of the risk and VNQ (20 %) ~11 %; HRP on raw
+    returns gave IEF ~58 %. Six boxes → 1/6 each.
+    """
+    from ibtrader.pipeline.portfolio_stage import average_abs_positions
+
+    px = closes(synthetic)
+    out = run_system(px, SystemConfig(boxes=BOXES, instrument_weighting=weighting))  # type: ignore[arg-type]
+    assert out.warmup_end is not None
+    avg_abs = average_abs_positions(out.vol_scalar, out.instrument_weights, out.idm)
+    risk = (avg_abs * out.prices * out.pct_vol).loc[out.warmup_end :].dropna(how="any")
+    assert not risk.empty
+    shares = risk.div(risk.sum(axis=1), axis=0)
+    if weighting == "box_risk_parity":
+        assert np.allclose(shares.to_numpy(), 1.0 / 6.0, atol=1e-9)
+    else:
+        mean_share = shares.mean()
+        assert float(mean_share.max()) < 0.30, mean_share.to_dict()
+        assert float(mean_share.min()) > 0.08, mean_share.to_dict()
+        # Lowest-vol and highest-vol instruments carry comparable risk.
+        assert abs(float(mean_share["IEF"]) - float(mean_share["VNQ"])) < 0.12, mean_share.to_dict()
+
+
+def test_legacy_box_inverse_vol_name_maps_to_box_risk_parity() -> None:
+    cfg = SystemConfig(instrument_weighting="box_inverse_vol")  # type: ignore[arg-type]
+    assert cfg.instrument_weighting == "box_risk_parity"
+    with pytest.raises(ValueError):
+        SystemConfig(instrument_weighting="nope")  # type: ignore[arg-type]
 
 
 def test_target_weights_only_move_when_buffered_position_moves(base_output: SystemOutput) -> None:

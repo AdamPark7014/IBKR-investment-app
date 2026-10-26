@@ -40,6 +40,9 @@ class BacktestResult:
     # RiskManager would block new exposure on that bar. All False without a
     # risk manager; a failed probe marks the bar True (fail-closed).
     restricted: pd.Series = field(default_factory=lambda: pd.Series(dtype=bool))
+    # Every executed order with its all-in cost: (bar date, OrderCost). Lets callers sum costs over a
+    # window (an OOS test segment) instead of the whole backtest including its warm-up.
+    order_costs: List[Tuple[Any, OrderCost]] = field(default_factory=list)
 
 
 def _probe_restricted(risk_manager: RiskManager | None) -> bool:
@@ -137,6 +140,7 @@ def backtest(
             )
     impact_warned: Set[str] = set()
     costs = CostTotals()
+    order_costs: List[Tuple[Any, OrderCost]] = []
 
     def _order_cost(sym_: str, qty_: int, ref_price_: float, dt_: Any) -> OrderCost:
         """Fill price and all-in cost of ``qty_`` shares of ``sym_`` at the open ``ref_price_``."""
@@ -258,6 +262,9 @@ def backtest(
                 raw_weight[sym] = 0.0
         actives = [sym for sym, sign in raw_sign.items() if sign != 0]
         targets: Dict[str, int] = {sym: 0 for sym in data}
+        # Weight mode: the weight each target stands for. ``last_weights`` only moves when the order
+        # actually executes, so a rebalance vetoed by the risk manager is proposed again next bar.
+        bar_weights: Dict[str, float] = {sym: 0.0 for sym in data}
         n_active = len(actives)
         base_alloc = (position_size_pct / 100.0) / max(n_active, 1)
         nav_prev = cash + sum(holdings[s] * close_prev.get(s, 0.0) for s in holdings)
@@ -283,11 +290,11 @@ def backtest(
                 prev_target = last_targets.get(sym, 0)
                 sign_change = (prev_target == 0 and proposed != 0) or (prev_target * proposed < 0)
                 if weight_mode:
-                    # Trade only when the (already buffered) target weight moved; otherwise hold.
+                    # Trade only when the (already buffered) target weight moved since the last
+                    # executed order; otherwise hold the executed share count.
+                    bar_weights[sym] = w
                     if abs(w - last_weights.get(sym, 0.0)) < 1e-12 and prev_target != 0:
                         proposed = prev_target
-                    else:
-                        last_weights[sym] = w
                 elif not sign_change and rebalance_band_pct <= 0.0:
                     proposed = prev_target
                 targets[sym] = proposed
@@ -307,6 +314,7 @@ def backtest(
                 cash -= (-pos) * fill_exit + comm_exit
                 turnover_notional += abs(pos) * fill_exit
                 costs.add(oc_exit)
+                order_costs.append((dt, oc_exit))
                 # Book realized P&L for full close
                 reduce_qty = abs(pos)
                 pnl = (
@@ -332,6 +340,7 @@ def backtest(
                     (str(dt), sym, int(-pos), float(fill_exit), TradeReason.STOP_LOSS.value)
                 )
                 last_targets[sym] = 0
+                last_weights[sym] = 0.0
                 # Enter cooldown if configured
                 if risk_manager.cfg.cooldown_bars > 0:
                     cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
@@ -349,6 +358,7 @@ def backtest(
                             cash -= (-pos) * fill_exit + comm_exit
                             turnover_notional += abs(pos) * fill_exit
                             costs.add(oc_exit)
+                            order_costs.append((dt, oc_exit))
                             # Book realized P&L for full close
                             reduce_qty = abs(pos)
                             pnl = (
@@ -380,6 +390,7 @@ def backtest(
                                 )
                             )
                             last_targets[sym] = 0
+                            last_weights[sym] = 0.0
                             if risk_manager.cfg.cooldown_bars > 0:
                                 cooldown_until[sym] = i + int(risk_manager.cfg.cooldown_bars) + 1
                             # Do not attempt any other action on this symbol today
@@ -515,6 +526,7 @@ def backtest(
                     holdings[sym] = 0
                     turnover_notional += abs(dclose) * dfill
                     costs.add(oc_close)
+                    order_costs.append((dt, oc_close))
                     reduce_qty = abs(pos)
                     pnl = (dfill - avg_price[sym]) * reduce_qty if pos > 0 else (avg_price[sym] - dfill) * reduce_qty
                     pnl -= dcomm
@@ -544,6 +556,7 @@ def backtest(
                         )
                     )
                     last_targets[sym] = 0
+                    last_weights[sym] = 0.0
                     if risk_manager is not None:
                         risk_manager.notify_order_sent()
                     continue
@@ -579,6 +592,7 @@ def backtest(
                             holdings[sym] = 0
                             turnover_notional += abs(delta_close) * dfill
                             costs.add(oc_close)
+                            order_costs.append((dt, oc_close))
                             # Bookkeeping for realized P&L on full close
                             reduce_qty = min(abs(delta_close), abs(pos))
                             if pos > 0 and delta_close < 0:
@@ -609,6 +623,7 @@ def backtest(
                                 )
                             )
                             last_targets[sym] = 0
+                            last_weights[sym] = 0.0
                             if risk_manager is not None:
                                 risk_manager.notify_order_sent()
                             # Skip open leg
@@ -657,6 +672,7 @@ def backtest(
             holdings[sym] = pos + delta
             turnover_notional += abs(delta) * fill_price
             costs.add(oc)
+            order_costs.append((dt, oc))
             if risk_manager is not None:
                 risk_manager.notify_order_sent()
             if force_close:
@@ -703,6 +719,8 @@ def backtest(
             )
             # Update last target after execution
             last_targets[sym] = target
+            if weight_mode:
+                last_weights[sym] = bar_weights.get(sym, 0.0) if target != 0 else 0.0
         # Lockout asserted during the bar (drawdown / cumulative / intraday daily-loss probes)
         if not bar_restricted:
             bar_restricted = _probe_restricted(risk_manager)
@@ -765,5 +783,6 @@ def backtest(
         trades=trades,
         stats=stats,
         restricted=restricted_series,
+        order_costs=order_costs,
     )
 

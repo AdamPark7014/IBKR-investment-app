@@ -114,8 +114,6 @@ def cost_metrics_dict(stats: PerformanceStats) -> Dict[str, Any]:
     return {k: getattr(stats, k) for k in COST_METRIC_FIELDS}
 
 
-
-
 OOS_COST_METRIC_KEYS = ("avg_cost_bps_per_order", "cost_drag_annual_pct")
 
 
@@ -134,6 +132,28 @@ def copy_oos_cost_metrics(into: Dict[str, Any], source: Any) -> Dict[str, Any]:
         if val == val:
             into[key] = val
     return into
+
+def window_cost_totals(order_costs: Any, start: Any, end: Any) -> Dict[str, Any]:
+    """Costs of the orders executed in ``[start, end]`` only (e.g. an OOS test segment).
+
+    ``order_costs`` is ``BacktestResult.order_costs``: ``(bar date, OrderCost)`` pairs. Summing
+    ``res.stats`` instead charges the warm-up bars' orders to the test window.
+    """
+    lo = pd.Timestamp(start)
+    hi = pd.Timestamp(end)
+    tot = CostTotals()
+    for dt, oc in order_costs or []:
+        ts = pd.Timestamp(dt)
+        if lo <= ts <= hi:
+            tot.add(oc)
+    return {
+        "total_costs": float(tot.total),
+        "total_commission": float(tot.commission),
+        "total_reg_fees": float(tot.reg_fees),
+        "notional_traded": float(tot.notional),
+        "n_orders": int(tot.n_orders),
+    }
+
 
 def stats_to_dict(stats: PerformanceStats) -> Dict[str, Any]:
     """Every metric as a plain dict (dataclass fields, JSON-friendly scalars)."""
