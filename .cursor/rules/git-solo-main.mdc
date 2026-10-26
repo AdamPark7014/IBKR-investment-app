@@ -1,17 +1,60 @@
 ---
-description: Git solo main — sin ramas, worktrees, PRs ni force-push
+description: Git solo main — todo agente de Cursor (editor, CLI o nube) trabaja y entrega en main, con verificaciones en verde
 alwaysApply: true
 ---
 
-## Git: SOLO `main` (regla dura, va antes que todo lo demás)
+# Git: SOLO `main` (regla dura de Adam, va antes que todo lo demás)
 
-Adam es el único programador. En este repo existe **una sola rama: `main`**.
+Adam es el único programador. Este repo tiene **una sola rama: `main`**. Vale igual para el editor de Cursor,
+el CLI (`cursor-agent`), los **Cloud / Background Agents**, Bugbot y cualquier otro agente.
 
-- Trabaja directo en `main`: `git pull --rebase origin main` → cambios → tests/typecheck → `git commit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>"` → `git pull --rebase origin main` → `git push origin main`.
-- **Nunca**: crear ramas (`git branch X`, `git checkout -b`, `git switch -c`), worktrees (`git worktree add`), PRs (`gh pr create`) ni `git push --force`.
-- Varios agentes a la vez: mismo checkout, archivos distintos, commits pequeños, `git pull --rebase` antes de cada push.
-- Si aparece otra rama (Cloud Agent, Bugbot, Dependabot, otro agente): si sirve, fusiónala a `main`; en el mismo turno bórrala local y remota. Nunca trabajes sobre ella.
-- Deploy solo desde `main`, con tests en verde.
-- Única excepción: Adam pide una rama por su nombre.
+## Flujo único
 
-Un hook bloquea esos comandos en Cursor y Claude Code. Regla completa: `C:\dev\scripts\ai-os\GIT-SOLO-MAIN.md`.
+1. `git pull --rebase origin main`
+2. Cambios pequeños, un tema por commit.
+3. **Antes de cada push, las verificaciones del repo en verde** (sección «Verificar»). Si algo falla, no subas: arréglalo.
+4. `git commit` con la línea `Agente: cursor` en el mensaje.
+5. `git pull --rebase origin main` y `git push origin main`. Nunca `--force`.
+
+## Prohibido
+
+- Crear ramas (`git branch <x>`, `git checkout -b`, `git switch -c`) o worktrees (`git worktree add`).
+- Empujar a otra rama (`git push origin <rama>`, `HEAD:<rama>` que no sea `main`).
+- Abrir PRs (`gh pr create`, «Create PR», la opción de crear PR automático de los Cloud Agents).
+- `git push --force`, `-f` o `--force-with-lease`.
+- Dejar trabajo «para revisión» en una rama o un PR: lo que no está en `main` no existe.
+
+## Si eres un Cloud / Background Agent y la plataforma te puso en una rama `cursor/…`
+
+- **No abras PR.** Al terminar: `git fetch origin main && git rebase origin/main`, corre las verificaciones,
+  `git push origin HEAD:main` y borra tu rama remota (`git push origin --delete <tu-rama>`).
+- Si no puedes llegar a `main` (sin permiso, conflicto que no sabes resolver, verificaciones en rojo): detente y
+  deja un solo resumen en el chat. No abras PR ni dejes la rama viva.
+- Una tarea por agente y pocas a la vez: decenas de agentes en paralelo sobre el mismo repo se pisan.
+  (El 24 y 25-10-2026 quedaron 204 PRs sin fusionar en NEXARA por no seguir esto.)
+
+## Verificar (antes de cada push)
+
+```
+ruff check . && mypy src && pytest -q
+```
+
+Todo offline: nunca conectes a IBKR, nunca mandes órdenes y nunca cambies el modo LIVE.
+
+Y la CI de GitHub en verde: si un push la deja en rojo, el siguiente commit la arregla antes de cualquier otra cosa.
+
+## Además (lo que salió mal el 24 y 25-10-2026)
+
+- **Diseño:** cambios visuales notables (paleta, marco, navegación, rediseños de pantallas) van primero como
+  mockup y con visto bueno de Adam. No se construyen ni se integran a ciegas.
+- **Un cambio «de texto» no cambia lógica:** no escondas el error real del servidor detrás de un texto genérico,
+  no quites funciones, botones, avisos, exportaciones ni validaciones, y no cambies reglas de negocio de paso.
+- **Pruebas:** no las debilites ni las borres para que pasen; si cambia el comportamiento, la prueba cambia
+  para probar el comportamiento nuevo.
+- **Datos:** nada de datos personales (nombres reales, correos, teléfonos) ni secretos en el repo. Varios repos
+  son públicos.
+- **Archivos completos:** nunca reescribas entero un archivo que no leíste en esta sesión, y revisa que no quede
+  truncado antes de commitear.
+
+Única excepción a todo lo de Git: Adam pide una rama **por su nombre**. Regla completa:
+`C:\dev\scripts\ai-os\GIT-SOLO-MAIN.md` (en el repo: esta misma regla y la sección «Git» de `AGENTS.md`).
