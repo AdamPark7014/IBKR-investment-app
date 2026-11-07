@@ -107,6 +107,11 @@ class IBKRBroker(Broker):
             if ticker.last or ticker.bid or ticker.ask:
                 break
             self.ib.sleep(0.2)
+        # Release the streaming subscription: leaving it open leaks market-data lines.
+        try:
+            self.ib.cancelMktData(contract)
+        except Exception:  # noqa: BLE001
+            pass
         return Quote(
             symbol=symbol,
             bid=float(ticker.bid or 0) or None,
