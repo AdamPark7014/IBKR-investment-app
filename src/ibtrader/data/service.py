@@ -26,7 +26,6 @@ from .providers import (
     FixtureProvider,
     IBKRProvider,
     MarketDataProvider,
-    StooqProvider,
     TiingoProvider,
     YahooProvider,
 )
@@ -37,7 +36,7 @@ from .vintage import write_vintage
 log = logging.getLogger("ibtrader.data.service")
 
 # Sources whose cached frames may be served without re-fetching. "fixture" is CI-only and always re-read.
-CACHEABLE_SOURCES = frozenset({"yahoo", "stooq", "ibkr", "tiingo"})
+CACHEABLE_SOURCES = frozenset({"yahoo", "ibkr", "tiingo"})
 # Sources that never enter the vintage store: the fixture is synthetic test data and a `pytest` run must not
 # overwrite (or masquerade as) the real snapshot of the same day. Logged, not silent.
 NON_VINTAGE_SOURCES = frozenset({"fixture"})
@@ -64,8 +63,6 @@ def build_provider_chain(settings: AppSettings) -> List[Tuple[str, MarketDataPro
             chain.append((name, TiingoProvider(settings.data.tiingo_token)))
         elif name == "yahoo":
             chain.append((name, YahooProvider()))
-        elif name == "stooq":
-            chain.append((name, StooqProvider()))
         elif name == "ibkr":
             chain.append(
                 (

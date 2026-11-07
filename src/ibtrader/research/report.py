@@ -204,7 +204,6 @@ def build_honest_report(
         "cpcv": _slim_cpcv(suite.get("cpcv")),
         "dsr": _slim_dsr(suite.get("dsr")),
         "turnover": suite.get("turnover"),
-        "market_analyzer": _slim_analyzer(suite.get("market_analyzer")),
     }
 
     reject_reasons: List[str] = []
@@ -307,12 +306,3 @@ def _slim_dsr(rep: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
     }
 
 
-def _slim_analyzer(rep: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
-    if not rep:
-        return None
-    return {
-        "regime": rep.get("regime"),
-        "action_counts": rep.get("action_counts"),
-        "top_research": rep.get("top_research"),
-        "avoid": rep.get("avoid"),
-    }

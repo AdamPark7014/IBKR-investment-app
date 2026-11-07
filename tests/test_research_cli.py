@@ -71,22 +71,3 @@ def test_research_run_cli_smoke_profile(monkeypatch, tmp_path):
         on_disk = json.load(fh)
     assert on_disk["n_candidates"] == 1
 
-
-def test_market_analyze_cli(monkeypatch, tmp_path):
-    def fake_loader(settings):
-        return {sym: _mk(400) for sym in settings.universe.symbols}
-
-    monkeypatch.setattr(cli_mod, "load_universe_v2", fake_loader)
-    monkeypatch.setenv("DATA__REPORTS_DIR", str(tmp_path / "reports"))
-
-    runner = CliRunner()
-    res = runner.invoke(cli_mod.app, ["market-analyze"])
-    assert res.exit_code == 0, res.stdout + (res.stderr or "") + str(res.exception)
-    m = re.search(r"\{(.|\n)*\}$", res.stdout)
-    assert m, res.stdout
-    payload = json.loads(m.group(0))
-    assert payload.get("phase") == "V3-market-analyzer"
-    assert "report" in payload
-    assert payload["report"]["n_symbols"] >= 1
-    text = (payload["report"].get("disclaimer") or payload.get("note") or "")
-    assert "NOT a buy list" in text or "NOT" in text

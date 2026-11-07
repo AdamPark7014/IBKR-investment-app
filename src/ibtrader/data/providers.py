@@ -5,8 +5,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from io import StringIO
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 import pandas as pd
 import requests
@@ -202,64 +201,6 @@ class IBKRProvider(MarketDataProvider):
             except Exception as e:  # cleanup only: never hides the real error, but it is not silent either
                 log.warning("ibkr_disconnect_failed reason=%s", e)
 
-
-class StooqProvider(MarketDataProvider):
-    def fetch_daily_ohlcv(
-        self, symbol: str, start: Optional[str] = None, end: Optional[str] = None
-    ) -> DataFrameWithMeta:
-        tkr = symbol.lstrip("^").lower() + ".us"
-        urls = [
-            f"https://stooq.com/q/d/l/?s={tkr}&i=d",
-            f"https://stooq.pl/q/d/l/?s={tkr}&i=d",
-        ]
-        headers = {
-            "User-Agent": "curl/8.4.0",
-            "Accept": "text/csv, */*;q=0.1",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Connection": "keep-alive",
-        }
-        csv_text: Optional[str] = None
-        reasons: List[str] = []
-        for url in urls:
-            try:
-                resp = requests.get(url, timeout=20, headers=headers, allow_redirects=True)
-            except requests.RequestException as e:
-                reasons.append(f"{url}: {type(e).__name__}: {e}")
-                continue
-            if resp.status_code != 200:
-                reasons.append(f"{url}: HTTP {resp.status_code}")
-                continue
-            if not resp.text or "Date,Open,High,Low,Close,Volume" not in resp.text:
-                reasons.append(f"{url}: respuesta sin cabecera CSV ({(resp.text or '')[:60]!r})")
-                continue
-            csv_text = resp.text
-            break
-        if not csv_text:
-            raise RuntimeError("Stooq CSV no disponible: " + "; ".join(reasons))
-        df = pd.read_csv(StringIO(csv_text))
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.set_index("Date").sort_index()
-        out = df.rename(
-            columns={
-                "Open": "open",
-                "High": "high",
-                "Low": "low",
-                "Close": "close",
-                "Volume": "volume",
-            }
-        )
-        out.index.name = "date"
-        ok, msg = validate_timeseries_strict(out)
-        if not ok:
-            raise RuntimeError(f"Data inválida de Stooq: {msg}")
-        lin = DataLineage(
-            source="stooq",
-            source_url="https://stooq.com",
-            methodology="daily CSV endpoint",
-            parameters={"interval": "1d"},
-            license="Stooq TOS (research use)",
-        )
-        return DataFrameWithMeta(out, lin)
 
 
 @dataclass(frozen=True)

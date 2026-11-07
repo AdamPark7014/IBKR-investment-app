@@ -149,7 +149,7 @@ class DataConfig(BaseModel):
     cache_dir: str = "./data/cache"
     reports_dir: str = "./reports"
     journal_db: str = "./data/journal.sqlite"
-    providers: List[str] = Field(default_factory=lambda: ["yahoo", "stooq"])
+    providers: List[str] = Field(default_factory=lambda: ["tiingo", "yahoo"])
     max_cache_age_days: int = 7
     # Point-in-time layer (playbook phase 1): vintages + SHA-256 manifest, lifecycle universe, loud validators.
     tiingo_token: str = Field(

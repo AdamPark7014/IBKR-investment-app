@@ -314,25 +314,26 @@ def test_service_raises_when_no_symbol_loads(tmp_path: Any, monkeypatch: Any) ->
 
 def test_service_provider_chain_aggregates_reasons(tmp_path: Any, monkeypatch: Any) -> None:
     first = _Prov({"SPY": RuntimeError("timeout")}, source="yahoo")
-    second = _Prov({"SPY": _df(10, end=str(datetime.now(timezone.utc).date()))}, source="stooq")  # too short
+    second = _Prov({"SPY": _df(10, end=str(datetime.now(timezone.utc).date()))}, source="tiingo")  # too short
     third = _Prov({"SPY": _good()}, source="ibkr")
     monkeypatch.setattr(svc_mod, "YahooProvider", lambda: first)
-    monkeypatch.setattr(svc_mod, "StooqProvider", lambda: second)
+    monkeypatch.setattr(svc_mod, "TiingoProvider", lambda _tok: second)
     monkeypatch.setattr(svc_mod, "IBKRProvider", lambda **kw: third)
     s = _settings(tmp_path, monkeypatch, ["SPY"])
-    s.data.providers = ["yahoo", "stooq", "ibkr"]
+    s.data.providers = ["yahoo", "tiingo", "ibkr"]
+    s.data.tiingo_token = "t"
     out = svc_mod.load_universe_v2(s)
     assert len(out["SPY"]) == 260
     meta = load_lineage(s.data.cache_dir, "SPY", "1d")
     assert meta is not None and meta.source == "ibkr"
     # same chain without the working provider => exception carries both reasons
-    s.data.providers = ["yahoo", "stooq"]
+    s.data.providers = ["yahoo", "tiingo"]
     s.engine.use_cache = False
     with pytest.raises(RuntimeError) as ei:
         svc_mod.load_universe_v2(s)
     msg = str(ei.value)
     assert "yahoo: RuntimeError: timeout" in msg
-    assert "stooq:" in msg and "insuficiente" in msg
+    assert "tiingo:" in msg and "insuficiente" in msg
 
 
 def test_service_rejects_unusable_provider_list(tmp_path: Any, monkeypatch: Any) -> None:

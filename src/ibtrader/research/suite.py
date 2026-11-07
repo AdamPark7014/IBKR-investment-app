@@ -17,7 +17,6 @@ from .dsr_sma import run_sma_grid_dsr
 from .embargo_sensitivity import run_embargo_sensitivity
 from .gates import compute_trial_budget, evaluate_strict_gates
 from .loss_mitigation import run_loss_mitigation_research, summarize_loss_mitigation
-from .market_analyzer import analyze_market
 from .mean_reversion_runner import DEFAULT_MR_CANDIDATES, run_mean_reversion_research
 from .multi_asset import run_multi_asset_sma_research, summarize_cross_section
 from .pbo_sma import run_sma_grid_pbo
@@ -261,7 +260,6 @@ def run_research_suite(
     include_turnover: bool = True,
     include_loss_mitigation: bool = True,
     include_xsection: bool = True,
-    include_market_analyzer: bool = True,
     exp_id: Optional[str] = None,
     reports_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -295,7 +293,6 @@ def run_research_suite(
         include_turnover = False
         include_loss_mitigation = False
         include_xsection = False
-        include_market_analyzer = False
 
     direction = direction or settings.trading.direction
     # Hold-out first: no track may see bars on/after holdout_start unless confirming.
@@ -417,16 +414,6 @@ def run_research_suite(
             n_folds=max(6, n_folds * 2),
         )
 
-    analyzer: Dict[str, Any] | None = None
-    if include_market_analyzer:
-        analyzer = analyze_market(
-            data,
-            symbols=list(data.keys()),
-            benchmark=settings.universe.benchmark
-            if settings.universe.benchmark in data
-            else symbol,
-        )
-
     all_rows = (
         list(sma)
         + list(regime)
@@ -513,7 +500,6 @@ def run_research_suite(
         "cpcv": cpcv_report,
         "dsr": dsr_report,
         "turnover": turnover_report,
-        "market_analyzer": analyzer,
         "candidates": all_rows,
         "n_candidates": len(all_rows),
         "gate_mode": "strict",

@@ -12,7 +12,7 @@ Módulos principales (carpeta `src/ibtrader`):
 - `config`: configuración tipada (Pydantic), rutas y validaciones de modo PAPER/LIVE.
 - `logging`: logging estructurado en JSON para observabilidad.
 - `data`:
-  - `downloader`: conectores de mercado (fase 1: yfinance para backtest; IBKR para ejecución/monitoring).
+  - `service` + `providers`: cadena de fuentes (Tiingo primaria si hay token, Yahoo de contraste; IBKR y fixtures opcionales).
   - `cache`: caché local Parquet.
   - `universe`: listas de símbolos.
   - `lineage` (planeado en fase 1): envoltura de DataFrame con metadatos de fuente, timestamp, licencia y metodología.
