@@ -197,6 +197,55 @@ class TradingConfig(BaseModel):
     risk_cost_bps: float = 0.0
 
 
+class PretradeConfig(BaseModel):
+    """Pre-trade checks between target weights and the broker (audit 2026-11-07, §3.4).
+
+    Defaults are conservative because capital, max drawdown and horizon are not set yet:
+    no leverage, no shorts, ≤ 40 % per ETF, orders between USD 1k and 10k.
+    """
+
+    capital_usd: Optional[float] = Field(
+        default=None, description="Declared capital; None = unknown (caps stay at the conservative defaults)"
+    )
+    max_order_notional_usd: float = Field(default=10_000.0, gt=0, description="Hard cap per order (USD)")
+    min_order_notional_usd: float = Field(
+        default=1_000.0, ge=0, description="Skip increases/reductions smaller than this (IBKR USD 1 min = 10 bp)"
+    )
+    max_orders_per_run: int = Field(default=12, ge=1)
+    max_weight_per_symbol: float = Field(default=0.40, gt=0, le=1.0)
+    max_gross_exposure: float = Field(default=1.0, gt=0, le=1.5, description="Sum |w|; 1.0 = no leverage")
+    max_limit_deviation_pct: float = Field(
+        default=3.0, gt=0, description="Fat finger: reject limits further than this % from the reference close"
+    )
+    max_reference_age_days: int = Field(
+        default=4, ge=0, description="Calendar days a reference price may be old (covers weekends + 1 holiday)"
+    )
+
+
+class ExecutionConfig(BaseModel):
+    """How approved orders reach IBKR (audit 2026-11-07, §3.5)."""
+
+    mode: Literal["shadow", "paper_orders", "live_orders"] = Field(
+        default="shadow", description="shadow = log orders, send nothing"
+    )
+    limit_offset_bps: float = Field(default=0.0, ge=0, description="Limit = mid ± offset (0 = at mid)")
+    order_timeout_sec: float = Field(default=300.0, gt=0, description="Unfilled limit after this → escalate/cancel")
+    escalate_to_adaptive: bool = True
+    max_msgs_per_sec: float = Field(default=40.0, gt=0, le=50, description="IBKR API hard limit is 50/s")
+    order_ref_prefix: str = "ibt"
+
+
+class OpsConfig(BaseModel):
+    """Heartbeat and alert delivery (audit 2026-11-07, §3.6)."""
+
+    alerts_file: str = "./data/alerts.jsonl"
+    heartbeat_file: str = "./data/heartbeat.json"
+    telegram_bot_token: str = Field(default="", description="OPS__TELEGRAM_BOT_TOKEN; empty disables Telegram")
+    telegram_chat_id: str = ""
+    ai_triage: bool = Field(default=False, description="Ask Claude (via the puerta) to triage critical alerts")
+    ai_monthly_budget_usd: float = Field(default=10.0, ge=0)
+
+
 class StrategyConfig(BaseModel):
     name: str = "sma_crossover"
     params: dict = Field(default_factory=lambda: {"fast_window": 10, "slow_window": 30})
@@ -215,6 +264,10 @@ class ResearchConfig(BaseModel):
         default=1.0, description="SR used in the trial budget: years_needed >= 2*ln(N)/SR^2 (Bailey et al. 2014)"
     )
     fail_on_budget_exceeded: bool = True
+    cumulative_trials: bool = Field(
+        default=True,
+        description="N for DSR/budget = trials of this run + trials already logged on the same history",
+    )
 
 
 class AppSettings(BaseSettings):
@@ -239,6 +292,9 @@ class AppSettings(BaseSettings):
     engine: EngineConfig = Field(default_factory=lambda: EngineConfig())
     strategy: StrategyConfig = Field(default_factory=lambda: StrategyConfig())
     trading: TradingConfig = Field(default_factory=lambda: TradingConfig())
+    pretrade: PretradeConfig = Field(default_factory=lambda: PretradeConfig())
+    execution: ExecutionConfig = Field(default_factory=lambda: ExecutionConfig())
+    ops: OpsConfig = Field(default_factory=lambda: OpsConfig())
 
     @field_validator("live_trading_confirmed")
     @classmethod

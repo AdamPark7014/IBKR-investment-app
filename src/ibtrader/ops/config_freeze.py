@@ -74,6 +74,9 @@ def snapshot_settings(settings: Any) -> dict[str, Any]:
         "live_trading_confirmed": str(getattr(settings, "live_trading_confirmed", "no")),
         "trading": _dump(getattr(settings, "trading", {})),
         "strategy": _dump(getattr(settings, "strategy", {})),
+        # Pre-trade caps and execution mode decide what reaches the broker: part of the system.
+        "pretrade": _dump(getattr(settings, "pretrade", {})),
+        "execution": _dump(getattr(settings, "execution", {})),
     }
 
 
