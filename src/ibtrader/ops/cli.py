@@ -1686,5 +1686,100 @@ def paper_status_cmd(
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
 
+@app.command("run-daily")
+def run_daily_cmd(
+    phase: str = typer.Option(
+        "plan", "--phase",
+        help="plan: tras el cierre (datos, objetivos, pre-trade, libro sombra o pending_orders). "
+             "execute: tras la apertura, envía las órdenes pendientes (solo paper_orders/live_orders).",
+    ),
+) -> None:
+    """Corrida diaria única. Modo sombra por defecto: cero órdenes al broker (EXECUTION__MODE)."""
+    import json as _json
+
+    from .run_daily import exit_code_for, run_execute, run_plan, secondary_loader_for
+
+    s = AppSettings()
+    s.resolve_paths()
+    brokers: list[Any] = []
+
+    def gateway_factory(settings: AppSettings) -> Any:
+        from ..broker.ib_gateway import IBGateway
+        from ..broker.ibkr import IBKRBroker
+
+        b = IBKRBroker(settings)
+        b.connect()
+        brokers.append(b)
+        return IBGateway(b.ib)
+
+    try:
+        if phase == "plan":
+            rep = run_plan(s, loader=load_universe_v2, secondary_loader=secondary_loader_for(s),
+                           gateway_factory=gateway_factory)
+        elif phase == "execute":
+            rep = run_execute(s, gateway_factory=gateway_factory)
+        else:
+            raise typer.BadParameter("phase must be plan|execute", param_hint="--phase")
+    finally:
+        for b in brokers:
+            b.disconnect()
+    keep = ("phase", "run_date", "mode", "status", "blocks", "orders_sent", "nav_before", "nav_after", "report_path")
+    typer.echo(_json.dumps(_noneify({k: rep.get(k) for k in keep if k in rep}), ensure_ascii=False,
+                           separators=(",", ":"), default=str))
+    raise typer.Exit(code=exit_code_for(str(rep.get("status"))))
+
+
+@app.command("heartbeat-check")
+def heartbeat_check(
+    max_age_hours: float = typer.Option(30.0, "--max-age-hours", help="Edad máxima del último heartbeat."),
+) -> None:
+    """Dead man's switch: alerta crítica (y código 2) si la corrida diaria no reportó a tiempo."""
+    import json as _json
+
+    from .notify import check_heartbeat
+
+    s = AppSettings()
+    s.resolve_paths()
+    out = check_heartbeat(s.ops, max_age_hours=max_age_hours)
+    typer.echo(_json.dumps(_noneify({k: out[k] for k in ("ok", "last", "reason")}), ensure_ascii=False))
+    raise typer.Exit(code=0 if out["ok"] else 2)
+
+
+@app.command("ai-review")
+def ai_review(
+    base: str = typer.Option("HEAD", "--base", help="Revisa `git diff <base>` (por defecto, cambios sin commit)."),
+    max_chars: int = typer.Option(200_000, "--max-chars", help="Tope del diff enviado (se corta y se avisa)."),
+) -> None:
+    """Revisión del diff por Claude (vía puerta): look-ahead, fugas, bypass de riesgo, órdenes, secretos.
+
+    Solo sugiere: no cambia nada. Código 2 si el veredicto es block, 1 si needs_changes.
+    """
+    import json as _json
+    import subprocess
+
+    from ..intelligence.brief import puerta_config_error
+    from ..intelligence.triage import review_diff
+
+    problem = puerta_config_error()
+    if problem is not None:
+        typer.echo(f"ai-review: {problem}", err=True)
+        raise typer.Exit(code=2)
+    diff = subprocess.run(["git", "diff", base, "--", "src", "tests", "config"], capture_output=True,
+                          text=True, check=True).stdout
+    if not diff.strip():
+        typer.echo('{"verdict":"ok","findings":[],"note":"diff vacío"}')
+        return
+    truncated = len(diff) > max_chars
+    s = AppSettings()
+    s.resolve_paths()
+    rev = review_diff(diff[:max_chars], data_dir=s.data.data_dir, budget_usd=s.ops.ai_monthly_budget_usd)
+    if rev is None:
+        typer.echo("ai-review: sin respuesta válida (ver data/ai_usage.jsonl)", err=True)
+        raise typer.Exit(code=2)
+    out = {**rev.model_dump(), "diff_truncated": truncated}
+    typer.echo(_json.dumps(out, ensure_ascii=False, indent=2))
+    raise typer.Exit(code={"ok": 0, "needs_changes": 1}.get(rev.verdict, 2))
+
+
 if __name__ == "__main__":
     app()

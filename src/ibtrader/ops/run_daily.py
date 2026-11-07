@@ -361,4 +361,51 @@ def run_execute(
     return report
 
 
-__all__ = ["Paths", "book_nav", "drawdown_now", "raw_last_prices", "run_execute", "run_plan"]
+# --------------------------------------------------------------------------- CLI helpers
+#: run status → process exit code for the scheduler: 0 normal, 1 blocked safely, 2 needs a human.
+_EXIT_OK = {"ok", "shadow_nothing_to_execute", "no_pending_orders"}
+_EXIT_SAFE_BLOCK = {"blocked_new_risk", "pending_stale", "not_permitted"}
+
+
+def exit_code_for(status: str) -> int:
+    if status in _EXIT_OK:
+        return 0
+    return 1 if status in _EXIT_SAFE_BLOCK else 2
+
+
+def primary_provider(settings: AppSettings) -> Optional[str]:
+    """First provider that ``load_universe_v2`` will really try (Tiingo without token is skipped)."""
+    for raw in settings.data.providers:
+        name = raw.strip().lower()
+        if name == "tiingo" and not settings.data.tiingo_token.strip():
+            continue
+        return name
+    return None
+
+
+def secondary_loader_for(settings: AppSettings) -> Optional[Loader]:
+    """An independent second source for the cross-check: Yahoo when the primary is not Yahoo.
+
+    Reads providers directly (no cache, no vintage write), so it can never overwrite the primary's data.
+    """
+    primary = primary_provider(settings)
+    if primary in (None, "yahoo", "fixture"):
+        return None
+
+    def load(s: AppSettings) -> Mapping[str, pd.DataFrame]:
+        from ..data.providers import YahooProvider
+
+        prov = YahooProvider()
+        out: Dict[str, pd.DataFrame] = {}
+        for sym in s.universe.symbols:
+            try:
+                out[sym] = prov.fetch_daily_ohlcv(sym).data
+            except Exception:  # noqa: BLE001 - a missing secondary is reported by cross_check
+                continue
+        return out
+
+    return load
+
+
+__all__ = ["Paths", "book_nav", "drawdown_now", "exit_code_for", "primary_provider", "raw_last_prices",
+           "run_execute", "run_plan", "secondary_loader_for"]

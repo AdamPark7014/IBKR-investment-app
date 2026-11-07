@@ -183,3 +183,27 @@ def test_execute_not_permitted_without_allow_flag(tmp_path: Path) -> None:
     s.trading.allow_broker_orders = False
     ex = run_execute(s, gateway_factory=lambda _s: Broker({}, 50_000.0), now=EXEC_AT)
     assert ex["status"] == "not_permitted"
+
+
+def test_exit_codes_and_secondary_loader() -> None:
+    from ibtrader.ops.run_daily import exit_code_for, primary_provider, secondary_loader_for
+
+    assert exit_code_for("ok") == 0 and exit_code_for("blocked_new_risk") == 1
+    assert exit_code_for("reconcile_break_before") == 2 and exit_code_for("data_error") == 2
+    s = AppSettings(_env_file=None)
+    s.data.providers = ["tiingo", "yahoo"]
+    s.data.tiingo_token = ""
+    assert primary_provider(s) == "yahoo" and secondary_loader_for(s) is None
+    s.data.tiingo_token = "x"
+    assert primary_provider(s) == "tiingo" and secondary_loader_for(s) is not None
+
+
+def test_cli_heartbeat_check_exit_code(tmp_path: Path, monkeypatch) -> None:
+    from typer.testing import CliRunner
+
+    from ibtrader.ops.cli import app
+
+    monkeypatch.setenv("OPS__HEARTBEAT_FILE", str(tmp_path / "hb.json"))
+    monkeypatch.setenv("OPS__ALERTS_FILE", str(tmp_path / "alerts.jsonl"))
+    r = CliRunner().invoke(app, ["heartbeat-check"])
+    assert r.exit_code == 2 and "heartbeat_missing" in r.output
