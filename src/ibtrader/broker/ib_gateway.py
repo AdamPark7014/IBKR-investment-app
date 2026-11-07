@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..execution.order_manager import BrokerOrderStatus, OrderGateway
 
@@ -136,6 +136,22 @@ class IBGateway(OrderGateway):
         if trade is not None:
             self.ib.cancelOrder(trade.order)
             self.ib.sleep(0.5)
+
+    def account_snapshot(self) -> Tuple[Dict[str, int], Optional[float], str]:
+        accounts = list(self.ib.managedAccounts() or [])
+        acct = accounts[0] if accounts else ""
+        shares: Dict[str, int] = {}
+        for p in self.ib.positions():
+            if getattr(p.contract, "secType", "STK") != "STK":
+                continue
+            sym = str(p.contract.symbol).upper()
+            shares[sym] = shares.get(sym, 0) + int(round(float(p.position)))
+        cash: Optional[float] = None
+        for v in self.ib.accountValues():
+            if v.tag == "TotalCashValue" and v.currency == "USD":
+                cash = float(v.value)
+                break
+        return {k: q for k, q in shares.items() if q != 0}, cash, acct
 
     def sleep(self, seconds: float) -> None:
         self.ib.sleep(seconds)

@@ -110,6 +110,10 @@ class OrderGateway(abc.ABC):
     def cancel(self, broker_id: str) -> None:
         ...
 
+    def account_snapshot(self) -> Tuple[Dict[str, int], Optional[float], str]:
+        """(shares by symbol, cash in USD or None, account id) for reconciliation."""
+        raise NotImplementedError
+
     def sleep(self, seconds: float) -> None:  # pragma: no cover - overridden by IB gateway
         time.sleep(seconds)
 

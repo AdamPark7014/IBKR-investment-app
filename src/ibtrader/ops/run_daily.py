@@ -1,0 +1,364 @@
+"""The daily production run in two phases (audit 2026-11-07, §5).
+
+``plan`` (after the close, ~16:30 ET):
+  data → freshness / cross-source → freeze check → target weights → drawdown de-risking →
+  orders toward targets → pre-trade gate → (shadow) simulated fills into the paper book, or
+  (orders modes) ``data/pending_orders.json`` for the next open → equity point → heartbeat.
+
+``execute`` (next session, ~09:35 ET, orders modes only):
+  pending orders from the last session only → execution permission → broker account check →
+  book vs broker reconciliation BEFORE trading → pre-trade globals again (kill switch may have
+  appeared overnight) → ``OrderManager`` → reconciliation AFTER trading → book := broker.
+
+Fail-closed everywhere: any exception or failed check ends in "no new risk" plus an alert; a
+broken reconciliation also writes the kill switch. Claude (``OPS__AI_TRIAGE``) may annotate a
+critical alert, never change what happens.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Mapping, Optional
+
+import pandas as pd
+
+from ..config import AppSettings
+from ..data.crosscheck import check_freshness, cross_check, last_completed_session
+from ..engine.targets import compute_target_weights
+from ..execution.order_manager import ManagedOrder, OrderGateway, OrderManager, execution_permission
+from ..execution.rebalance import ProposedOrder, build_rebalance_orders
+from ..risk.pretrade import PretradeContext, check_orders
+from .config_freeze import verify_freeze
+from .killswitch import activate_killswitch
+from .notify import emit_alert, write_heartbeat
+from .paper_curve import append_daily_equity_point, load_equity_points
+from .reconcile import Fill, apply_fills, load_book, reconcile, save_book
+
+Loader = Callable[[AppSettings], Mapping[str, pd.DataFrame]]
+GatewayFactory = Callable[[AppSettings], OrderGateway]
+
+
+@dataclass
+class Paths:
+    book: Path
+    equity: Path
+    pending: Path
+    orders: Path
+    slippage: Path
+    freeze: Path
+    reports: Path
+
+    @classmethod
+    def from_settings(cls, s: AppSettings) -> "Paths":
+        d = Path(s.data.data_dir)
+        return cls(
+            book=d / "paper_account.json",
+            equity=d / "paper_equity.jsonl",
+            pending=d / "pending_orders.json",
+            orders=d / "orders.jsonl",
+            slippage=d / "slippage_ledger.jsonl",
+            freeze=d / "paper_config_freeze.json",
+            reports=Path(s.data.reports_dir) / "daily",
+        )
+
+
+# --------------------------------------------------------------------------- helpers
+def raw_last_prices(data: Mapping[str, pd.DataFrame]) -> Dict[str, float]:
+    """Last *unadjusted* close (orders and NAV use real prices, not total-return-adjusted ones)."""
+    out: Dict[str, float] = {}
+    for sym, df in data.items():
+        if df is None or len(df) == 0:
+            continue
+        col = "close_raw" if "close_raw" in df.columns else "close"
+        v = float(df[col].iloc[-1])
+        if v > 0 and math.isfinite(v):
+            out[sym] = v
+    return out
+
+
+def book_nav(book: Mapping[str, Any], prices: Mapping[str, float]) -> float:
+    shares = dict(book.get("shares") or {})
+    missing = [s for s, q in shares.items() if int(q) != 0 and s not in prices]
+    if missing:
+        return float("nan")
+    return float(book.get("cash") or 0.0) + sum(int(q) * float(prices[s]) for s, q in shares.items())
+
+
+def drawdown_now(equity_path: Path) -> Optional[float]:
+    pts = [float(p["equity"]) for p in load_equity_points(equity_path) if p.get("equity") is not None]
+    if len(pts) < 2:
+        return None
+    peak = max(pts)
+    return pts[-1] / peak - 1.0 if peak > 0 else None
+
+
+def estimate_cost(settings: AppSettings, symbol: str, qty: int, price: float) -> float:
+    """IBKR Fixed commission (min/max) for the shadow book; the spread is applied to the price."""
+    c = settings.commission
+    value = qty * price
+    fee = max(c.min_per_order, c.per_share * qty)
+    return float(min(fee, c.max_percent_of_value / 100.0 * value))
+
+
+def shadow_fill_price(settings: AppSettings, symbol: str, side: str, price: float) -> float:
+    spread = float(settings.slippage.spread_bps_by_symbol.get(symbol, settings.slippage.spread_bps_default))
+    half = spread / 2.0 / 1e4
+    return price * (1.0 + half) if side == "BUY" else price * (1.0 - half)
+
+
+def _alert(settings: AppSettings, report: Dict[str, Any], code: str, sev: str, msg: str,
+           ctx: Optional[Mapping[str, Any]] = None) -> None:
+    context = dict(ctx or {})
+    if sev == "critical" and settings.ops.ai_triage:
+        from ..intelligence.triage import triage_incident
+
+        t = triage_incident(
+            {"code": code, "message": msg, "phase": report.get("phase"), "mode": report.get("mode"),
+             "blocks": report.get("blocks"), "context": context},
+            data_dir=settings.data.data_dir, budget_usd=settings.ops.ai_monthly_budget_usd,
+        )
+        if t is not None:
+            context["ai_triage"] = t.model_dump()
+    report.setdefault("alerts", []).append(emit_alert(settings.ops, code, sev, msg, context))
+
+
+def _save_report(paths: Paths, report: Dict[str, Any]) -> None:
+    paths.reports.mkdir(parents=True, exist_ok=True)
+    name = f"{report.get('run_date') or 'unknown'}-{report['phase']}.json"
+    (paths.reports / name).write_text(json.dumps(report, indent=2, ensure_ascii=False, default=str),
+                                      encoding="utf-8")
+    report["report_path"] = str(paths.reports / name)
+
+
+def _proposed_from_dict(d: Mapping[str, Any]) -> ProposedOrder:
+    keys = ("symbol", "side", "quantity", "ref_price", "target_weight", "current_qty", "target_qty",
+            "limit_price", "is_exit", "notes")
+    return ProposedOrder(**{k: d[k] for k in keys if k in d})
+
+
+# --------------------------------------------------------------------------- plan
+def run_plan(
+    settings: AppSettings,
+    *,
+    loader: Loader,
+    secondary_loader: Optional[Loader] = None,
+    gateway_factory: Optional[GatewayFactory] = None,
+    now: Optional[datetime] = None,
+    spec: Any = None,
+) -> Dict[str, Any]:
+    now = now or datetime.now(timezone.utc)
+    paths = Paths.from_settings(settings)
+    session = last_completed_session(now)
+    mode = settings.execution.mode
+    report: Dict[str, Any] = {"phase": "plan", "run_date": session.isoformat(), "mode": mode,
+                              "started_at": now.isoformat(), "orders_sent": 0, "blocks": [], "status": "ok"}
+    try:
+        data = dict(loader(settings))
+    except Exception as exc:  # noqa: BLE001
+        report["status"] = "data_error"
+        _alert(settings, report, "data_load", "critical", f"{type(exc).__name__}: {exc}")
+        _save_report(paths, report)
+        return report
+
+    fresh = check_freshness(data, now)
+    report["freshness"] = fresh.to_dict()
+    data_ok = fresh.ok
+    if secondary_loader is not None:
+        try:
+            cross = cross_check(data, dict(secondary_loader(settings)))
+            report["cross_check"] = cross.to_dict()
+            data_ok = data_ok and cross.ok
+        except Exception as exc:  # noqa: BLE001 - a missing second source warns, does not block
+            report["cross_check"] = {"ok": None, "error": f"{type(exc).__name__}: {exc}"}
+    if not data_ok:
+        report["blocks"].append("data")
+        _alert(settings, report, "data_quality", "warn", "; ".join(fresh.reasons + report.get("cross_check", {})
+                                                                  .get("reasons", [])))
+
+    freeze = verify_freeze(paths.freeze, settings)
+    report["freeze"] = {k: freeze.get(k) for k in ("ok", "reason", "changed_sections")}
+    # Orders must come from the frozen system. Shadow only warns, so the paper curve can start
+    # before the first freeze (the freeze is then written once the research verdict exists).
+    freeze_ok = bool(freeze.get("ok")) or mode == "shadow"
+    if not freeze.get("ok"):
+        if mode == "shadow":
+            report["warnings"] = [f"freeze:{freeze.get('reason')} (shadow: not blocking)"]
+        else:
+            report["blocks"].append(f"freeze:{freeze.get('reason')}")
+
+    weights, meta = compute_target_weights(settings, data, spec)
+    report["targets"] = {"weights": weights, "meta": meta}
+
+    dd = drawdown_now(paths.equity)
+    limit = settings.risk.drawdown_limit_pct / 100.0
+    risk_can_increase = True
+    report["drawdown"] = dd
+    if dd is not None and dd <= -1.5 * limit:
+        risk_can_increase = False
+        report["blocks"].append(f"drawdown_stop: {dd:.1%} <= {-1.5 * limit:.0%}")
+        _alert(settings, report, "drawdown_stop", "critical", f"drawdown {dd:.1%}: new risk stopped, review")
+    elif dd is not None and dd <= -limit:
+        weights = {s: w * 0.5 for s, w in weights.items()}
+        report["derisk"] = f"weights halved: drawdown {dd:.1%} <= {-limit:.0%}"
+        _alert(settings, report, "drawdown_derisk", "warn", report["derisk"])
+
+    prices = raw_last_prices(data)
+    book = load_book(paths.book)
+    if book is None:
+        if mode == "shadow":
+            book = {"cash": float(settings.pretrade.capital_usd or 100_000.0), "shares": {},
+                    "basis": "shadow", "initialized": now.isoformat()}
+            report["book_initialized"] = True
+        elif gateway_factory is not None:
+            shares, cash, acct = gateway_factory(settings).account_snapshot()
+            book = {"cash": float(cash or 0.0), "shares": shares, "basis": "broker", "account": acct}
+            report["book_initialized"] = "from_broker"
+        else:
+            report["status"] = "book_missing"
+            _alert(settings, report, "book_missing", "critical", "no paper_account.json and no broker to init")
+            _save_report(paths, report)
+            return report
+    nav = book_nav(book, prices)
+    report["nav_before"] = nav
+    orders = build_rebalance_orders(
+        weights, dict(book.get("shares") or {}), prices, nav,
+        min_notional=settings.pretrade.min_order_notional_usd,
+        max_notional=settings.pretrade.max_order_notional_usd,
+    )
+    as_of = pd.Timestamp(meta.get("as_of")).date() if meta.get("as_of") else None
+    ctx = PretradeContext(
+        nav=nav, positions=dict(book.get("shares") or {}), prices=prices,
+        allowed_symbols=list(settings.universe.symbols), allow_short=settings.trading.allow_short,
+        killswitch_active=Path(settings.risk.killswitch_file).exists(), account_ok=True,
+        data_fresh=data_ok, risk_can_increase=risk_can_increase and freeze_ok,
+        reference_date=as_of, today=session,
+    )
+    dec = check_orders(orders, ctx, settings.pretrade)
+    report["pretrade"] = dec.to_dict()
+
+    if mode == "shadow":
+        mgr = OrderManager(None, settings.execution, ledger_path=paths.orders)
+        mgr.execute(dec.approved, session, send=False)
+        fills = []
+        for o in dec.approved:
+            px = shadow_fill_price(settings, o.symbol, o.side, o.ref_price)
+            fills.append(Fill(o.symbol, o.side, o.quantity, px, estimate_cost(settings, o.symbol, o.quantity, px)))
+        book = apply_fills(book, fills)
+        book["basis"] = "shadow"
+        save_book(paths.book, book)
+        report["shadow_fills"] = [f.__dict__ for f in fills]
+        report["note"] = "shadow: fills simulated at the close ± half spread + IBKR Fixed commission (optimistic)"
+    else:
+        paths.pending.parent.mkdir(parents=True, exist_ok=True)
+        paths.pending.write_text(json.dumps(
+            {"run_date": session.isoformat(), "created_at": now.isoformat(), "mode": mode,
+             "orders": [o.to_dict() for o in dec.approved]}, indent=2, default=str), encoding="utf-8")
+        report["pending_orders"] = str(paths.pending)
+
+    nav_after = book_nav(book, prices)
+    report["nav_after"] = nav_after
+    if math.isfinite(nav_after):
+        append_daily_equity_point(paths.equity, nav_after, session.isoformat(), basis=str(book.get("basis")))
+    if report["blocks"]:
+        report["status"] = "blocked_new_risk"
+    write_heartbeat(settings.ops, {"phase": "plan", "run_date": session.isoformat(), "status": report["status"],
+                                   "n_orders": len(dec.approved), "mode": mode}, now=now)
+    _save_report(paths, report)
+    return report
+
+
+# --------------------------------------------------------------------------- execute
+def run_execute(
+    settings: AppSettings,
+    *,
+    gateway_factory: GatewayFactory,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    now = now or datetime.now(timezone.utc)
+    paths = Paths.from_settings(settings)
+    report: Dict[str, Any] = {"phase": "execute", "mode": settings.execution.mode, "started_at": now.isoformat(),
+                              "orders_sent": 0, "blocks": [], "status": "ok"}
+    if settings.execution.mode == "shadow":
+        report["status"] = "shadow_nothing_to_execute"
+        return report
+    if not paths.pending.is_file():
+        report["status"] = "no_pending_orders"
+        return report
+    pending = json.loads(paths.pending.read_text(encoding="utf-8"))
+    run_date = date.fromisoformat(str(pending.get("run_date")))
+    report["run_date"] = run_date.isoformat()
+    expected = last_completed_session(now)
+    if run_date != expected:
+        report["status"] = "pending_stale"
+        _alert(settings, report, "pending_stale", "warn",
+               f"pending orders from {run_date} but last session is {expected}: not executed")
+        paths.pending.rename(paths.pending.with_suffix(".stale.json"))
+        _save_report(paths, report)
+        return report
+
+    ok, why = execution_permission(settings)
+    if not ok:
+        report["status"] = "not_permitted"
+        _alert(settings, report, "execution_not_permitted", "critical", why)
+        _save_report(paths, report)
+        return report
+
+    gw = gateway_factory(settings)
+    shares, cash, acct = gw.account_snapshot()
+    exp_acct = (settings.ib.expected_account or "").strip()
+    account_ok = (not exp_acct) or acct == exp_acct
+    book = load_book(paths.book) or {"cash": float(cash or 0.0), "shares": shares, "basis": "broker"}
+    pre = reconcile(book, shares, cash, cash_tolerance_usd=max(25.0, 0.0005 * float(book.get("cash") or 0.0)))
+    report["reconcile_before"] = pre.to_dict()
+    if not pre.ok:
+        activate_killswitch(settings.risk.killswitch_file)
+        report["status"] = "reconcile_break_before"
+        _alert(settings, report, "reconcile_break", "critical", "; ".join(pre.reasons), pre.to_dict())
+        _save_report(paths, report)
+        return report
+
+    orders = [_proposed_from_dict(d) for d in pending.get("orders") or []]
+    prices = {o.symbol: o.ref_price for o in orders}
+    for s, q in shares.items():
+        prices.setdefault(s, next((o.ref_price for o in orders if o.symbol == s), 0.0))
+    ctx = PretradeContext(
+        nav=float(cash or 0.0) + sum(q * prices.get(s, 0.0) for s, q in shares.items()),
+        positions=shares, prices=prices, allowed_symbols=list(settings.universe.symbols),
+        allow_short=settings.trading.allow_short, killswitch_active=Path(settings.risk.killswitch_file).exists(),
+        account_ok=account_ok,
+    )
+    dec = check_orders(orders, ctx, settings.pretrade)
+    report["pretrade"] = dec.to_dict()
+    mgr = OrderManager(gw, settings.execution, ledger_path=paths.orders, slippage_path=paths.slippage)
+    managed: List[ManagedOrder] = mgr.execute(dec.approved, run_date, send=True)
+    report["orders"] = [m.to_dict() for m in managed]
+    report["orders_sent"] = sum(1 for m in managed if m.broker_ids)
+
+    fills = [Fill(m.symbol, m.side, m.filled_qty, m.avg_fill_price) for m in managed if m.filled_qty > 0]
+    expected_book = apply_fills({"cash": cash, "shares": shares}, fills)
+    shares2, cash2, _ = gw.account_snapshot()
+    commissions_bound = 25.0 + sum(estimate_cost(settings, f.symbol, f.qty, f.price) * 2 for f in fills)
+    post = reconcile(expected_book, shares2, cash2, cash_tolerance_usd=commissions_bound)
+    report["reconcile_after"] = post.to_dict()
+    if not post.ok:
+        activate_killswitch(settings.risk.killswitch_file)
+        report["status"] = "reconcile_break_after"
+        _alert(settings, report, "reconcile_break", "critical", "; ".join(post.reasons), post.to_dict())
+    save_book(paths.book, {"cash": float(cash2 or 0.0), "shares": shares2, "basis": "broker", "account": acct,
+                           "synced_at": now.isoformat()})
+    paths.pending.rename(paths.pending.with_suffix(".done.json"))
+    failed = [m for m in managed if m.state.value in ("REJECTED", "CANCELLED")]
+    if failed:
+        _alert(settings, report, "orders_not_filled", "warn",
+               ", ".join(f"{m.symbol} {m.state.value}: {m.reason}" for m in failed))
+    write_heartbeat(settings.ops, {"phase": "execute", "run_date": run_date.isoformat(), "status": report["status"],
+                                   "orders_sent": report["orders_sent"]}, now=now)
+    _save_report(paths, report)
+    return report
+
+
+__all__ = ["Paths", "book_nav", "drawdown_now", "raw_last_prices", "run_execute", "run_plan"]
