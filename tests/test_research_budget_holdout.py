@@ -311,7 +311,10 @@ def test_suite_confirmation_opens_holdout_and_logs_it(monkeypatch: pytest.Monkey
     assert count_holdout_openings(log, cut) == 1
     for row in out["candidates"]:
         assert row["gate_checks"]["holdout_opened"] is True
-        assert row["gate_passed"] is True, row["gate_reasons"]
+        # The first opening is legal: it must not be the reason a row fails (a 120-bar synthetic
+        # sample still fails on dsr_insufficient_obs, which is the point of that gate).
+        assert "holdout_overused" not in row["gate_reasons"], row["gate_reasons"]
+        assert row["gate_checks"]["holdout_overused"] is False
 
 
 def test_suite_second_opening_is_overused_and_fails_every_row(
@@ -322,7 +325,8 @@ def test_suite_second_opening_is_overused_and_fails_every_row(
     cut = _holdout_date(data["SPY"], bars_hidden=30)
     s = _settings(tmp_path, holdout_start=cut, confirmation_mode=True, max_holdout_openings=1)
     first = run_research_suite(s, data, "SPY", profile="smoke", exp_id="c1", reports_dir=s.data.reports_dir)
-    assert first["holdout_overused"] is False and first["n_pass"] == 1
+    assert first["holdout_overused"] is False
+    assert all("holdout_overused" not in r["gate_reasons"] for r in first["candidates"])
     second = run_research_suite(s, data, "SPY", profile="smoke", exp_id="c2", reports_dir=s.data.reports_dir)
     assert second["holdout_opened"] is True
     assert second["holdout_opening_no"] == 2

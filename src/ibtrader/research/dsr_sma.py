@@ -70,18 +70,26 @@ def run_sma_grid_dsr(
         }
 
     oos = best.get("oos") or {}
-    # Approximate T from trade_count proxy is weak; prefer equity length if present.
-    n_obs = int(oos.get("n_obs") or oos.get("trade_count") or 60)
-    # If stitched returns skew/kurt unavailable, assume mild non-normality.
+    # T = stitched daily OOS bars (walk-forward ``bars``). Trade count is NOT a sample size:
+    # without ``bars`` the DSR is marked insufficient instead of guessing.
+    try:
+        n_obs = max(int(oos.get("bars") or oos.get("n_obs") or 0), 0)
+    except (TypeError, ValueError):
+        n_obs = 0
     skew = float(oos.get("skew") or 0.0)
     kurt = float(oos.get("kurtosis") or 3.0)
-    # Better T: use years*252 from cagr/sharpe path length heuristics if present
-    if oos.get("bars") is not None:
-        try:
-            n_obs = max(int(oos["bars"]), 2)
-        except (TypeError, ValueError):
-            pass
+    if n_obs < 3:
+        return {
+            "dsr": float("nan"),
+            "note": "no daily OOS bar count for DSR (insufficient_obs)",
+            "insufficient_obs": True,
+            "n_obs": n_obs,
+            "n_trials": n_eff,
+            "n_grid_trials": len(trial_sharpes),
+            "high_conviction": False,
+        }
 
+    # Walk-forward Sharpes are annualised: convert with periods_per_year so SR and T match.
     dsr = deflated_sharpe_ratio(
         float(best_sr),
         n_obs=n_obs,
@@ -89,6 +97,7 @@ def run_sma_grid_dsr(
         trial_sharpes=trial_sharpes,
         skew=skew,
         kurtosis=kurt,
+        periods_per_year=252.0,
     )
     dsr["n_grid_trials"] = len(trial_sharpes)
     dsr["selected_candidate_id"] = best.get("candidate_id")

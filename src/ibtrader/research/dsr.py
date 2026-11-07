@@ -14,6 +14,10 @@ import numpy as np
 
 EULER_MASCHERONI = 0.5772156649015329
 
+#: Below one year of daily observations the Sharpe standard error is too wide for DSR to mean
+#: anything; ``high_conviction`` is forced False and gates read ``insufficient_obs``.
+MIN_DSR_OBS = 252
+
 
 def _norm_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
@@ -83,12 +87,30 @@ def deflated_sharpe_ratio(
     skew: float = 0.0,
     kurtosis: float = 3.0,
     sr_variance: Optional[float] = None,
+    periods_per_year: Optional[float] = None,
+    min_obs: int = MIN_DSR_OBS,
 ) -> Dict[str, Any]:
     """Compute DSR for a selected strategy among ``n_trials`` attempts.
 
     Prefer passing ``trial_sharpes`` so V is measured across the search grid.
+
+    Units: the Sharpe standard error is ``√((1 − γ3·SR + (γ4−1)/4·SR²)/(T−1))`` with SR and T
+    in the **same** frequency. Pass per-period Sharpes with ``n_obs`` periods, or annualised
+    Sharpes together with ``periods_per_year`` (e.g. 252) and they are converted here.
+    Mixing an annual SR with a daily T understates the error by ~√252 and makes almost any
+    backtest look significant.
+
+    ``n_obs < min_obs`` → ``insufficient_obs=True`` and ``high_conviction=False``.
     """
     obs = float(observed_sr)
+    scale = 1.0
+    if periods_per_year is not None and float(periods_per_year) > 0.0:
+        scale = math.sqrt(float(periods_per_year))
+        obs = obs / scale
+        if sr_variance is not None:
+            sr_variance = float(sr_variance) / (scale * scale)
+    if trial_sharpes is not None:
+        trial_sharpes = [float(x) / scale for x in trial_sharpes]
     if trial_sharpes is not None and len(trial_sharpes) >= 2:
         arr = np.asarray(list(trial_sharpes), dtype=float)
         arr = arr[np.isfinite(arr)]
@@ -112,7 +134,10 @@ def deflated_sharpe_ratio(
         "sr_variance_trials": float(v),
         "skew": float(skew),
         "kurtosis": float(kurtosis),
-        "high_conviction": bool(dsr >= 0.95),
+        "periods_per_year": float(periods_per_year) if periods_per_year else None,
+        "min_obs": int(min_obs),
+        "insufficient_obs": bool(int(n_obs) < int(min_obs)),
+        "high_conviction": bool(dsr >= 0.95 and int(n_obs) >= int(min_obs)),
         "note": (
             "DSR≥0.95 is a common research heuristic that the selected Sharpe "
             "beats chance-adjusted selection bias; not a deploy certificate."

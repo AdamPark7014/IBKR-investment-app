@@ -102,6 +102,11 @@ def evaluate_candidate_gates(
 BH_SHARPE_TOLERANCE = 0.10  # candidate may trail B&H Sharpe by at most this much...
 BH_DD_MARGIN = 0.05  # ...if its max DD is at least this many pp shallower than B&H.
 
+#: Harvey-Liu-Zhu (2016): t = SR·√T ≥ 3 once multiple testing is acknowledged.
+MIN_T_STAT = 3.0
+#: Minimum daily observations behind a DSR before it can count (one trading year).
+MIN_DSR_OBS = 252
+
 
 def compute_trial_budget(
     n_trials: int,
@@ -150,6 +155,7 @@ def evaluate_strict_gates(
     min_oos_sharpe: float = 0.25,
     budget: Optional[Mapping[str, Any]] = None,
     holdout: Optional[Mapping[str, Any]] = None,
+    min_t_stat: float = MIN_T_STAT,
 ) -> OOSGateResult:
     """Candidate gates + risk-adjusted beat-B&H + institutional diagnostics.
 
@@ -219,6 +225,19 @@ def evaluate_strict_gates(
     checks["beats_bh_via_dd"] = beats_bh_via_dd
     checks["beats_bh_ok"] = beats_bh or beats_bh_via_dd
 
+    # --- t-statistic of the stitched daily OOS Sharpe (only when reported) ----
+    t_stat = _as_float(stitched_oos_stats.get("t_stat"))
+    if t_stat is not None or "t_stat" in stitched_oos_stats:
+        checks["t_stat"] = t_stat
+        checks["min_t_stat"] = float(min_t_stat)
+        t_ok = t_stat is not None and t_stat >= float(min_t_stat)
+        checks["t_stat_ok"] = t_ok
+        if not t_ok:
+            passed = False
+            reasons.append(
+                f"t_stat={t_stat if t_stat is not None else float('nan'):.2f} < {float(min_t_stat):.1f}"
+            )
+
     # --- Trial budget (Bailey et al. 2014): years ≥ 2·ln(N)/SR² ----------------
     if budget is not None:
         n_trials = int(budget.get("n_trials") or 0)
@@ -272,7 +291,17 @@ def evaluate_strict_gates(
     if isinstance(dsr_block, Mapping) and "dsr" in dsr_block:
         dsr_val = _as_float(dsr_block.get("dsr"))
         checks["dsr"] = dsr_val
-        if dsr_val is not None and dsr_val < 0.95:
+        n_obs_f = _as_float(dsr_block.get("n_obs"))
+        n_obs = int(n_obs_f) if n_obs_f is not None else None
+        insufficient = bool(dsr_block.get("insufficient_obs")) or (n_obs is not None and n_obs < MIN_DSR_OBS)
+        if n_obs is not None:
+            checks["dsr_n_obs"] = n_obs
+        if insufficient:
+            # A DSR on less than a year of daily data is noise, whatever its value.
+            passed = False
+            checks["dsr_ok"] = False
+            reasons.append(f"dsr_insufficient_obs: n_obs={n_obs} < {MIN_DSR_OBS}")
+        elif dsr_val is not None and dsr_val < 0.95:
             passed = False
             checks["dsr_ok"] = False
             reasons.append(f"dsr={dsr_val:.4f} < 0.95")

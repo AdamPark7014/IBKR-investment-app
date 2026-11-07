@@ -23,6 +23,7 @@ from .multi_asset import run_multi_asset_sma_research, summarize_cross_section
 from .pbo_sma import run_sma_grid_pbo
 from .report import build_honest_report
 from .runner import SMA_GRID_CANDIDATES, TREND_REGIME_CANDIDATES, run_sma_research, run_trend_regime_research
+from .trials_ledger import dataset_family, ledger_path, prior_trials, record_trials
 from .tsmom_runner import DEFAULT_TSMOM_LOOKBACKS, run_tsmom_research
 from .turnover_diag import diagnose_turnover
 from .xsection_runner import DEFAULT_XSECTION_CANDIDATES, run_xsection_research
@@ -439,7 +440,16 @@ def run_research_suite(
 
     # N = every configuration evaluated in this run (all tracks, all variants, pass or fail).
     # Cost-ladder / cross-section re-runs of the same pair count too: conservative on purpose.
-    n_trials = len(all_rows)
+    n_trials_run = len(all_rows)
+    # ...and every configuration already tried on the same history in earlier runs.
+    ledger_file = ledger_path(Path(reports_dir) if reports_dir is not None else Path(settings.data.reports_dir))
+    family = (
+        dataset_family(data.keys(), data[symbol].index.min()) if symbol in data and len(data[symbol]) else None
+    )
+    n_trials_prior = (
+        prior_trials(ledger_file, family) if family is not None and settings.research.cumulative_trials else 0
+    )
+    n_trials = n_trials_prior + n_trials_run
     years_available = _years_span(data[symbol].index) if symbol in data else 0.0
     budget = compute_trial_budget(
         n_trials,
@@ -513,6 +523,10 @@ def run_research_suite(
         "any_gate_passed": n_pass > 0,
         # Research discipline (playbook phase 1): trial budget + frozen hold-out.
         "n_trials": n_trials,
+        "n_trials_run": n_trials_run,
+        "n_trials_prior": n_trials_prior,
+        "trials_family": family,
+        "trials_ledger": str(ledger_file),
         "years_available": years_available,
         "years_needed": float(budget["years_needed"]),
         "budget_ok": bool(budget["budget_ok"]),
@@ -532,4 +546,6 @@ def run_research_suite(
         "holdout": dict(holdout_info),
     }
     out["honest_report"] = build_honest_report(out)
+    if family is not None:
+        record_trials(ledger_file, family, n_trials_run, exp_id=exp_id, kind=f"research-run:{profile}")
     return out

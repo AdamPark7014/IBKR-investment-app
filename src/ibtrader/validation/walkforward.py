@@ -127,6 +127,35 @@ def _roundtrip_trade_metrics(trades: List[dict]) -> Tuple[float, float]:
     return float(pf) if pf == pf or pf == float("inf") else _NAN, exp
 
 
+def _daily_return_shape(rets: pd.Series) -> Dict[str, Any]:
+    """Length and shape of the stitched daily OOS returns, for DSR / t-stat.
+
+    ``bars`` is the number of daily observations (the T of the Sharpe standard error),
+    ``sr_daily`` the per-period Sharpe, ``t_stat = sr_daily·√bars`` (Harvey-Liu-Zhu),
+    ``skew`` and Pearson ``kurtosis`` (Normal = 3).
+    """
+    r = pd.Series(rets, dtype=float).replace([_np.inf, -_np.inf], _np.nan).dropna()
+    n = int(len(r))
+    out: Dict[str, Any] = {"bars": n, "sr_daily": None, "t_stat": None, "skew": 0.0, "kurtosis": 3.0}
+    if n < 3:
+        return out
+    sd = float(r.std(ddof=1))
+    if not (sd > 0.0 and _np.isfinite(sd)):
+        return out
+    sr = float(r.mean()) / sd
+    skew = float(r.skew())
+    kurt = float(r.kurt()) + 3.0
+    out.update(
+        {
+            "sr_daily": sr,
+            "t_stat": sr * float(_np.sqrt(n)),
+            "skew": skew if _np.isfinite(skew) else 0.0,
+            "kurtosis": kurt if _np.isfinite(kurt) else 3.0,
+        }
+    )
+    return out
+
+
 def _restricted_frac(restricted_bars: int, total_bars: int) -> float:
     """Share of OOS bars under risk lockout; 0.0 when the window is empty."""
     return float(restricted_bars) / float(total_bars) if total_bars > 0 else 0.0
@@ -482,6 +511,7 @@ def walk_forward_sma(
                 initial_equity,
             )
             stitched_oos_stats["trade_count"] = int(oos_trade_count)
+            stitched_oos_stats.update(_daily_return_shape(stitched_rets))
             stitched_oos_stats["restricted_bar_frac"] = _restricted_frac(
                 total_oos_restricted_bars, total_oos_bars
             )
