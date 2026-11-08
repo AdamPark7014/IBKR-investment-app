@@ -66,6 +66,11 @@ RECOMMENDATION_FAIL = (
 RECOMMENDATION_PASS = "Paper 2–3 meses con la configuración congelada antes de capital."
 
 INSTRUMENT_WEIGHTINGS: Tuple[str, ...] = ("box_risk_parity", "hrp", "equal")
+#: Static risk parity (no timing) joins the ``full`` grid as the baseline trend must beat.
+STATIC_BASELINE: Tuple[str, Tuple[str, ...], str] = (
+    "pipeline_static_box_risk_parity", ("long_const",), "box_risk_parity"
+)
+INCLUDE_STATIC_BASELINE = True
 
 # Statistical gates on top of ``evaluate_strict_gates`` (playbook: t >= 3, DSR, PBO, frozen hold-out).
 MIN_T_STAT = 3.0
@@ -92,7 +97,8 @@ def portfolio_candidates(profile: str) -> List[Tuple[str, Tuple[str, ...], str]]
 
     * ``smoke``: one configuration (``DEFAULT_RULES`` × ``box_risk_parity``).
     * ``full``: small grid rules (default | ewmac only | tsmom only) × weighting
-      (box_risk_parity | hrp | equal). Every configuration counts as one trial.
+      (box_risk_parity | hrp | equal), plus static risk parity (``long_const`` × box_risk_parity),
+      the no-timing baseline. Every configuration counts as one trial.
     """
     if profile == "smoke":
         return [("pipeline_default_box_risk_parity", tuple(DEFAULT_RULES), "box_risk_parity")]
@@ -101,7 +107,7 @@ def portfolio_candidates(profile: str) -> List[Tuple[str, Tuple[str, ...], str]]
             (f"pipeline_{rs_name}_{weighting}", rules, weighting)
             for rs_name, rules in rule_sets().items()
             for weighting in INSTRUMENT_WEIGHTINGS
-        ]
+        ] + ([STATIC_BASELINE] if INCLUDE_STATIC_BASELINE else [])
     raise ValueError(f"unknown profile {profile!r}: expected 'smoke' or 'full'")
 
 

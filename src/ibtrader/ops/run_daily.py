@@ -190,6 +190,10 @@ def run_plan(
         else:
             report["blocks"].append(f"freeze:{freeze.get('reason')}")
 
+    if spec is None and settings.data.universe_file:
+        from ..data.universe import load_universe_spec
+
+        spec = load_universe_spec(settings.data.universe_file)
     weights, meta = compute_target_weights(settings, data, spec)
     report["targets"] = {"weights": weights, "meta": meta}
 

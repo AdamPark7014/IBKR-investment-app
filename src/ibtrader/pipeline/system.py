@@ -52,6 +52,9 @@ InstrumentWeighting = Literal["box_risk_parity", "hrp", "equal"]
 LEGACY_WEIGHTING_ALIASES: Dict[str, str] = {"box_inverse_vol": "box_risk_parity"}
 ForecastScalarMode = Literal["estimate", "fixed"]
 
+#: Treasury-bill / floating-rate ETFs treated as cash when the universe file does not box them.
+KNOWN_CASH_ETFS = frozenset({"BIL", "SGOV", "SHV", "BILS", "TFLO", "USFR", "GBIL"})
+
 #: Target absolute forecast after scaling (pysystemtrade convention: |f| averages 10).
 TARGET_ABS_FORECAST = 10.0
 
@@ -111,6 +114,19 @@ class SystemConfig:
     hrp_lookback: int = 504
     hrp_min_periods: int = 252
     step: int = 21
+    #: Symbols in this box are cash equivalents (T-bill ETFs such as BIL). They never enter the
+    #: forecast / risk-parity chain (σ ≈ 0.3 % would make their vol-scaled position swallow the whole
+    #: leverage cap); with ``cash_sweep`` the capital the risky book leaves idle is parked in them.
+    cash_box: Optional[str] = "cash"
+    cash_sweep: bool = True
+
+    def cash_symbols(self, symbols: List[str]) -> List[str]:
+        """Symbols in ``cash_box``; a symbol missing from ``boxes`` counts as cash if it is a known T-bill ETF."""
+        if not self.cash_box:
+            return []
+        boxes = self.boxes or {}
+        return [s for s in symbols
+                if boxes.get(s) == self.cash_box or (s not in boxes and s.upper() in KNOWN_CASH_ETFS)]
 
     def __post_init__(self) -> None:
         legacy = LEGACY_WEIGHTING_ALIASES.get(str(self.instrument_weighting))
@@ -383,7 +399,34 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
     See the module docstring for the chain and ``SystemOutput`` for what each field
     holds. Symbols with no prices at all are dropped (logged); symbols that list late
     simply carry NaN until their stages warm up.
+
+    Cash-box symbols (``SystemConfig.cash_box``) are taken out of the chain. With ``cash_sweep``
+    and ``long_only``, the first one with a price receives ``1 - gross`` of the risky book in
+    ``target_weights`` / ``mtm_weights``: idle capital earns the T-bill rate instead of zero.
     """
+    cash = [c for c in cfg.cash_symbols([str(c) for c in prices.columns]) if prices[c].notna().any()]
+    risky = [c for c in prices.columns if c not in cash]
+    if not cash or not risky:
+        return _run_core(prices, cfg)
+    out = _run_core(prices[risky], cfg)
+    if not (cfg.cash_sweep and cfg.long_only):
+        return out
+    sweep = cash[0]
+    has_px = prices[sweep].reindex(out.target_weights.index).notna()
+
+    def _with_cash(w: pd.DataFrame) -> pd.DataFrame:
+        gross = w.abs().sum(axis=1, min_count=1)
+        idle = (1.0 - gross).clip(lower=0.0).where(gross.notna())
+        w = w.copy()
+        w[sweep] = idle.where(has_px, 0.0)
+        return w
+
+    out.target_weights = _with_cash(out.target_weights)
+    out.mtm_weights = _with_cash(out.mtm_weights)
+    return out
+
+
+def _run_core(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
     px = _clean_prices(prices)
     index = px.index
     symbols = list(px.columns)

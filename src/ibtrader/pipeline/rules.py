@@ -49,7 +49,12 @@ FIXED_FORECAST_SCALARS: Dict[str, float] = {
     "ewmac32_128": 2.65,
     "ewmac64_256": 1.87,
     "tsmom_1_3_12": 18.0,
+    "long_const": 1.0,
 }
+
+#: Constant +10 forecast: always long at the average risk. With ``box_risk_parity`` it is static risk
+#: parity, the "no timing" baseline the trend rules must beat to justify their turnover.
+LONG_CONST_FORECAST = 10.0
 
 #: Rules used by default: the slow EWMAC speeds survive costs (Man AHL) plus multi-horizon TSMOM.
 DEFAULT_RULES: Tuple[str, ...] = ("ewmac16_64", "ewmac32_128", "ewmac64_256", "tsmom_1_3_12")
@@ -107,7 +112,9 @@ def tsmom_multi(
 
 
 def run_rule(name: str, price: pd.Series, vol_price: pd.Series) -> pd.Series:
-    """Dispatch a rule by name: ``ewmacF_S`` (any speeds) or ``tsmom_1_3_12``."""
+    """Dispatch a rule by name: ``ewmacF_S`` (any speeds), ``tsmom_1_3_12`` or ``long_const``."""
+    if name == "long_const":
+        return pd.Series(LONG_CONST_FORECAST, index=price.index, dtype=float).where(vol_price.notna())
     if name == "tsmom_1_3_12":
         return tsmom_multi(price, vol_price, TSMOM_DEFAULT_LOOKBACKS)
     if name in EWMAC_SPEEDS:
