@@ -33,10 +33,10 @@ ibtrader ai-review                   # git diff → Claude vía puerta (look-ahe
 - **Freeze**: el snapshot incluye ahora `pretrade` y `execution`; tras el veredicto de investigación hay que
   rehacerlo con `config-freeze --write --force`.
 
-Programación (Windows; horas locales del PC = cierre NYSE + 45 min y apertura + 10 min):
+Programación (Windows). El plan corre a las 19:00 de Nueva York porque Tiingo publica el cierre hacia las 17:30–18:00 ET; antes vería el bar de ayer y bloquearía:
 
 ```powershell
-pwsh -File scripts/schedule-run-daily.ps1 -Action Register -PlanTime 16:45 -ExecuteTime 09:40
+pwsh -File scripts/schedule-run-daily.ps1 -Action Register -PlanTime 19:00 -ExecuteTime 09:40   # horas de Nueva York; conviértelas a tu zona
 ```
 
 Archivos nuevos en `data/`: `pending_orders.json` (→ `.done.json` / `.stale.json`), `orders.jsonl`

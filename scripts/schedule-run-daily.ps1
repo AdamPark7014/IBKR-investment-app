@@ -5,12 +5,14 @@
   and heartbeat-check (dead man's switch).
 .NOTES
   EXECUTION__MODE=shadow (default) sends zero orders; execute then does nothing.
-  Times are LOCAL to this PC: set them to NYSE close + 45 min and open + 10 min in your time zone.
+  Times are LOCAL to this PC. Plan = 19:00 New York (Tiingo publishes end-of-day prices around
+  17:30-18:00 ET and corrects them later; earlier runs see yesterday's bar and block). Execute =
+  09:40 New York (open + 10 min). Convert both to your time zone.
 #>
 param(
     [ValidateSet('Register', 'Unregister', 'Status')]
     [string]$Action = 'Status',
-    [string]$PlanTime = '16:45',
+    [string]$PlanTime = '19:00',
     [string]$ExecuteTime = '09:40',
     [string]$HeartbeatTime = '12:00'
 )

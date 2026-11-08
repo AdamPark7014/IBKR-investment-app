@@ -1469,7 +1469,7 @@ def run_daily_cmd(
     """Corrida diaria única. Modo sombra por defecto: cero órdenes al broker (EXECUTION__MODE)."""
     import json as _json
 
-    from .run_daily import exit_code_for, run_execute, run_plan, secondary_loader_for
+    from .run_daily import exit_code_for, fresh_loader, run_execute, run_plan, secondary_loader_for
 
     s = AppSettings()
     s.resolve_paths()
@@ -1486,7 +1486,7 @@ def run_daily_cmd(
 
     try:
         if phase == "plan":
-            rep = run_plan(s, loader=load_universe_v2, secondary_loader=secondary_loader_for(s),
+            rep = run_plan(s, loader=fresh_loader, secondary_loader=secondary_loader_for(s),
                            gateway_factory=gateway_factory)
         elif phase == "execute":
             rep = run_execute(s, gateway_factory=gateway_factory)

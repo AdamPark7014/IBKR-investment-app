@@ -520,6 +520,18 @@ def primary_provider(settings: AppSettings) -> Optional[str]:
     return None
 
 
+def fresh_loader(settings: AppSettings) -> Mapping[str, pd.DataFrame]:
+    """``load_universe_v2`` that never serves the cache: the daily run needs today's bar, and the
+    cache accepts bars up to ``max_cache_age_days`` old (fine for research, a block every day here).
+    Works on a copy so the frozen settings are untouched; the fresh download still refreshes the cache.
+    """
+    from ..data.service import load_universe_v2
+
+    s = settings.model_copy(deep=True)
+    s.engine.use_cache = False
+    return load_universe_v2(s)
+
+
 def secondary_loader_for(settings: AppSettings) -> Optional[Loader]:
     """An independent second source for the cross-check: Yahoo when the primary is not Yahoo.
 
@@ -546,6 +558,7 @@ def secondary_loader_for(settings: AppSettings) -> Optional[Loader]:
 
 __all__ = [
     "Paths", "book_nav", "cash_symbols_of", "credit_corporate_actions", "drawdown_now", "exit_code_for",
-    "halve_risk", "primary_provider", "raw_last_prices", "run_execute", "run_plan", "secondary_loader_for",
+    "fresh_loader", "halve_risk", "primary_provider", "raw_last_prices", "run_execute", "run_plan",
+    "secondary_loader_for",
     "settled_after", "unchanged_targets",
 ]

@@ -324,3 +324,15 @@ def test_gateway_down_is_alerted_not_crashed(tmp_path: Path) -> None:
     assert ex["status"] == "broker_error"
     assert "broker_unreachable" in (tmp_path / "data" / "alerts.jsonl").read_text()
     assert (tmp_path / "data" / "pending_orders.json").exists()  # nothing consumed
+
+
+def test_fresh_loader_bypasses_cache_without_touching_settings(monkeypatch) -> None:
+    import ibtrader.data.service as svc
+    from ibtrader.ops.run_daily import fresh_loader
+
+    seen = {}
+    monkeypatch.setattr(svc, "load_universe_v2", lambda st: seen.setdefault("use_cache", st.engine.use_cache) and {})
+    s = AppSettings(_env_file=None)
+    s.engine.use_cache = True
+    fresh_loader(s)
+    assert seen["use_cache"] is False and s.engine.use_cache is True

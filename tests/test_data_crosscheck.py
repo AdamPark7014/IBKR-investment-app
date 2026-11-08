@@ -41,3 +41,14 @@ def test_cross_check() -> None:
     assert not res.ok and res.mismatches[0]["diff_bps"] > 70
     assert cross_check(a, {}).ok
     assert not cross_check(a, {}, require_secondary=True).ok
+
+
+def test_cross_check_prefers_raw_closes_when_both_have_them() -> None:
+    import pandas as pd
+
+    from ibtrader.data.crosscheck import cross_check
+
+    idx = pd.bdate_range("2026-11-02", periods=3)
+    prim = {"SPY": pd.DataFrame({"close": [98.0, 99.0, 99.5], "close_raw": [100.0, 101.0, 101.5]}, index=idx)}
+    sec = {"SPY": pd.DataFrame({"close": [100.0, 101.0, 101.5], "close_raw": [100.0, 101.0, 101.5]}, index=idx)}
+    assert cross_check(prim, sec).ok  # adjusted closes differ by ~2 %, traded prices agree

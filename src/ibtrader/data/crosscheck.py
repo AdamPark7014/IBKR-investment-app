@@ -96,7 +96,11 @@ def cross_check(
                 res.ok = False
                 res.reasons.append(f"secondary_missing: {sym}")
             continue
-        a, b = _close(dfp), _close(dfs)
+        # Compare unadjusted closes when both providers give them: adjustment conventions differ
+        # between providers, the traded price does not.
+        both_raw = "close_raw" in dfp.columns and "close_raw" in dfs.columns
+        a = pd.Series(dfp["close_raw"], dtype=float) if both_raw else _close(dfp)
+        b = pd.Series(dfs["close_raw"], dtype=float) if both_raw else _close(dfs)
         a.index = pd.to_datetime(a.index).normalize()
         b.index = pd.to_datetime(b.index).normalize()
         common = a.index.intersection(b.index).sort_values()[-int(lookback):]
