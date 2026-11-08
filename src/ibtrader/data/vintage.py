@@ -173,6 +173,37 @@ def _upsert_manifest_entry(vintage_dir: str, rec: VintageRecord, superseded: Opt
     return manifest
 
 
+def _keep_older_history(vintage_dir: str, vdate: str, symbol: str, target: Path, df: pd.DataFrame,
+                        provider: str) -> pd.DataFrame:
+    """A same-day vintage with a shorter window keeps the older bars it already had.
+
+    The daily plan downloads ~5 years; a research run the same day may have stored 12. Overwriting would
+    silently drop history from the point-in-time store. Bars before the new window come from the old file
+    (same day, same provider, so the adjusted series agree); the new download wins from its first bar on.
+    A different provider is never mixed into one series: then the new frame replaces the old as before.
+    """
+    if not target.exists() or df.empty:
+        return df
+    files = load_manifest(vintage_dir).get("vintages", {}).get(vdate, {}).get("files", [])
+    old_provider = next((f.get("provider") for f in files if f.get("symbol") == symbol), None)
+    if old_provider != provider:
+        return df
+    try:
+        old = pd.read_parquet(target)
+    except Exception:  # noqa: BLE001 - an unreadable old file is simply replaced
+        return df
+    try:
+        if old.empty or old.index.min() >= df.index.min():
+            return df
+        older = old[old.index < df.index.min()]
+        merged = pd.concat([older, df])
+    except TypeError:  # tz-aware vs naive index: do not guess, replace as before
+        return df
+    log.info("vintage_keeps_history symbol=%s vintage_date=%s older_rows=%s first_bar=%s",
+             symbol, vdate, len(older), _bar_label(merged.index.min()))
+    return merged
+
+
 def write_vintage(
     vintage_dir: str,
     symbol: str,
@@ -193,6 +224,7 @@ def write_vintage(
     # Validate the date format early so a typo never creates a bogus partition.
     date.fromisoformat(vdate)
     target = vintage_file_path(vintage_dir, vdate, symbol, bar_size)
+    df = _keep_older_history(vintage_dir, vdate, symbol, target, df, provider)
     payload = _frame_to_parquet_bytes(df)
     new_hash = sha256_bytes(payload)
     rel = target.relative_to(Path(vintage_dir)).as_posix()

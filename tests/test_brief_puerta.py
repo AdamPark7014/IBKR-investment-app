@@ -14,10 +14,10 @@ from ibtrader.ops.cli import app as cli_mod_app
 @pytest.mark.parametrize(
     ("env", "fragment"),
     [
-        ({}, "ANTHROPIC_BASE_URL is not set"),
-        ({"ANTHROPIC_BASE_URL": "https://api.anthropic.com", "ANTHROPIC_API_KEY": "pia_x"}, "not at the puerta"),
-        ({"ANTHROPIC_BASE_URL": "https://ia.zynoratek.com"}, "ANTHROPIC_API_KEY is not set"),
-        ({"ANTHROPIC_BASE_URL": "https://ia.zynoratek.com", "ANTHROPIC_API_KEY": "sk-ant-real"}, "not a puerta token"),
+        ({}, "falta ANTHROPIC_BASE_URL"),
+        ({"ANTHROPIC_BASE_URL": "https://api.anthropic.com", "ANTHROPIC_API_KEY": "pia_x"}, "no a la puerta"),
+        ({"ANTHROPIC_BASE_URL": "https://ia.zynoratek.com"}, "falta ANTHROPIC_API_KEY"),
+        ({"ANTHROPIC_BASE_URL": "https://ia.zynoratek.com", "ANTHROPIC_API_KEY": "sk-ant-real"}, "no es un token"),
     ],
 )
 def test_puerta_config_errors(env: dict, fragment: str) -> None:

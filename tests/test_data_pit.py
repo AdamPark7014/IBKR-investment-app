@@ -156,6 +156,21 @@ def test_write_vintage_overwrite_same_day_records_superseded(tmp_path: Any, capl
     assert any("vintage_overwrite" in r.getMessage() for r in caplog.records)
 
 
+def test_write_vintage_same_day_shorter_window_keeps_older_bars(tmp_path: Any) -> None:
+    vdir = str(tmp_path / "vint")
+    long = _df(40, start="2024-01-01")
+    write_vintage(vdir, "SPY", "1d", long, provider="tiingo", vintage_date="2026-11-08")
+    short = _df(10, start=str(long.index[30].date()), base=200.0)  # fresher data for the last 10 bars
+    rec = write_vintage(vdir, "SPY", "1d", short, provider="tiingo", vintage_date="2026-11-08")
+    snap = load_vintage(vdir, "2026-11-08")["SPY"]
+    assert rec.rows == 40 and len(snap) == 40
+    assert snap.index.min() == long.index.min()
+    assert float(snap["close"].iloc[-1]) == float(short["close"].iloc[-1])  # new download wins on overlap
+    # Another provider is never mixed in: it replaces the series.
+    rec2 = write_vintage(vdir, "SPY", "1d", short, provider="yahoo", vintage_date="2026-11-08")
+    assert rec2.rows == 10
+
+
 def test_load_vintage_roundtrip_and_dataset_hash(tmp_path: Any) -> None:
     vdir = str(tmp_path / "vint")
     spy, qqq = _df(40), _df(40, base=300.0)

@@ -1639,3 +1639,24 @@ def copilot_research(
 
 if __name__ == "__main__":
     app()
+
+
+@app.command("chequeo")
+def chequeo_cmd(
+    sin_red: bool = typer.Option(False, "--sin-red", help="No consulta Tiingo (solo revisa la configuración)."),
+) -> None:
+    """Chequeo previo en un paso: Tiingo, configuración, freeze, Claude, tareas y Gateway de IBKR.
+
+    Código 0 si la corrida en el modo actual puede funcionar, 1 si falta algo (ver "pendientes").
+    Nunca envía órdenes ni escribe nada.
+    """
+    import json as _json
+
+    from .preflight import run_preflight
+
+    s = AppSettings()
+    s.resolve_paths()
+    rep = run_preflight(s, online=not sin_red)
+    typer.echo(_json.dumps(rep, ensure_ascii=False, indent=2))
+    ok = rep["listo_paper"] if s.execution.mode != "shadow" else rep["listo_sombra"]
+    raise typer.Exit(0 if ok else 1)

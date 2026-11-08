@@ -112,9 +112,26 @@ No commitear secretos ni dumps LIVE. Estos JSON/SQLite son locales de ops.
    idea muerta — no retocar con esas barras.
 3. **`pia_…` opcional** (pack / brief IA) solo sobre JSON ya comprimido; sin
    titulares ni noticias.
-4. **Register** Task Scheduler (`schedule-register-all` o los tres scripts).
+4. **Registrar** las tareas programadas (`schedule-register-all` o `schedule-run-daily.ps1 -Action Register`) y
+   comprobar todo con `ibtrader chequeo`.
 5. **Meses congelados**: tras `config-freeze --write`, no cambiar params porque
    el DD del mes “no cuadra”. Matar solo si `paper-vs-oos` / alertas lo dicen.
+
+## El día que IBKR apruebe la cuenta paper
+
+Mientras tanto el sistema corre en **sombra** con datos de Tiingo y no necesita a IBKR. Cuando llegue el acceso:
+
+1. Abre IB Gateway en modo **paper**. En Configure → API → Settings activa "Enable ActiveX and Socket Clients",
+   puerto **4002**, Trusted IPs = solo 127.0.0.1.
+2. Corre `ibtrader chequeo`. Todo tiene que salir `ok: true` menos `permiso_ordenes`. Si `gateway_ibkr` falla,
+   el Gateway no está escuchando en 4002.
+3. Opcional: `IB__EXPECTED_ACCOUNT=DU…` en `.env`, para que el sistema se niegue a operar en otra cuenta.
+4. Cambia en `.env`: `EXECUTION__MODE=paper_orders` y `TRADING__ALLOW_BROKER_ORDERS=true`. Deja `MODE=PAPER`.
+5. `ibtrader config-freeze --write --force` (re-congela con el modo nuevo) y otra vez `ibtrader chequeo`. Ahora
+   `listo_paper` debe ser `true`.
+6. Nada más: las tareas programadas ya existen. El plan de las 19:00 deja `pending_orders.json` y la ejecución
+   de las 10:05 lo envía, reconcilia con el broker y registra el slippage.
+7. Dinero real solo cuando `ibtrader scorecard` diga `ready_for_live: true` (126 sesiones en paper).
 
 ## Prohibido (playbook §119 / “Lo que no entra”)
 

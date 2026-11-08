@@ -24,14 +24,14 @@ def puerta_config_error(env: Optional[Mapping[str, str]] = None) -> Optional[str
     base = str(e.get("ANTHROPIC_BASE_URL") or "").strip()
     key = str(e.get("ANTHROPIC_API_KEY") or "").strip()
     if not base:
-        return "ANTHROPIC_BASE_URL is not set: Claude only goes through the puerta (https://ia.zynoratek.com)"
+        return "falta ANTHROPIC_BASE_URL: Claude solo va por la puerta (https://ia.zynoratek.com)"
     host = (urlparse(base).netloc or "").lower()
     if host not in PUERTA_HOSTS:
-        return f"ANTHROPIC_BASE_URL points at {host or base!r}, not at the puerta ({', '.join(PUERTA_HOSTS)})"
+        return f"ANTHROPIC_BASE_URL apunta a {host or base!r}, no a la puerta ({', '.join(PUERTA_HOSTS)})"
     if not key:
-        return "ANTHROPIC_API_KEY is not set (needs the project token pia_ibtrader_… from the puerta)"
+        return "falta ANTHROPIC_API_KEY (el token del proyecto pia_… de la puerta)"
     if not key.startswith(PUERTA_TOKEN_PREFIX):
-        return "ANTHROPIC_API_KEY is not a puerta token (pia_…); the real Anthropic key never goes in a project"
+        return "ANTHROPIC_API_KEY no es un token de la puerta (pia_…); nunca la clave real de Anthropic"
     return None
 
 
