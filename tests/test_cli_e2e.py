@@ -66,6 +66,8 @@ def test_service_calls_yahoo_with_window(monkeypatch: Any, tmp_path) -> None:
     from ibtrader.config import AppSettings
     monkeypatch.setenv("DATA__CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("DATA__VINTAGE_DIR", str(tmp_path / "vintages"))
+    # A real Tiingo token in the developer's .env would route the fetch to Tiingo, not to the fake Yahoo.
+    monkeypatch.setenv("DATA__TIINGO_TOKEN", "")
     s = AppSettings()
     s.resolve_paths()
     # Ensure no cache to force fetch
