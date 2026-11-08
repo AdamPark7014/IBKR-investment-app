@@ -1,5 +1,16 @@
 # RELEVO
 
+## Hecho (2026-11-07, claude-code — conexión Tiingo e IBKR)
+- Tiingo: token en `.env` (`DATA__TIINGO_TOKEN`, ignorado por `.gitignore:15`, nunca en git). Probado:
+  `/tiingo/daily/SPY` responde OK (historia 1993-01-29 → 2026-11-06).
+- IB Gateway 10.50 Stable instalado (firma válida de Interactive Brokers) en
+  `%LOCALAPPDATA%\Programs\ibgateway\ibgateway.exe`. Todavía sin configurar la API: esa configuración se guarda
+  por usuario después de iniciar sesión.
+- Cuenta IBKR: solicitud «En curso», falta «Pending Document Upload». **No hay cuenta paper (DU…)**: IBKR la
+  habilita al aprobar la cuenta (Settings > Paper Trading Account).
+- Al existir la paper: entrar a Gateway en modo Paper → Configure > Settings > API > Settings: Socket Clients on,
+  puerto 4002 (`IB__PAPER_PORT`), solo localhost on, Read-Only off (el sistema manda órdenes a paper).
+
 ## Hecho (2026-10-26, claude-code — los cinco pendientes de la revisión)
 - `short_only`: el runner armaba un sistema long-only que el motor short-only anulaba (cero operaciones).
   Ahora `SystemConfig.short_only` (excluyente con `long_only`) recorta a ≤ 0 y el runner lo mapea desde
