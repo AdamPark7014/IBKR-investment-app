@@ -43,6 +43,8 @@ class BacktestResult:
     # Every executed order with its all-in cost: (bar date, OrderCost). Lets callers sum costs over a
     # window (an OOS test segment) instead of the whole backtest including its warm-up.
     order_costs: List[Tuple[Any, OrderCost]] = field(default_factory=list)
+    # Margin interest paid per bar (USD, >= 0) when cash went negative (leverage). Empty when off.
+    financing: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
 
 
 def _probe_restricted(risk_manager: RiskManager | None) -> bool:
@@ -124,7 +126,13 @@ def backtest(
     target_vol_annual: float | None = None,
     risk_manager: RiskManager | None = None,
     reg_fees_cfg: Optional[RegFeesConfig] = None,
+    margin_rate_annual: float = 0.0,
 ) -> BacktestResult:
+    """Daily event-driven backtest: signals at the close, fills at the next open, all-in IBKR costs.
+
+    ``margin_rate_annual``: interest charged on negative cash (borrowed to hold more than NAV), actual/360
+    like IBKR, on the cash carried over each night. 0 = off (cash accounts never borrow).
+    """
     # Validate band units
     if rebalance_band_pct < 0.0 or rebalance_band_pct > 1.0:
         raise ValueError("rebalance_band_pct debe estar en [0,1]. Usa fracción (e.g., 0.02 para 2%).")
@@ -201,7 +209,13 @@ def backtest(
     stop_scheduled: Dict[str, bool] = {sym: False for sym in data}
     # Per-bar lockout flags (read-only probes; never alter risk state or fills)
     restricted_flags: List[Tuple[Any, bool]] = []
+    financing_paid: List[Tuple[Any, float]] = []
     for i, dt in enumerate(all_dates):
+        if i > 0 and margin_rate_annual > 0.0 and cash < 0.0:
+            days = max(1, (pd.Timestamp(dt) - pd.Timestamp(all_dates[i - 1])).days)
+            interest = -cash * margin_rate_annual * days / 360.0
+            cash -= interest
+            financing_paid.append((dt, interest))
         if i == 0:
             # No execution possible on first bar; mark-to-market at close
             close_prices = {
@@ -784,5 +798,6 @@ def backtest(
         stats=stats,
         restricted=restricted_series,
         order_costs=order_costs,
+        financing=pd.Series({dt: x for dt, x in financing_paid}, dtype=float).sort_index(),
     )
 

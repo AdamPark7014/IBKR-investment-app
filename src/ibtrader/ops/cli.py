@@ -1659,5 +1659,29 @@ def chequeo_cmd(
     raise typer.Exit(0 if ok else 1)
 
 
+
+@app.command("research-leverage")
+def research_leverage(
+    leverages: str = typer.Option("1.0,1.5", "--leverages", help="Topes de exposición bruta a comparar."),
+    universe: Optional[str] = typer.Option(None, "--universe", help="JSON de universo (por defecto el de .env)."),
+) -> None:
+    """Qué haría el apalancamiento a configuraciones ya probadas, pagando el interés de margen.
+
+    No es una prueba nueva ni elige entre variantes: es para decidir el apalancamiento con números.
+    """
+    import json as _json
+
+    from ..data.universe import load_universe_spec
+    from ..research.leverage_study import run_leverage_study
+
+    s = AppSettings()
+    s.resolve_paths()
+    uni = load_universe_spec(universe or s.data.universe_file or "config/universe-10etf.json")
+    s.universe.symbols = list(uni.symbols)
+    data = {k: v for k, v in load_universe_v2(s).items() if k in set(uni.symbols)}
+    levs = [float(x) for x in leverages.split(",") if x.strip()]
+    rep = run_leverage_study(data, s, uni, leverages=levs, margin_rate_annual=s.research.margin_rate_annual)
+    typer.echo(_json.dumps(_noneify(rep), ensure_ascii=False, indent=2))
+
 if __name__ == "__main__":
     app()

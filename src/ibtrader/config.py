@@ -267,6 +267,11 @@ class StrategyConfig(BaseModel):
 class ResearchConfig(BaseModel):
     """Research discipline (playbook phase 1): frozen hold-out and trial budget."""
 
+    # Solo para estudios de apalancamiento (research-leverage); fuera del freeze de producción.
+    margin_rate_annual: float = Field(
+        default=0.06, ge=0, description="Interés de margen IBKR Pro en USD (referencia + ~1,5 %); verificar en IBKR"
+    )
+
     holdout_start: Optional[str] = Field(
         default=None,
         description="ISO date. Bars on/after this date are hidden from research runs unless confirmation_mode",
