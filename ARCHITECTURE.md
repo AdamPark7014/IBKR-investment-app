@@ -42,7 +42,7 @@ Módulos principales (carpeta `src/ibtrader`):
 - `ops`:
   - `journal`: bitácora SQLite (trades y decisiones).
   - `status`, `killswitch`.
-  - `cli`: CLI Typer para `status`, `download-data`, `backtest`, `paper-run` (sin ejecutar órdenes en esta fase), `kill/clear-kill`.
+  - `cli`: CLI Typer para `status`, `download-data`, `backtest`, `run-daily` (modo sombra por defecto, sin órdenes en esta fase), `kill/clear-kill`.
 - `engine/decision` (fase 1): esqueleto del Decision Engine que genera decisiones explicadas y, por política de esta fase, produce acciones “NO_TRADE” (documentadas en el journal).
 
 Diagrama lógico (simplificado):

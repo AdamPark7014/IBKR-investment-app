@@ -15,7 +15,6 @@ from ..data.cache import load_lineage
 from ..data.providers import FixtureProvider
 from ..data.service import load_universe_v2
 from ..diagnostics.suspicious import diagnose as diagnose_suspicious
-from ..engine.decision import DecisionEngine
 from ..logging import setup_logging
 from ..ops.killswitch import activate_killswitch, clear_killswitch
 from ..ops.status import status_summary
@@ -363,89 +362,6 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
     )
 
 
-@app.command("paper-run")
-def paper_run(
-    shadow: bool = typer.Option(
-        False,
-        "--shadow",
-        help="Log desired vs held weights via shadow book (no broker orders).",
-    ),
-) -> None:
-    s = AppSettings()
-    s.resolve_paths()
-    data = load_universe_v2(s)
-    engine = DecisionEngine(s)
-    decisions = engine.generate(data)
-    counts: dict[str, int] = {}
-    for d in decisions:
-        counts[d.action] = counts.get(d.action, 0) + 1
-    out: dict[str, Any] = {
-        "orders_sent": 0,
-        "counts": counts,
-        "decisions": [d.__dict__ for d in decisions],
-    }
-    if shadow:
-        import json as _json
-        from pathlib import Path as _Path
-
-        from .shadow import desired_from_decisions, log_shadow_snapshot
-
-        held: dict[str, float] = {}
-        held_path = _Path(s.data.data_dir) / "paper_positions.json"
-        if held_path.exists():
-            raw = _json.loads(held_path.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                held = {str(k): float(v) for k, v in raw.items()}
-        out["shadow"] = log_shadow_snapshot(desired_from_decisions(decisions), held=held)
-        out["shadow_held_source"] = str(held_path) if held_path.exists() else None
-    rprint(out)
-
-
-@app.command("autopilot")
-def autopilot(
-    use_ai: bool = typer.Option(
-        False,
-        "--use-ai/--no-ai",
-        help="Optional low-token brief via puerta IA (needs ANTHROPIC_*). Default: deterministic.",
-    ),
-    open_ui: bool = typer.Option(
-        False,
-        "--open/--no-open",
-        help="Open the one-screen HTML in the browser.",
-    ),
-    language: str = typer.Option("es", "--lang", help="Brief language for PromptPack."),
-    max_tokens: int = typer.Option(400, "--max-tokens", help="AI max_tokens (low-token by design)."),
-) -> None:
-    """Run heavy backend triage + one-screen UI. Zero broker orders.
-
-    ``--use-ai`` only talks to Claude through the puerta (ANTHROPIC_BASE_URL=https://ia.zynoratek.com,
-    ANTHROPIC_API_KEY=pia_… project token); otherwise it exits 2 with the reason instead of
-    silently falling back.
-    """
-    import json as _json
-
-    from ..intelligence.brief import puerta_config_error
-    from ..intelligence.prompt_pack import default_pack
-    from .autopilot import run_autopilot
-
-    if use_ai:
-        problem = puerta_config_error()
-        if problem is not None:
-            typer.echo(f"--use-ai: {problem}. See C:\\dev\\scripts\\ai-os\\IA-CLAUDE.md §3.", err=True)
-            raise typer.Exit(code=2)
-
-    pack = default_pack(language=language, max_tokens=max_tokens)
-    payload = run_autopilot(use_ai=use_ai, pack=pack, open_ui=open_ui)
-    slim = {
-        "exp_id": payload.get("exp_id"),
-        "orders_sent": payload.get("orders_sent", 0),
-        "brief_source": (payload.get("brief") or {}).get("source"),
-        "artifact_html": payload.get("latest_html") or payload.get("artifact_html"),
-        "disclaimer": payload.get("disclaimer"),
-    }
-    typer.echo(_json.dumps(_noneify(slim), ensure_ascii=False, separators=(",", ":")))
-
-
 @app.command("ibc-checklist")
 def ibc_checklist() -> None:
     """Print a manual paper Gateway/IBC checklist as JSON (no installs, no orders)."""
@@ -477,50 +393,6 @@ def slippage_report(
     typer.echo(
         _json.dumps(_noneify(summarize_cli(path, window_days)), ensure_ascii=False, separators=(",", ":"))
     )
-
-
-@app.command("paper-reconcile")
-def paper_reconcile(
-    window_days: int = typer.Option(
-        30,
-        "--window-days",
-        help="Slippage ledger summary lookback when data/slippage_ledger.jsonl exists.",
-    ),
-) -> None:
-    """Compare DecisionEngine targets vs paper_positions.json; no broker orders."""
-    import json as _json
-    from pathlib import Path as _Path
-
-    from .shadow import desired_from_decisions, log_shadow_snapshot
-
-    s = AppSettings()
-    s.resolve_paths()
-    data = load_universe_v2(s)
-    engine = DecisionEngine(s)
-    decisions = engine.generate(data)
-    desired = desired_from_decisions(decisions)
-
-    held: dict[str, float] = {}
-    held_path = _Path(s.data.data_dir) / "paper_positions.json"
-    if held_path.exists():
-        raw = _json.loads(held_path.read_text(encoding="utf-8"))
-        if isinstance(raw, dict):
-            held = {str(k): float(v) for k, v in raw.items()}
-
-    out: dict[str, Any] = log_shadow_snapshot(desired, held, tag="paper-reconcile")
-    out["orders_sent"] = 0
-    out["shadow_held_source"] = str(held_path) if held_path.exists() else None
-
-    ledger_path = _Path(s.data.data_dir) / "slippage_ledger.jsonl"
-    if ledger_path.exists():
-        try:
-            from . import slippage_ledger as _slippage_ledger
-
-            out["slippage"] = _slippage_ledger.summarize(ledger_path, window_days)
-        except ImportError:
-            pass
-
-    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
 
 @app.command()

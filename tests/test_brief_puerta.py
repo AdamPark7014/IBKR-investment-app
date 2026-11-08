@@ -88,6 +88,6 @@ def test_ai_brief_sends_no_temperature_and_checks_stop_reason(monkeypatch: Any) 
 def test_cli_use_ai_fails_clearly_without_puerta(monkeypatch: Any) -> None:
     monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    res = CliRunner(mix_stderr=False).invoke(cli_mod_app, ["autopilot", "--use-ai"])
+    res = CliRunner(mix_stderr=False).invoke(cli_mod_app, ["ai-review"])
     assert res.exit_code == 2
     assert "puerta" in (res.stderr or "")

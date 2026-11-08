@@ -44,9 +44,9 @@ def build_ibc_checklist() -> dict[str, Any]:
             "critical": True,
         },
         {
-            "id": "autopilot_scheduled_zero_orders",
-            "title": "Autopilot scheduled with zero broker orders",
-            "done_hint": "ibtrader autopilot / paper-reconcile only",
+            "id": "run_daily_scheduled_shadow",
+            "title": "run-daily plan/execute + heartbeat-check scheduled (EXECUTION__MODE=shadow first)",
+            "done_hint": "pwsh -File scripts/schedule-run-daily.ps1 -Action Register",
             "critical": True,
         },
     ]

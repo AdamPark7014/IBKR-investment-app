@@ -35,24 +35,12 @@ Requisitos (Windows 11, Python 3.12):
      - Puedes generar un ID de experimento: `ibtrader backtest-sample --exp-id p1p5_check`
      - Comparar modos (P5): `ibtrader compare-directions --exp-id p1p5_compare`
    - **Corrida diaria única** (07-11-2026, ver `docs/PAPER-OPS.md`): `ibtrader run-daily --phase plan|execute` (modo sombra por defecto, cero órdenes), `ibtrader heartbeat-check`, `ibtrader scorecard` (calidad medible) y `ibtrader ai-review` (revisión de diffs con Claude vía puerta). Programar: `pwsh -File scripts/schedule-run-daily.ps1 -Action Register`.
-   - Motor de papel viejo (BUY/SELL/WATCH/NO_TRADE, sin órdenes): `ibtrader paper-run`
-   - Reconciliación paper (desired vs `data/paper_positions.json`, JSON a stdout, cero órdenes): `ibtrader paper-reconcile`. Fase 3 = cimiento disciplinado (drift + slippage ledger opcional); **no LIVE**. El playbook institucional excluye LLM sobre titulares, alt-data de pago e intradía — aquí solo comparas cartera objetivo vs held.
    - Paper stack (desired/held/drift en SQLite, JSON a stdout, cero órdenes): `ibtrader paper-stack`
    - Slippage report (resumen del ledger, JSON, cero órdenes): `ibtrader slippage-report`
    - Paper vs OOS (compara curva paper vs hold-out, JSON, cero órdenes): `ibtrader paper-vs-oos`
-   - Congelar/verificar config paper (JSON, cero órdenes): `ibtrader config-freeze` (`--write` una vez; default `--verify`). Freeze en `data/paper_config_freeze.json`; cubre riesgo, costos, universo, `mode`, `trading` y `strategy`. `--write` no pisa un freeze cuya config cambió (sale 1; `--force` para re-baselinar a propósito) y el autopilot nunca lo escribe solo.
-   - Autopilot (backend pesado + UI de una pantalla, cero órdenes): ibtrader autopilot · opcional --use-ai solo por la puerta IA (`ANTHROPIC_BASE_URL=https://ia.zynoratek.com` + token `pia_…`; si no, sale 2 con el motivo). Curva paper = caja + acciones × precio desde `data/paper_account.json` (o NAV del broker con `paper-equity --append`); las alertas de «matar» por drawdown se encienden con 20 días de equity real.
-   - Schedule diario (Task Scheduler, paper triage only, 0 órdenes, no LIVE):
-     - Registrar tarea `ibtrader-autopilot` (16:30 local por defecto): `pwsh -File scripts/schedule-autopilot.ps1 -Action Register`
-     - Opcional hora: `-Time 17:00`. Estado: `-Action Status`. Quitar: `-Action Unregister`.
-     - Registrar tarea `ibtrader-paper-reconcile` (16:35 local, tras autopilot): `pwsh -File scripts/schedule-reconcile.ps1 -Action Register`
-     - Estado/quitar/hora: mismos `-Action Status|Unregister` y `-Time` que autopilot.
-     - Registrar tarea `ibtrader-ibc-check` (08:00 local): `pwsh -File scripts/schedule-ibc-check.ps1 -Action Register`
-     - Estado/quitar/hora/RunOnce: mismos `-Action Status|Unregister|RunOnce` y `-Time` (default 08:00).
-     - Register-all (las 3 tareas a la vez; defaults 16:30 / 16:35 / 08:00): `pwsh -File scripts/schedule-register-all.ps1 -Action Register`
-     - Estado/quitar/horas: `-Action Status|Unregister`; opcionales `-AutopilotTime` `-ReconcileTime` `-IbcTime`.
-     - Smoke paper triage (Status de las 3 tareas; RunOnce: ibc-checklist → paper-reconcile → paper-vs-oos → paper-stack; 0 órdenes, no LIVE): `pwsh -File scripts/ops-smoke.ps1` / `-Action RunOnce`
-     - Estado por defecto no falla si alguna tarea no está registrada.
+   - Congelar/verificar config paper (JSON, cero órdenes): `ibtrader config-freeze` (`--write` una vez; default `--verify`). Freeze en `data/paper_config_freeze.json`; cubre riesgo, costos, universo, `mode`, `trading`, `strategy`, `pretrade` y `execution`. `--write` no pisa un freeze cuya config cambió (sale 1; `--force` para re-baselinar a propósito).
+   - Tareas programadas (Windows): `pwsh -File scripts/schedule-register-all.ps1 -Action Register` registra run-daily plan/execute, heartbeat-check e ibc-check (y borra las tareas viejas `ibtrader-autopilot` / `ibtrader-paper-reconcile`). Smoke: `pwsh -File scripts/ops-smoke.ps1` / `-Action RunOnce`.
+   - El motor de fase 1 (`paper-run`, `autopilot`, `paper-reconcile`) se eliminó el 08-11-2026: un solo camino, el pipeline de `run-daily`.
    - Checklist Gateway/IBC (JSON manual, no instala nada): `ibtrader ibc-checklist`
    - Kill switch: `ibtrader kill` / limpiar: `ibtrader clear-kill`
 

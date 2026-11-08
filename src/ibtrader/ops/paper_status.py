@@ -87,8 +87,9 @@ def build_paper_status(data_dir: str | Path) -> dict[str, Any]:
         "summaries": summaries,
         "orders_sent": 0,
         "schedules": {
-            "ibtrader-autopilot": _task_registered('ibtrader-autopilot'),
-            "ibtrader-paper-reconcile": _task_registered('ibtrader-paper-reconcile'),
+            "ibtrader-run-daily-plan": _task_registered('ibtrader-run-daily-plan'),
+            "ibtrader-run-daily-execute": _task_registered('ibtrader-run-daily-execute'),
+            "ibtrader-heartbeat-check": _task_registered('ibtrader-heartbeat-check'),
             "ibtrader-ibc-check": _task_registered('ibtrader-ibc-check'),
         },
     }

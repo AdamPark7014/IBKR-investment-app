@@ -18,7 +18,7 @@ def test_build_ibc_checklist_shape() -> None:
     for key in ('id', 'title', 'done_hint', 'critical'):
         assert all(key in i for i in items)
     assert all(isinstance(i['critical'], bool) for i in items)
-    for need in ('gateway_paper_port', 'api_127_only', 'no_live_until_phase3_pass', 'autopilot_scheduled_zero_orders'):
+    for need in ('gateway_paper_port', 'api_127_only', 'no_live_until_phase3_pass', 'run_daily_scheduled_shadow'):
         assert need in ids
 
 def test_ibc_checklist_cli_smoke() -> None:

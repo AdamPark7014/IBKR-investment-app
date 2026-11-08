@@ -11,7 +11,8 @@ from ibtrader.ops.paper_curve import append_equity_point
 from ibtrader.ops.paper_status import build_paper_status
 from ibtrader.ops.stack import PaperStack
 
-_SCHEDULE_KEYS = ("ibtrader-autopilot", "ibtrader-paper-reconcile", "ibtrader-ibc-check")
+_SCHEDULE_KEYS = ("ibtrader-run-daily-plan", "ibtrader-run-daily-execute", "ibtrader-heartbeat-check",
+                  "ibtrader-ibc-check")
 
 
 def _assert_schedules(payload: dict) -> None:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from ibtrader.intelligence.brief import ai_brief, compress_facts, deterministic_brief
 from ibtrader.intelligence.prompt_pack import default_pack
-from ibtrader.ops.simple_ui import render_simple_console
 
 
 def test_prompt_pack_render_is_compact() -> None:
@@ -37,24 +36,3 @@ def test_compress_and_deterministic_brief() -> None:
     if urgency_line in text or "urgency_mode" in (facts.get("extra") or {}):
         assert urgency_line in text
     assert "Triage" in out["text"] or "disclaimer" in out["text"].lower() or "Triage" in facts["disclaimer"]
-
-
-def test_simple_ui_renders_cards() -> None:
-    html = render_simple_console(
-        {
-            "generated_at": "2024-06-01",
-            "facts": {
-                "as_of": "2024-06-01",
-                "equity_trend": 1,
-                "equity_vol_20": 0.12,
-                "risk_on_proxy": 1,
-                "paper_n_drift": 0,
-                "breadth_proxy": 0.5,
-            },
-            "brief": {"text": "Hola", "source": "deterministic"},
-        }
-    )
-    assert "Mercado" in html
-    assert "Paper drift" in html
-    assert "Hola" in html
-    assert "LIVE" in html

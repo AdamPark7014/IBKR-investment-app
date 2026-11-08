@@ -17,10 +17,8 @@ Write-Host 'PAPER triage only — zero broker orders — NO LIVE.'
 
 switch ($Action) {
     'Status' {
-        Write-Host '=== ibtrader-autopilot ==='
-        & (Join-Path $PSScriptRoot 'schedule-autopilot.ps1') -Action Status
-        Write-Host '=== ibtrader-paper-reconcile ==='
-        & (Join-Path $PSScriptRoot 'schedule-reconcile.ps1') -Action Status
+        Write-Host '=== ibtrader-run-daily (plan / execute / heartbeat) ==='
+        & (Join-Path $PSScriptRoot 'schedule-run-daily.ps1') -Action Status
         Write-Host '=== ibtrader-ibc-check ==='
         & (Join-Path $PSScriptRoot 'schedule-ibc-check.ps1') -Action Status
         exit 0
@@ -33,7 +31,7 @@ switch ($Action) {
             exit 1
         }
 
-        $cmds = @('ibc-checklist', 'paper-reconcile', 'paper-vs-oos', 'paper-stack')
+        $cmds = @('ibc-checklist', 'run-daily', 'heartbeat-check', 'scorecard')
         $failed = @()
         foreach ($cmd in $cmds) {
             Write-Host "=== $cmd ==="
