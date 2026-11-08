@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from ibtrader.config import AppSettings
 from ibtrader.execution.order_manager import BrokerOrderStatus, OrderGateway
@@ -241,14 +240,6 @@ def test_shadow_book_receives_dividends_and_splits() -> None:
     assert credit_corporate_actions({"cash": 0, "shares": {"VNQ": 1}}, data, None, _date(2026, 11, 5)) == []
 
 
-def test_halve_risk_moves_freed_weight_to_cash_etf() -> None:
-    from ibtrader.ops.run_daily import halve_risk
-
-    out = halve_risk({"SPY": 0.6, "IEF": 0.3, "BIL": 0.1})
-    assert out == pytest.approx({"SPY": 0.3, "IEF": 0.15, "BIL": 0.55})
-    assert halve_risk({"SPY": 0.6}) == {"SPY": 0.3}
-
-
 def test_live_trades_only_when_target_moves_like_backtest(tmp_path: Path) -> None:
     from ibtrader.execution.rebalance import ProposedOrder
     from ibtrader.ops.run_daily import settled_after, unchanged_targets
@@ -348,3 +339,17 @@ def test_shadow_fill_uses_backtest_cost_model() -> None:
     sell = shadow_fill(s, "SPY", "SELL", 100, 500.0, _date(2026, 11, 9))
     assert buy.price > 500.0 > sell.price  # half spread paid both ways
     assert sell.cost > buy.cost > 0  # SEC/FINRA fees only on sells
+
+
+def test_loss_limits_match_backtest_risk_manager(tmp_path: Path) -> None:
+    from ibtrader.ops.paper_curve import append_daily_equity_point
+    from ibtrader.ops.run_daily import loss_limit_blocks
+
+    s = AppSettings(_env_file=None)
+    p = tmp_path / "eq.jsonl"
+    for i, eq in enumerate([100_000, 110_000, 95_000, 86_000]):
+        append_daily_equity_point(p, eq, f"2026-11-0{i + 2}", basis="shadow")
+    blocks = loss_limit_blocks(p, s)
+    assert any(b.startswith("drawdown_limit") for b in blocks)  # 86k vs 110k peak = -21.8 %
+    assert any(b.startswith("daily_loss_limit") for b in blocks)  # 95k → 86k = -9.5 %
+    assert not any(b.startswith("cumulative") for b in blocks)  # -14 % vs first point

@@ -1,7 +1,7 @@
 """The daily production run in two phases (audit 2026-11-07, §5).
 
-``plan`` (after the close, ~16:30 ET):
-  data → freshness / cross-source → freeze check → target weights → drawdown de-risking →
+``plan`` (after the close, ~19:00 ET once Tiingo has published):
+  data → freshness / cross-source → freeze check → target weights → loss limits (same as the backtest RiskManager) →
   orders toward targets → pre-trade gate → (shadow) simulated fills into the paper book, or
   (orders modes) ``data/pending_orders.json`` for the next open → equity point → heartbeat.
 
@@ -124,13 +124,30 @@ def cash_symbols_of(symbols: Sequence[str], spec: Any = None) -> List[str]:
     return [s for s in symbols if boxes.get(s) == "cash" or (s not in boxes and s.upper() in KNOWN_CASH_ETFS)]
 
 
-def halve_risk(weights: Mapping[str, float], spec: Any = None) -> Dict[str, float]:
-    """Drawdown de-risking: halve the risky weights; the freed half goes to the cash ETF if there is one."""
-    cash = cash_symbols_of(list(weights), spec)
-    out = {s: (w if s in cash else w * 0.5) for s, w in weights.items()}
-    if cash:
-        freed = sum(w * 0.5 for s, w in weights.items() if s not in cash and w > 0)
-        out[cash[0]] = out.get(cash[0], 0.0) + freed
+
+def loss_limit_blocks(equity_path: Path, settings: AppSettings) -> List[str]:
+    """The backtest's ``RiskManager`` limits, on the paper equity curve (research ↔ production parity).
+
+    Same three rules the research backtest applied to the strategy it approved, re-checked every
+    session and lifted when the condition clears: drawdown from peak, cumulative loss from the first
+    point, and a daily loss on the last session (restricts the next day, as ``halt_next_day``).
+    Each one blocks risk increases; reductions and exits still go through.
+    """
+    pts = [float(p["equity"]) for p in load_equity_points(equity_path) if p.get("equity") is not None]
+    pts = [p for p in pts if p > 0]
+    if len(pts) < 2:
+        return []
+    r = settings.risk
+    out: List[str] = []
+    dd = pts[-1] / max(pts) - 1.0
+    if dd < -r.drawdown_limit_pct / 100.0:
+        out.append(f"drawdown_limit: {dd:.1%} < -{r.drawdown_limit_pct:g}%")
+    cum = pts[-1] / pts[0] - 1.0
+    if cum < -r.cumulative_loss_limit_pct / 100.0:
+        out.append(f"cumulative_loss_limit: {cum:.1%} < -{r.cumulative_loss_limit_pct:g}%")
+    day = pts[-1] / pts[-2] - 1.0
+    if day < -r.daily_loss_limit_pct / 100.0:
+        out.append(f"daily_loss_limit: {day:.1%} < -{r.daily_loss_limit_pct:g}%")
     return out
 
 
@@ -303,18 +320,12 @@ def run_plan(
     weights, meta = compute_target_weights(settings, data, spec)
     report["targets"] = {"weights": weights, "meta": meta}
 
-    dd = drawdown_now(paths.equity)
-    limit = settings.risk.drawdown_limit_pct / 100.0
-    risk_can_increase = True
-    report["drawdown"] = dd
-    if dd is not None and dd <= -1.5 * limit:
-        risk_can_increase = False
-        report["blocks"].append(f"drawdown_stop: {dd:.1%} <= {-1.5 * limit:.0%}")
-        _alert(settings, report, "drawdown_stop", "critical", f"drawdown {dd:.1%}: new risk stopped, review")
-    elif dd is not None and dd <= -limit:
-        weights = halve_risk(weights, spec)
-        report["derisk"] = f"risky weights halved (freed weight to cash ETF): drawdown {dd:.1%} <= {-limit:.0%}"
-        _alert(settings, report, "drawdown_derisk", "warn", report["derisk"])
+    report["drawdown"] = drawdown_now(paths.equity)
+    loss_blocks = loss_limit_blocks(paths.equity, settings)
+    risk_can_increase = not loss_blocks
+    if loss_blocks:
+        report["blocks"].extend(loss_blocks)
+        _alert(settings, report, "loss_limit", "critical", "; ".join(loss_blocks) + ": no new risk, reductions only")
 
     prices = raw_last_prices(data)
     book = load_book(paths.book)
@@ -572,7 +583,7 @@ def secondary_loader_for(settings: AppSettings) -> Optional[Loader]:
 
 __all__ = [
     "Paths", "book_nav", "cash_symbols_of", "credit_corporate_actions", "drawdown_now", "exit_code_for",
-    "fresh_loader", "halve_risk", "primary_provider", "raw_last_prices", "run_execute", "run_plan",
+    "fresh_loader", "loss_limit_blocks", "primary_provider", "raw_last_prices", "run_execute", "run_plan",
     "secondary_loader_for",
     "settled_after", "shadow_fill", "unchanged_targets",
 ]
