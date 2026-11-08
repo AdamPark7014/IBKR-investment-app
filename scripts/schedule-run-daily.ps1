@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Register / unregister / query the daily run tasks: plan (after the close), execute (after the open)
@@ -25,22 +25,14 @@ $Tasks = @(
     @{ Name = 'ibtrader-heartbeat-check'; Args = 'heartbeat-check'; Time = $HeartbeatTime; Days = 'TUE,WED,THU,FRI,SAT' }
 )
 
-function Get-Runner {
-    $VenvPy = Join-Path $RepoRoot '.venv\Scripts\python.exe'
-    if (Test-Path -LiteralPath $VenvPy) { return "& '$VenvPy' -m ibtrader.ops.cli" }
-    if (Get-Command ibtrader -ErrorAction SilentlyContinue) { return '& ibtrader' }
-    Write-Error "Need repo .venv\Scripts\python.exe or ibtrader on PATH. Repo=$RepoRoot"
-    exit 1
-}
-
 foreach ($t in $Tasks) {
     switch ($Action) {
         'Register' {
-            $runner = Get-Runner
-            # Output (JSON summary + logs) is appended to data\logs\<task>.log: a scheduled task has no console.
-            $log = "data\logs\$($t.Name).log"
-            $inner = "Set-Location -LiteralPath '$RepoRoot'; New-Item -ItemType Directory -Force data\logs | Out-Null; $runner $($t.Args) *>> $log; exit `$LASTEXITCODE"
-            $Tr = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"$inner`""
+            # run-task.ps1 enters the repo, loads the puerta token (Claude copilot/triage) from outside the
+            # repo and appends the output to data\logs\<task>.log: a scheduled task has no console.
+            $Runner = Join-Path $RepoRoot 'scripts\run-task.ps1'
+            $Tr = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Runner`" -Name $($t.Name) -Command `"$($t.Args)`""
+            if ($Tr.Length -gt 261) { Write-Error "La orden de la tarea pasa de 261 caracteres (límite de schtasks): mueve el repo a una ruta más corta."; exit 1 }
             schtasks /Create /TN $t.Name /TR $Tr /SC WEEKLY /D $t.Days /ST $t.Time /F
             if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create $($t.Name) failed ($LASTEXITCODE)."; exit $LASTEXITCODE }
             Write-Host "Registrada '$($t.Name)' $($t.Days) a las $($t.Time)."

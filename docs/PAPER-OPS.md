@@ -74,6 +74,10 @@ Las opiniones quedan en `data/copilot_opinions.jsonl` con los cierres del día. 
   con reglas que ya existen. Luego se pasan por la compuerta con
   `ibtrader research-portfolio --profile full --hypotheses reports/research/copilot_hypotheses.json`.
   Cada hipótesis cuenta como una prueba más en el DSR.
+- **Token de la puerta:** no va en `.env`, porque la configuración rechaza claves desconocidas. Las tareas
+  programadas lo leen con `scripts/run-task.ps1` desde `C:\dev\secrets\puerta-ia\ibkr.token` (o desde la
+  ruta en `IBTRADER_PUERTA_TOKEN_FILE`). Sin ese archivo, el sistema corre igual con Claude apagado. Después de
+  actualizar, vuelve a registrar las tareas (`schedule-run-daily.ps1 -Action Register`).
 - **Coste:** cada llamada queda en `data/ai_usage.jsonl`. Se detiene al llegar a `OPS__AI_MONTHLY_BUDGET_USD`.
 - **Por qué no decide órdenes:** Claude ya "vio" el pasado al entrenarse, así que un backtest de sus decisiones
   está contaminado. La única prueba limpia es hacia adelante, en sombra.
