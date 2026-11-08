@@ -319,6 +319,13 @@ def run_plan(
         spec = load_universe_spec(settings.data.universe_file)
     weights, meta = compute_target_weights(settings, data, spec)
     report["targets"] = {"weights": weights, "meta": meta}
+    if meta.get("legacy"):
+        # sma_crossover was rejected by research: it may feed the shadow book, never the broker.
+        if mode == "shadow":
+            report.setdefault("warnings", []).append("strategy sma_crossover was rejected by research (shadow only)")
+        else:
+            report["blocks"].append("strategy_rejected: sma_crossover")
+            freeze_ok = False  # same effect as an invalid freeze: nothing new reaches the broker
 
     report["drawdown"] = drawdown_now(paths.equity)
     loss_blocks = loss_limit_blocks(paths.equity, settings)

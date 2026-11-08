@@ -353,3 +353,28 @@ def test_loss_limits_match_backtest_risk_manager(tmp_path: Path) -> None:
     assert any(b.startswith("drawdown_limit") for b in blocks)  # 86k vs 110k peak = -21.8 %
     assert any(b.startswith("daily_loss_limit") for b in blocks)  # 95k → 86k = -9.5 %
     assert not any(b.startswith("cumulative") for b in blocks)  # -14 % vs first point
+
+
+def test_freeze_catches_universe_file_edits(tmp_path: Path) -> None:
+    from ibtrader.ops.config_freeze import verify_freeze
+
+    uni = tmp_path / "uni.json"
+    uni.write_text('{"name": "u", "symbols": []}')
+    s = _settings(tmp_path)
+    s.data.universe_file = str(uni)
+    f = tmp_path / "freeze.json"
+    write_freeze(f, s)
+    assert verify_freeze(f, s)["ok"] is True
+    uni.write_text('{"name": "u2", "symbols": []}')  # e.g. a box moved
+    v = verify_freeze(f, s)
+    assert v["ok"] is False and "universe_spec" in v["changed_sections"]
+
+
+def test_rejected_strategy_never_reaches_the_broker(tmp_path: Path) -> None:
+    s = _orders_ready(tmp_path)
+    s.strategy.name = "sma_crossover"
+    s.strategy.params = {"fast_window": 10, "slow_window": 30}
+    write_freeze(tmp_path / "data" / "paper_config_freeze.json", s)
+    rep = run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+    assert "strategy_rejected: sma_crossover" in rep["blocks"] and rep["pretrade"]["n_approved"] == 0
+    assert "risk_restricted" in rep["pretrade"]["global_blocks"]

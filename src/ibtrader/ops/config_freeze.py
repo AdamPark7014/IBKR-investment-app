@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 
 def load_assumed_sharpe(freeze_path: str | Path, default: float = 0.8) -> float:
@@ -77,7 +77,20 @@ def snapshot_settings(settings: Any) -> dict[str, Any]:
         # Pre-trade caps and execution mode decide what reaches the broker: part of the system.
         "pretrade": _dump(getattr(settings, "pretrade", {})),
         "execution": _dump(getattr(settings, "execution", {})),
+        # The universe file carries the boxes (risk-parity groups, cash box): editing it changes the
+        # weights as surely as a parameter does. Only its content hash is stored, never secrets.
+        "universe_spec": _universe_spec_hash(settings),
     }
+
+
+def _universe_spec_hash(settings: Any) -> Optional[str]:
+    path = getattr(getattr(settings, "data", None), "universe_file", None)
+    if not path:
+        return None
+    p = Path(str(path))
+    if not p.is_file():
+        return f"missing:{p.name}"
+    return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
 
 
 def config_hash(snapshot: Mapping[str, Any]) -> str:
