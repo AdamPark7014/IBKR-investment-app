@@ -23,7 +23,7 @@ riesgo" significa por cada unidad de volatilidad o de caída que se soporta.
 | 3 | **Buffer de no operar** (no tocar posiciones que apenas se movieron) | Hecho (pysystemtrade, `buffering`) | Fuerte (Carver, pysystemtrade): reduce mucho la rotación con poca pérdida de señal | Menos coste anual |
 | 4 | **Barrido de efectivo a BIL** | Hecho | Fuerte y mecánica: el efectivo ocioso cobra el tipo de las letras del Tesoro | ≈ tipo de corto plazo sobre la parte sin invertir |
 | 5 | **Núcleo + tendencia** (50 % posición larga constante, 50 % reglas de tendencia) | Candidato añadido a la investigación, no en producción | Media: suaviza el coste de oportunidad de la tendencia pura en mercados alcistas; en sintéticos nunca fue el peor | Mejor Sharpe esperado que tendencia pura; hay que probarlo |
-| 6 | **Universo más amplio** (`config/universe-16etf.json`) | Archivo opcional, no por defecto | Fuerte en general (más mercados poco correlacionados = más diversificación), pero depende de qué ETF | Mayor Sharpe si pasa la compuerta |
+| 6 | **Universo más amplio** (`config/universe-16etf.json`) | Archivo opcional, no por defecto | Fuerte en general (más mercados poco correlacionados = más diversificación), pero depende de qué ETF. Cajas agrupadas por fuente de riesgo: con una caja por ETF, `box_risk_parity` es idéntico a `equal` | Mayor Sharpe si pasa la compuerta |
 | 7 | **Carry y valor** (otras familias de señales) | No implementado | Fuerte en la literatura, pero necesita datos que no tenemos (curvas, rendimientos) | Pendiente de datos |
 
 Términos:

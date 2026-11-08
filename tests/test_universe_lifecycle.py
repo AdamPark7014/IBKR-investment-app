@@ -280,4 +280,5 @@ def test_sixteen_etf_spec_is_a_superset_with_cash_last() -> None:
     sixteen = load_universe_spec(REPO / "config" / "universe-16etf.json")
     assert len(sixteen.symbols) == 16 and set(ten.symbols) < set(sixteen.symbols)
     assert sixteen.symbols[-1] == "BIL"
-    assert len(set(sixteen.boxes())) == 16
+    # Boxes group risk sources; one box per ETF would make box_risk_parity identical to equal.
+    assert set(sixteen.boxes()) == {"equity", "nominal_bonds", "credit", "inflation", "real_estate", "usd", "cash"}

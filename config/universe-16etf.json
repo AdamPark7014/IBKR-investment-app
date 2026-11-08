@@ -2,12 +2,12 @@
   "name": "16etf-risk-parity",
   "as_of": "2026-11-08",
   "source": "Ampliación opcional de config/universe-10etf.json (docs/research/MEJORAS-EVIDENCIA-2026-11-08.md). No es el universo por defecto.",
-  "notes": "listed_from = fecha de inception publicada por el emisor (no la primera barra disponible en cada proveedor). Antes de confiar en una fecha, compararla con TiingoProvider.fetch_metadata(symbol).start_date; las entradas marcadas 'verificar contra Tiingo metadata' se pusieron de memoria. spread_bps es el techo documentado en el playbook (<= 2 pb salvo PDBC y TIP <= 5 pb), no una medida propia. delisted_on = null mientras el ETF siga listado. Los 6 ETF añadidos (IWM, SHY, LQD, EMB, BNDX, UUP) tienen fechas de memoria: verificar contra Tiingo metadata antes de usar este archivo. Más mercados poco correlacionados es la mejora con más evidencia en sistemas de tendencia, pero solo se adopta si pasa la compuerta de investigación con datos reales.",
+  "notes": "listed_from = fecha de inception publicada por el emisor (no la primera barra disponible en cada proveedor). Antes de confiar en una fecha, compararla con TiingoProvider.fetch_metadata(symbol).start_date; las entradas marcadas 'verificar contra Tiingo metadata' se pusieron de memoria. spread_bps es el techo documentado en el playbook (<= 2 pb salvo PDBC y TIP <= 5 pb), no una medida propia. delisted_on = null mientras el ETF siga listado. Los 6 ETF añadidos (IWM, SHY, LQD, EMB, BNDX, UUP) tienen fechas de memoria: verificar contra Tiingo metadata antes de usar este archivo. Más mercados poco correlacionados es la mejora con más evidencia en sistemas de tendencia, pero solo se adopta si pasa la compuerta de investigación con datos reales. Cajas agrupadas por fuente de riesgo (acciones, bonos nominales, crédito, inflación, inmobiliario, dólar): con una caja por ETF, box_risk_parity sería idéntico a equal. Fechas comprobadas con Tiingo el 2026-11-08: la primera barra cae 2-9 días después de listed_from.",
   "symbols": [
     {
       "symbol": "SPY",
       "asset_class": "equity",
-      "box": "us_equity",
+      "box": "equity",
       "listed_from": "1993-01-22",
       "delisted_on": null,
       "spread_bps": 2.0,
@@ -16,7 +16,7 @@
     {
       "symbol": "VEA",
       "asset_class": "equity",
-      "box": "developed_ex_us_equity",
+      "box": "equity",
       "listed_from": "2007-07-20",
       "delisted_on": null,
       "spread_bps": 2.0,
@@ -25,7 +25,7 @@
     {
       "symbol": "VWO",
       "asset_class": "equity",
-      "box": "emerging_equity",
+      "box": "equity",
       "listed_from": "2005-03-04",
       "delisted_on": null,
       "spread_bps": 2.0,
@@ -34,7 +34,7 @@
     {
       "symbol": "IEF",
       "asset_class": "fixed_income",
-      "box": "treasuries_intermediate",
+      "box": "nominal_bonds",
       "listed_from": "2002-07-22",
       "delisted_on": null,
       "spread_bps": 2.0,
@@ -43,7 +43,7 @@
     {
       "symbol": "TLT",
       "asset_class": "fixed_income",
-      "box": "treasuries_long",
+      "box": "nominal_bonds",
       "listed_from": "2002-07-22",
       "delisted_on": null,
       "spread_bps": 2.0,
@@ -52,7 +52,7 @@
     {
       "symbol": "TIP",
       "asset_class": "fixed_income",
-      "box": "tips",
+      "box": "inflation",
       "listed_from": "2003-12-04",
       "delisted_on": null,
       "spread_bps": 5.0,
@@ -61,7 +61,7 @@
     {
       "symbol": "GLD",
       "asset_class": "commodity",
-      "box": "gold",
+      "box": "inflation",
       "listed_from": "2004-11-18",
       "delisted_on": null,
       "spread_bps": 2.0,
@@ -70,7 +70,7 @@
     {
       "symbol": "PDBC",
       "asset_class": "commodity",
-      "box": "commodities",
+      "box": "inflation",
       "listed_from": "2014-11-07",
       "delisted_on": null,
       "spread_bps": 5.0,
@@ -79,7 +79,7 @@
     {
       "symbol": "VNQ",
       "asset_class": "real_estate",
-      "box": "reit",
+      "box": "real_estate",
       "listed_from": "2004-09-23",
       "delisted_on": null,
       "spread_bps": 2.0,
@@ -88,47 +88,47 @@
     {
       "symbol": "IWM",
       "asset_class": "equity",
-      "box": "us_small_equity",
+      "box": "equity",
       "listed_from": "2000-05-22",
       "delisted_on": null,
       "spread_bps": 2.0,
-      "notes": "iShares Russell 2000 (acciones pequeñas EE. UU.). verificar contra Tiingo metadata."
+      "notes": "iShares Russell 2000 (acciones pequeñas EE. UU.)."
     },
     {
       "symbol": "SHY",
       "asset_class": "fixed_income",
-      "box": "treasuries_short",
+      "box": "nominal_bonds",
       "listed_from": "2002-07-22",
       "delisted_on": null,
       "spread_bps": 2.0,
-      "notes": "iShares 1-3 Year Treasury Bond. verificar contra Tiingo metadata."
+      "notes": "iShares 1-3 Year Treasury Bond."
     },
     {
       "symbol": "LQD",
       "asset_class": "fixed_income",
-      "box": "corporate_ig",
+      "box": "credit",
       "listed_from": "2002-07-22",
       "delisted_on": null,
       "spread_bps": 3.0,
-      "notes": "iShares iBoxx Investment Grade Corporate Bond. verificar contra Tiingo metadata."
+      "notes": "iShares iBoxx Investment Grade Corporate Bond."
     },
     {
       "symbol": "EMB",
       "asset_class": "fixed_income",
-      "box": "emerging_bonds",
+      "box": "credit",
       "listed_from": "2007-12-17",
       "delisted_on": null,
       "spread_bps": 5.0,
-      "notes": "iShares J.P. Morgan USD Emerging Markets Bond. verificar contra Tiingo metadata."
+      "notes": "iShares J.P. Morgan USD Emerging Markets Bond."
     },
     {
       "symbol": "BNDX",
       "asset_class": "fixed_income",
-      "box": "intl_bonds",
+      "box": "nominal_bonds",
       "listed_from": "2013-05-31",
       "delisted_on": null,
       "spread_bps": 3.0,
-      "notes": "Vanguard Total International Bond (cubierto a USD). Historia corta. verificar contra Tiingo metadata."
+      "notes": "Vanguard Total International Bond (cubierto a USD). Historia corta."
     },
     {
       "symbol": "UUP",
@@ -137,7 +137,7 @@
       "listed_from": "2007-02-20",
       "delisted_on": null,
       "spread_bps": 5.0,
-      "notes": "Invesco DB US Dollar Index Bullish. verificar contra Tiingo metadata."
+      "notes": "Invesco DB US Dollar Index Bullish."
     },
     {
       "symbol": "BIL",
