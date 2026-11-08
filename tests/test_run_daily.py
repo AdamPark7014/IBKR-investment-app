@@ -336,3 +336,15 @@ def test_fresh_loader_bypasses_cache_without_touching_settings(monkeypatch) -> N
     s.engine.use_cache = True
     fresh_loader(s)
     assert seen["use_cache"] is False and s.engine.use_cache is True
+
+
+def test_shadow_fill_uses_backtest_cost_model() -> None:
+    from datetime import date as _date
+
+    from ibtrader.ops.run_daily import shadow_fill
+
+    s = AppSettings(_env_file=None)
+    buy = shadow_fill(s, "SPY", "BUY", 100, 500.0, _date(2026, 11, 9))
+    sell = shadow_fill(s, "SPY", "SELL", 100, 500.0, _date(2026, 11, 9))
+    assert buy.price > 500.0 > sell.price  # half spread paid both ways
+    assert sell.cost > buy.cost > 0  # SEC/FINRA fees only on sells

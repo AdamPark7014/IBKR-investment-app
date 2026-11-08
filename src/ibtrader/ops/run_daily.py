@@ -189,17 +189,31 @@ def drawdown_now(equity_path: Path) -> Optional[float]:
 
 
 def estimate_cost(settings: AppSettings, symbol: str, qty: int, price: float) -> float:
-    """IBKR Fixed commission (min/max) for the shadow book; the spread is applied to the price."""
-    c = settings.commission
-    value = qty * price
-    fee = max(c.min_per_order, c.per_share * qty)
-    return float(min(fee, c.max_percent_of_value / 100.0 * value))
+    """Commission for ``qty`` shares at ``price`` with the configured IBKR schedule (fixed or tiered)."""
+    from ..execution.costs import commission
+
+    return float(commission(settings.commission, int(qty), float(price)))
 
 
-def shadow_fill_price(settings: AppSettings, symbol: str, side: str, price: float) -> float:
-    spread = float(settings.slippage.spread_bps_by_symbol.get(symbol, settings.slippage.spread_bps_default))
-    half = spread / 2.0 / 1e4
-    return price * (1.0 + half) if side == "BUY" else price * (1.0 - half)
+def shadow_fill(settings: AppSettings, symbol: str, side: str, qty: int, price: float, trade_date: date,
+                df: Optional[pd.DataFrame] = None) -> Fill:
+    """Shadow fill with the backtest's own cost model (``execution.costs.total_order_cost``):
+    half spread + square-root impact (when ADV/σ are known) in the price, commission + SEC/FINRA
+    fees in cash. Research and paper therefore charge the same costs."""
+    from ..execution.costs import rolling_adv_and_sigma, total_order_cost
+
+    sigma = adv = None
+    if df is not None and len(df) > 2:
+        a, sg = rolling_adv_and_sigma(df, settings.slippage.adv_window_days, settings.slippage.sigma_window_days)
+        last_a, last_s = float(a.iloc[-1]), float(sg.iloc[-1])
+        adv = last_a if math.isfinite(last_a) and last_a > 0 else None
+        sigma = last_s if math.isfinite(last_s) and last_s > 0 else None
+    signed = int(qty) if side == "BUY" else -int(qty)
+    oc = total_order_cost(symbol, signed, float(price), trade_date, commission_cfg=settings.commission,
+                          slippage_cfg=settings.slippage, reg_fees_cfg=settings.reg_fees,
+                          sigma_daily=sigma, adv_shares=adv)
+    return Fill(symbol, side, int(qty), float(oc.fill_price), float(oc.explicit_fees))
+
 
 
 def _alert(settings: AppSettings, report: Dict[str, Any], code: str, sev: str, msg: str,
@@ -352,8 +366,7 @@ def run_plan(
         mgr.execute(dec.approved, session, send=False)
         fills = []
         for o in dec.approved:
-            px = shadow_fill_price(settings, o.symbol, o.side, o.ref_price)
-            fills.append(Fill(o.symbol, o.side, o.quantity, px, estimate_cost(settings, o.symbol, o.quantity, px)))
+            fills.append(shadow_fill(settings, o.symbol, o.side, o.quantity, o.ref_price, session, data.get(o.symbol)))
         book = apply_fills(book, fills)
         book["basis"] = "shadow"
         book["last_session"] = session.isoformat()
@@ -361,7 +374,8 @@ def run_plan(
         book["settled"] = settled
         save_book(paths.book, book)
         report["shadow_fills"] = [f.__dict__ for f in fills]
-        report["note"] = "shadow: fills simulated at the close ± half spread + IBKR Fixed commission (optimistic)"
+        report["note"] = ("shadow: fills at the close with the backtest cost model (half spread + impact, "
+                          "commission + SEC/FINRA fees); no queue or partial fills, so still optimistic")
     else:
         paths.pending.parent.mkdir(parents=True, exist_ok=True)
         paths.pending.write_text(json.dumps(
@@ -560,5 +574,5 @@ __all__ = [
     "Paths", "book_nav", "cash_symbols_of", "credit_corporate_actions", "drawdown_now", "exit_code_for",
     "fresh_loader", "halve_risk", "primary_provider", "raw_last_prices", "run_execute", "run_plan",
     "secondary_loader_for",
-    "settled_after", "unchanged_targets",
+    "settled_after", "shadow_fill", "unchanged_targets",
 ]
