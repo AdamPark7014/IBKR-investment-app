@@ -23,6 +23,11 @@
   `ibtrader-paper-reconcile` siguen sin tocar y sin `run-task.ps1`.
 - `ibtrader chequeo`: `listo_sombra=true`; `listo_paper=false` solo por `gateway_ibkr`. Al haber cuenta paper,
   probar con `scripts\ib_readonly_check.py`.
+- 08-11, investigación con historia larga (`ENGINE__HISTORY_DAYS`, no `DATA__…`; default 5 años):
+  `config/universe-10etf-largo.json` (DBC por PDBC, solo investigación) desde 2006, hold-out 2024-11-08 sin abrir:
+  0 PASS; mejor `static_box_risk_parity` SR 0,81, t 3,23, DSR 0,992, pct 76,7, no gana al 60/40 (SR 1,03).
+  Ledger en 45 ensayos. Trampa: la caché quedó con 20 años y sirve de más aunque se pidan menos, así que
+  `minimo-20261108` (SR 0,91 static) cubre 2006–2026, no 2014–2026: **no es comparable** con `20261108T050413Z`.
 
 ## Hecho (2026-10-26, claude-code — los cinco pendientes de la revisión)
 - `short_only`: el runner armaba un sistema long-only que el motor short-only anulaba (cero operaciones).
