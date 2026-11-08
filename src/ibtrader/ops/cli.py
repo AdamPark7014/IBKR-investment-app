@@ -933,6 +933,11 @@ def research_portfolio(
         "--confirmation",
         help="Abre el hold-out congelado una vez (igual que research-run --confirmation).",
     ),
+    hypotheses: Optional[str] = typer.Option(
+        None,
+        "--hypotheses",
+        help="JSON de hipótesis del copiloto (copilot-research): pasan la misma compuerta y cuentan como pruebas.",
+    ),
 ) -> None:
     """
     Investigación de cartera: el pipeline contra 60/40, All Weather y carteras aleatorias.
@@ -978,8 +983,16 @@ def research_portfolio(
     if not data:
         raise typer.BadParameter(f"no prices loaded for universe symbols {list(uni.symbols)}")
     run_id = exp_id or _dt.now(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    extra: Optional[list[tuple[str, tuple[str, ...], str, Optional[dict[str, float]]]]] = None
+    if hypotheses:
+        from ..intelligence.copilot import load_hypotheses
+
+        extra = [
+            (h.name, tuple(h.rules), str(h.weighting), dict(h.rule_weights)) for h in load_hypotheses(hypotheses)
+        ]
     summary = run_portfolio_research(
-        data, s, uni, profile=profile, exp_id=run_id, reports_dir=s.data.reports_dir  # type: ignore[arg-type]
+        data, s, uni, profile=profile, exp_id=run_id, reports_dir=s.data.reports_dir,  # type: ignore[arg-type]
+        extra_candidates=extra,
     )
     research_dir = _Path(s.data.reports_dir) / "research"
     research_dir.mkdir(parents=True, exist_ok=True)
@@ -1556,7 +1569,8 @@ def ai_review(
     truncated = len(diff) > max_chars
     s = AppSettings()
     s.resolve_paths()
-    rev = review_diff(diff[:max_chars], data_dir=s.data.data_dir, budget_usd=s.ops.ai_monthly_budget_usd)
+    rev = review_diff(diff[:max_chars], data_dir=s.data.data_dir, budget_usd=s.ops.ai_monthly_budget_usd,
+                      model=s.ops.ai_model)
     if rev is None:
         typer.echo("ai-review: sin respuesta válida (ver data/ai_usage.jsonl)", err=True)
         raise typer.Exit(code=2)
@@ -1576,6 +1590,52 @@ def scorecard_cmd() -> None:
     s.resolve_paths()
     typer.echo(_json.dumps(build_scorecard(s), ensure_ascii=False, indent=2))
 
+
+
+@app.command("copilot-research")
+def copilot_research(
+    artifact: Optional[str] = typer.Option(
+        None, "--artifact", help="JSON de research-portfolio a analizar (por defecto, el más reciente)."
+    ),
+    out: str = typer.Option(
+        "reports/research/copilot_hypotheses.json", "--out", help="Dónde guardar las hipótesis."
+    ),
+) -> None:
+    """Claude lee la última investigación y propone hasta 3 hipótesis con reglas existentes.
+
+    No corre nada ni toca órdenes: después hay que pasarlas por la compuerta con
+    `research-portfolio --profile full --hypotheses <archivo>`, donde cuentan como pruebas.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    from ..intelligence.copilot import COPILOT_MODEL, propose_hypotheses
+    from ..pipeline.rules import EWMAC_SPEEDS, FIXED_FORECAST_SCALARS
+
+    s = AppSettings()
+    s.resolve_paths()
+    research_dir = _Path(s.data.reports_dir) / "research"
+    found = sorted(research_dir.glob("portfolio_2*.json"), key=lambda p: p.stat().st_mtime)
+    path = _Path(artifact) if artifact else (found[-1] if found else None)
+    if path is None or not path.is_file():
+        typer.echo("copilot-research: no hay resultados de research-portfolio; córrelo primero", err=True)
+        raise typer.Exit(2)
+    raw = _json.loads(path.read_text(encoding="utf-8"))
+    keep = ("verdict", "n_trials", "oos_start", "oos_end", "benchmarks", "rows", "candidates", "results")
+    context = {k: raw[k] for k in keep if k in raw} or raw
+    rules = set(EWMAC_SPEEDS) | set(FIXED_FORECAST_SCALARS)
+    hyps = propose_hypotheses(context, rules, data_dir=s.data.data_dir, budget_usd=s.ops.ai_monthly_budget_usd,
+                              model=s.ops.ai_model or COPILOT_MODEL)
+    if not hyps:
+        typer.echo("copilot-research: sin hipótesis válidas (ver data/ai_usage.jsonl)", err=True)
+        raise typer.Exit(1)
+    out_p = _Path(out)
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    out_p.write_text(_json.dumps({"fuente": str(path), "hypotheses": [h.model_dump() for h in hyps]},
+                                 ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(_json.dumps({"hipotesis": [h.model_dump() for h in hyps], "archivo": str(out_p),
+                            "siguiente": f"ibtrader research-portfolio --profile full --hypotheses {out_p}"},
+                           ensure_ascii=False))
 
 if __name__ == "__main__":
     app()

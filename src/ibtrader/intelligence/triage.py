@@ -186,10 +186,11 @@ def _call(
 
 
 def triage_incident(
-    facts: Mapping[str, Any], *, data_dir: str | Path = "./data", budget_usd: float = 10.0, client: Any = None
+    facts: Mapping[str, Any], *, data_dir: str | Path = "./data", budget_usd: float = 10.0, client: Any = None,
+    model: str = "",
 ) -> Optional[Triage]:
     text = _call(
-        proceso="ibtrader-triage", model=TRIAGE_MODEL, system=TRIAGE_SYSTEM,
+        proceso="ibtrader-triage", model=model or TRIAGE_MODEL, system=TRIAGE_SYSTEM,
         payload=json.dumps(dict(facts), sort_keys=True, ensure_ascii=False, default=str),
         schema=_schema(Triage), effort="medium", max_tokens=2000, data_dir=data_dir, budget_usd=budget_usd,
         client=client,
@@ -203,10 +204,10 @@ def triage_incident(
 
 
 def review_diff(
-    diff: str, *, data_dir: str | Path = "./data", budget_usd: float = 10.0, client: Any = None
+    diff: str, *, data_dir: str | Path = "./data", budget_usd: float = 10.0, client: Any = None, model: str = ""
 ) -> Optional[Review]:
     text = _call(
-        proceso="ibtrader-review", model=REVIEW_MODEL, system=REVIEW_SYSTEM, payload=diff,
+        proceso="ibtrader-review", model=model or REVIEW_MODEL, system=REVIEW_SYSTEM, payload=diff,
         schema=_schema(Review), effort="high", max_tokens=16000, data_dir=data_dir, budget_usd=budget_usd,
         client=client,
     )

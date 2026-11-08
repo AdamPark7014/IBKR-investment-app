@@ -249,8 +249,14 @@ class OpsConfig(BaseModel):
     heartbeat_file: str = "./data/heartbeat.json"
     telegram_bot_token: str = Field(default="", description="OPS__TELEGRAM_BOT_TOKEN; vacío desactiva Telegram")
     telegram_chat_id: str = ""
-    ai_triage: bool = Field(default=False, description="Ask Claude (via the puerta) to triage critical alerts")
+    ai_triage: bool = Field(default=False, description="Claude (vía puerta) diagnostica las alertas críticas")
     ai_monthly_budget_usd: float = Field(default=10.0, ge=0)
+    ai_model: str = Field(
+        default="", description="Modelo único para Claude (p. ej. claude-haiku-5-5); vacío = el de cada tarea"
+    )
+    copilot: bool = Field(
+        default=False, description="Opinión diaria de Claude en sombra tras el plan; nunca cambia órdenes"
+    )
 
 
 class StrategyConfig(BaseModel):

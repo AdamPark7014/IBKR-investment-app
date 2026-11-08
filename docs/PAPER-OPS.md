@@ -57,6 +57,27 @@ ibtrader paper-status           # presencia + resúmenes freeze/equity/stack/ope
 
 `autopilot`, `paper-run` y `paper-reconcile` (motor de fase 1) se eliminaron el 08-11-2026.
 
+## Copiloto de Claude (nunca envía órdenes)
+
+Con `OPS__COPILOT=true` y la puerta configurada, después de cada `run-daily --phase plan` Claude:
+
+- lee los hechos del día (objetivos, pesos, retornos recientes, caída, alertas);
+- opina por ETF (`aumentar` / `mantener` / `reducir`, convicción 1-3);
+- explica en español por qué el sistema hace lo que hace.
+
+Las opiniones quedan en `data/copilot_opinions.jsonl` con los cierres del día. El plan y las órdenes no cambian.
+
+- **Medición:** `ibtrader scorecard` → bloque `copiloto`. Compara la cartera "sistema + inclinación de Claude"
+  (±20 % como máximo por ETF, mismo bruto, sin apalancamiento) contra el sistema solo, usando únicamente precios
+  posteriores a cada opinión. Hacen falta 126 sesiones y t ≥ 3 para decir que aporta.
+- **Investigación:** `ibtrader copilot-research` lee el último `research-portfolio` y propone hasta 3 hipótesis
+  con reglas que ya existen. Luego se pasan por la compuerta con
+  `ibtrader research-portfolio --profile full --hypotheses reports/research/copilot_hypotheses.json`.
+  Cada hipótesis cuenta como una prueba más en el DSR.
+- **Coste:** cada llamada queda en `data/ai_usage.jsonl`. Se detiene al llegar a `OPS__AI_MONTHLY_BUDGET_USD`.
+- **Por qué no decide órdenes:** Claude ya "vio" el pasado al entrenarse, así que un backtest de sus decisiones
+  está contaminado. La única prueba limpia es hacia adelante, en sombra.
+
 ## Tareas programadas (Windows)
 
 ```powershell

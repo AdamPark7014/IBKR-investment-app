@@ -620,8 +620,12 @@ def run_portfolio_research(
     profile: Profile = "smoke",
     exp_id: str = "",
     reports_dir: Optional[str] = None,
+    extra_candidates: Optional[List[Tuple[str, Tuple[str, ...], str, Optional[Dict[str, float]]]]] = None,
 ) -> Dict[str, Any]:
     """Run the phase-2 system over ``data`` and report an honest verdict.
+
+    ``extra_candidates`` (e.g. the copilot's hypotheses): ``(id, rules, weighting, rule_weights)``
+    run through the same gates and count as trials like every other configuration.
 
     Steps, in order:
 
@@ -673,6 +677,11 @@ def run_portfolio_research(
     years_data = _years_span(prices.index)
 
     candidates = portfolio_candidates(profile)
+    extra_weights: Dict[str, Dict[str, float]] = {}
+    for cid, rules_x, weighting_x, rw in extra_candidates or []:
+        candidates.append((cid, tuple(rules_x), weighting_x))
+        if rw:
+            extra_weights[cid] = dict(rw)
     ledger_path = (Path(reports_dir) / "research" / TRIALS_LEDGER) if reports_dir is not None else None
     prior_trials = load_trials_ledger(ledger_path)
     n_random = RANDOM_PORTFOLIOS[profile]
@@ -698,7 +707,9 @@ def run_portfolio_research(
             if profile == "smoke"
             else {}
         )
-        rule_weights = dict(CORE_TREND_WEIGHTS) if tuple(rules) == CORE_TREND_RULES else None
+        rule_weights = extra_weights.get(candidate_id) or (
+            dict(CORE_TREND_WEIGHTS) if tuple(rules) == CORE_TREND_RULES else None
+        )
         cfg = SystemConfig(
             rules=tuple(rules),
             rule_weights=rule_weights,

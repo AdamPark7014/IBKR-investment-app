@@ -418,3 +418,25 @@ def test_cli_crash_raises_critical_alert(tmp_path: Path, monkeypatch) -> None:
     r = CliRunner().invoke(app, ["run-daily", "--phase", "plan"])
     assert r.exit_code == 2
     assert "run_daily_crash" in (tmp_path / "alerts.jsonl").read_text()
+
+
+def test_copilot_opinion_is_recorded_and_never_changes_orders(tmp_path: Path, monkeypatch) -> None:
+    from ibtrader.intelligence import copilot as cp
+
+    base = run_plan(_settings(tmp_path / "a"), loader=lambda _s: _frames(), now=PLAN_AT)
+    s = _settings(tmp_path / "b")
+    s.ops.copilot = True
+    op = cp.Opinion(summary="Compra acciones y bonos.", risks=[],
+                    views=[cp.SymbolView(symbol="SPY", stance="reducir", conviction=3, reason="x")])
+    monkeypatch.setattr(cp, "daily_opinion", lambda *a, **k: op)
+    rep = run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+    assert rep["status"] == "ok" and rep["copilot"]["status"] == "ok"
+    assert rep["pretrade"]["approved"] == base["pretrade"]["approved"]
+    row = json.loads((tmp_path / "b" / "data" / "copilot_opinions.jsonl").read_text().splitlines()[0])
+    assert row["tilted"]["SPY"] < row["weights"]["SPY"] and row["closes"]["SPY"] > 0
+    # Sin puerta ni opinión, la corrida sigue igual.
+    monkeypatch.setattr(cp, "daily_opinion", lambda *a, **k: None)
+    s2 = _settings(tmp_path / "c")
+    s2.ops.copilot = True
+    rep2 = run_plan(s2, loader=lambda _s: _frames(), now=PLAN_AT)
+    assert rep2["status"] == "ok" and rep2["copilot"] == {"status": "sin_opinion"}

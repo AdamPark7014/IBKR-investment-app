@@ -140,12 +140,16 @@ def build_scorecard(settings: AppSettings) -> Dict[str, Any]:
                        note="seis meses de paper antes de dinero real"))
 
     statuses = [m["status"] for m in out]
+    from ..intelligence.copilot import score_opinions
+
     return {
         "metrics": out,
         "n_pass": statuses.count("pass"),
         "n_fail": statuses.count("fail"),
         "n_insufficient": statuses.count("insufficient"),
         "ready_for_live": all(s == "pass" for s in statuses),
+        # Informativo: el copiloto no decide nada, así que no entra en ready_for_live.
+        "copiloto": score_opinions(data / "copilot_opinions.jsonl"),
         "note": "La rentabilidad no es una meta del scorecard: se mide, pero solo cuenta después de pasar "
                 "la compuerta de investigación (DSR >= 0.95, t >= 3, >= 252 observaciones).",
     }

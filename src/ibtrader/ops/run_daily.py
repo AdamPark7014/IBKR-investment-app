@@ -18,6 +18,7 @@ critical alert, never change what happens.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -42,6 +43,8 @@ from .reconcile import Fill, apply_fills, load_book, reconcile, save_book
 
 Loader = Callable[[AppSettings], Mapping[str, pd.DataFrame]]
 GatewayFactory = Callable[[AppSettings], OrderGateway]
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -244,6 +247,7 @@ def _alert(settings: AppSettings, report: Dict[str, Any], code: str, sev: str, m
             {"code": code, "message": msg, "phase": report.get("phase"), "mode": report.get("mode"),
              "blocks": report.get("blocks"), "context": context},
             data_dir=settings.data.data_dir, budget_usd=settings.ops.ai_monthly_budget_usd,
+            model=settings.ops.ai_model,
         )
         if t is not None:
             context["ai_triage"] = t.model_dump()
@@ -407,12 +411,42 @@ def run_plan(
     report["nav_after"] = nav_after
     if math.isfinite(nav_after):
         append_daily_equity_point(paths.equity, nav_after, session.isoformat(), basis=str(book.get("basis")))
+    if settings.ops.copilot:
+        report["copilot"] = copilot_opinion(settings, session, weights, book, prices, data, report, paths)
     if report["blocks"]:
         report["status"] = "blocked_new_risk"
     write_heartbeat(settings.ops, {"phase": "plan", "run_date": session.isoformat(), "status": report["status"],
                                    "n_orders": len(dec.approved), "mode": mode}, now=now)
     _save_report(paths, report)
     return report
+
+
+def copilot_opinion(settings: AppSettings, session: date, weights: Mapping[str, float], book: Mapping[str, Any],
+                    prices: Mapping[str, float], data: Mapping[str, pd.DataFrame], report: Mapping[str, Any],
+                    paths: Any) -> Dict[str, Any]:
+    """Opinión de Claude en sombra: se registra y se mide, nunca toca el plan ni las órdenes."""
+    from ..intelligence.copilot import COPILOT_MODEL, build_facts, daily_opinion, record_opinion
+
+    try:
+        nav = book_nav(book, prices)
+        shares = dict(book.get("shares") or {})
+        current = {s: float(q) * float(prices.get(s, 0.0)) / nav for s, q in shares.items()} if nav > 0 else {}
+        closes = {s: [float(x) for x in df["close"].astype(float).tail(64)] for s, df in data.items()
+                  if s in weights and "close" in df.columns}
+        alerts = [str(a.get("code")) for a in report.get("alerts") or [] if isinstance(a, Mapping)]
+        facts = build_facts(session.isoformat(), weights, current, closes, drawdown_now(paths.equity), alerts)
+        model = settings.ops.ai_model or COPILOT_MODEL
+        op = daily_opinion(facts, data_dir=settings.data.data_dir, budget_usd=settings.ops.ai_monthly_budget_usd,
+                           model=model)
+        if op is None:
+            return {"status": "sin_opinion"}
+        last_close = {s: c[-1] for s, c in closes.items() if c}
+        record_opinion(Path(settings.data.data_dir) / "copilot_opinions.jsonl", session.isoformat(), weights,
+                       last_close, op, model=model)
+        return {"status": "ok", **op.model_dump()}
+    except Exception as exc:  # noqa: BLE001 - el copiloto nunca rompe la corrida diaria
+        log.warning("copilot_failed %s: %s", type(exc).__name__, exc)
+        return {"status": f"error:{type(exc).__name__}"}
 
 
 # --------------------------------------------------------------------------- execute
