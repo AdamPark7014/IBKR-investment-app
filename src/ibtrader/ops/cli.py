@@ -1637,9 +1637,6 @@ def copilot_research(
                             "siguiente": f"ibtrader research-portfolio --profile full --hypotheses {out_p}"},
                            ensure_ascii=False))
 
-if __name__ == "__main__":
-    app()
-
 
 @app.command("chequeo")
 def chequeo_cmd(
@@ -1660,3 +1657,7 @@ def chequeo_cmd(
     typer.echo(_json.dumps(rep, ensure_ascii=False, indent=2))
     ok = rep["listo_paper"] if s.execution.mode != "shadow" else rep["listo_sombra"]
     raise typer.Exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    app()

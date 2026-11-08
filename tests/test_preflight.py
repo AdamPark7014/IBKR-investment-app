@@ -69,3 +69,8 @@ def test_tiingo_failure_is_reported_not_raised(tmp_path: Path) -> None:
     c = _by_id(rep)
     assert c["tiingo_responde"]["ok"] is False and "401" in c["tiingo_responde"]["detalle"]
     assert c["tareas_programadas"]["ok"] is None
+
+
+def test_every_command_is_registered_before_the_main_guard() -> None:
+    src = Path("src/ibtrader/ops/cli.py").read_text(encoding="utf-8")
+    assert src.rfind("@app.command") < src.index('if __name__ == "__main__":')
