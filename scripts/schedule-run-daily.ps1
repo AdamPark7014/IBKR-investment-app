@@ -37,7 +37,9 @@ foreach ($t in $Tasks) {
     switch ($Action) {
         'Register' {
             $runner = Get-Runner
-            $inner = "Set-Location -LiteralPath '$RepoRoot'; $runner $($t.Args)"
+            # Output (JSON summary + logs) is appended to data\logs\<task>.log: a scheduled task has no console.
+            $log = "data\logs\$($t.Name).log"
+            $inner = "Set-Location -LiteralPath '$RepoRoot'; New-Item -ItemType Directory -Force data\logs | Out-Null; $runner $($t.Args) *>> $log; exit `$LASTEXITCODE"
             $Tr = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"$inner`""
             schtasks /Create /TN $t.Name /TR $Tr /SC WEEKLY /D $t.Days /ST $t.Time /F
             if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create $($t.Name) failed ($LASTEXITCODE)."; exit $LASTEXITCODE }

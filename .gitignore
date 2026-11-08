@@ -38,3 +38,10 @@ data/paper_positions.json
 data/paper_stack.sqlite
 data/slippage_ledger.jsonl
 data/*.sample.json
+# run-daily (2026-11-08): account state, orders, alerts and logs never go to the repo
+data/pending_orders*.json
+data/orders.jsonl
+data/alerts.jsonl
+data/heartbeat.json
+data/ai_usage.jsonl
+data/logs/

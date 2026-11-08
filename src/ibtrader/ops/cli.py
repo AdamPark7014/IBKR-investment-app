@@ -1484,14 +1484,20 @@ def run_daily_cmd(
         brokers.append(b)
         return IBGateway(b.ib)
 
+    if phase not in ("plan", "execute"):
+        raise typer.BadParameter("phase must be plan|execute", param_hint="--phase")
     try:
         if phase == "plan":
             rep = run_plan(s, loader=fresh_loader, secondary_loader=secondary_loader_for(s),
                            gateway_factory=gateway_factory)
-        elif phase == "execute":
-            rep = run_execute(s, gateway_factory=gateway_factory)
         else:
-            raise typer.BadParameter("phase must be plan|execute", param_hint="--phase")
+            rep = run_execute(s, gateway_factory=gateway_factory)
+    except Exception as exc:  # noqa: BLE001 - an unexpected crash must still reach the operator
+        from .notify import emit_alert
+
+        emit_alert(s.ops, "run_daily_crash", "critical", f"{phase}: {type(exc).__name__}: {exc}")
+        typer.echo(f"run-daily {phase} crashed: {type(exc).__name__}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
     finally:
         for b in brokers:
             b.disconnect()

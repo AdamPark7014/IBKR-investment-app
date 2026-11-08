@@ -388,3 +388,21 @@ def test_execute_on_a_holiday_keeps_pending(tmp_path: Path) -> None:
     ex = run_execute(s, gateway_factory=lambda _s: broker, now=pre_open)
     assert ex["status"] == "market_closed" and broker.orders == {}
     assert (tmp_path / "data" / "pending_orders.json").exists()
+
+
+def test_cli_crash_raises_critical_alert(tmp_path: Path, monkeypatch) -> None:
+    from typer.testing import CliRunner
+
+    import ibtrader.ops.run_daily as rd
+    from ibtrader.ops.cli import app
+
+    monkeypatch.setenv("OPS__ALERTS_FILE", str(tmp_path / "alerts.jsonl"))
+    monkeypatch.setenv("DATA__DATA_DIR", str(tmp_path / "data"))
+
+    def boom(*_a, **_k):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(rd, "run_plan", boom)
+    r = CliRunner().invoke(app, ["run-daily", "--phase", "plan"])
+    assert r.exit_code == 2
+    assert "run_daily_crash" in (tmp_path / "alerts.jsonl").read_text()
