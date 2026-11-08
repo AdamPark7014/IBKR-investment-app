@@ -410,3 +410,17 @@ def test_short_only_direction_builds_a_short_only_system(synthetic: Dict[str, pd
     assert cand["params"]["short_only"] is True and cand["params"]["long_only"] is False
     # Before: a long-only system under a short-only engine → zero trades.
     assert cand["oos"]["trade_count"] > 0
+
+
+def test_subperiod_robustness_reports_worst_block() -> None:
+    import numpy as np
+    import pandas as pd
+
+    from ibtrader.research.portfolio_runner import subperiod_robustness
+
+    idx = pd.bdate_range("2020-01-01", periods=1000)
+    r = pd.Series(np.r_[np.full(750, 0.001), np.full(250, -0.001)], index=idx)
+    r = r + np.random.default_rng(0).normal(0, 0.005, 1000)
+    out = subperiod_robustness(r)
+    assert len(out["tramos"]) == 4 and out["tramos_positivos"] == 3 and out["peor_sharpe"] < 0
+    assert subperiod_robustness(r.iloc[:100])["tramos"] == []

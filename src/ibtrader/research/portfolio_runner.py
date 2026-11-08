@@ -337,6 +337,27 @@ def compute_benchmarks(
     return out
 
 
+def subperiod_robustness(rets: pd.Series, n_blocks: int = 4) -> Dict[str, Any]:
+    """Sharpe anualizado en ``n_blocks`` tramos consecutivos de igual longitud (diagnóstico, no compuerta).
+
+    Una estrategia sólida no debería depender de un solo tramo: se informa el peor y cuántos son positivos.
+    """
+    r = pd.Series(rets, dtype=float).dropna()
+    if len(r) < n_blocks * 63:
+        return {"tramos": [], "peor_sharpe": None, "tramos_positivos": None}
+    tramos = []
+    edges = np.linspace(0, len(r), n_blocks + 1).astype(int)
+    for k in range(n_blocks):
+        chunk = r.iloc[edges[k]:edges[k + 1]]
+        sd = float(chunk.std(ddof=0))
+        sr = float(chunk.mean()) / sd * np.sqrt(252.0) if sd > 0 else None
+        tramos.append({"desde": str(chunk.index.min().date()), "hasta": str(chunk.index.max().date()),
+                       "sharpe": round(sr, 3) if sr is not None else None})
+    vals = [t["sharpe"] for t in tramos if t["sharpe"] is not None]
+    return {"tramos": tramos, "peor_sharpe": min(vals) if vals else None,
+            "tramos_positivos": sum(1 for v in vals if v > 0)}
+
+
 def _public_benchmarks(bench: Mapping[str, Any]) -> Dict[str, Any]:
     pub = dict(bench)
     rnd = pub.get("random")
@@ -805,6 +826,7 @@ def run_portfolio_research(
                 "benchmarks": _public_benchmarks(bench),
                 "random_sharpe_percentile": pct,
                 "diagnostics": daily_return_diagnostics(rets),
+                "robustez": subperiod_robustness(rets),
                 "warmup_end": str(warmup_end),
                 "oos_start": oos.get("oos_start"),
                 "oos_end": oos.get("oos_end"),
