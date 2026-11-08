@@ -443,6 +443,15 @@ def run_execute(
         _save_report(paths, report)
         return report
 
+    from ..execution.session import is_rth
+
+    if not is_rth(now):
+        # Holiday, weekend or outside 09:30-16:00 ET: DAY orders would be rejected or wait for a
+        # stale open. Leave the pending file for the next session (the next plan replaces it).
+        report["status"] = "market_closed"
+        _save_report(paths, report)
+        return report
+
     ok, why = execution_permission(settings)
     if not ok:
         report["status"] = "not_permitted"
@@ -532,7 +541,7 @@ def run_execute(
 
 # --------------------------------------------------------------------------- CLI helpers
 #: run status → process exit code for the scheduler: 0 normal, 1 blocked safely, 2 needs a human.
-_EXIT_OK = {"ok", "shadow_nothing_to_execute", "no_pending_orders"}
+_EXIT_OK = {"ok", "shadow_nothing_to_execute", "no_pending_orders", "market_closed"}
 _EXIT_SAFE_BLOCK = {"blocked_new_risk", "pending_stale", "not_permitted"}
 
 

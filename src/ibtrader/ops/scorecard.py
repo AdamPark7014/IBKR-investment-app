@@ -109,15 +109,19 @@ def build_scorecard(settings: AppSettings) -> Dict[str, Any]:
         out.append(_metric("coste_anual_de_operar", None, "<= 0.30 % anual", None, unit="fracción/año",
                            note=f"{len(navs)} informes diarios; hacen falta 20"))
 
-    # 6. Realized vol close to the target the sizing aims at.
-    target_vol = float(settings.risk.target_vol_annual)
+    # 6. Realized vol never above what the sizing asks for. Below is expected: with no leverage the
+    #    cap binds and a diversified ETF book realises ~4-6 % against a 10 % target (pipeline.system).
+    params = dict(settings.strategy.params or {})
+    target_vol = float(params.get("tau") or settings.risk.target_vol_annual)
+    ceiling = 1.3 * target_vol
+    tgt_txt = f"<= {ceiling:.1%} (objetivo {target_vol:.0%} + 30 %)"
     if sessions >= MIN_POINTS_FOR_VOL:
         rets = [equity[i] / equity[i - 1] - 1.0 for i in range(1, sessions)]
         vol = statistics.pstdev(rets) * math.sqrt(252.0)
-        ok = abs(vol - target_vol) <= 0.3 * target_vol
-        out.append(_metric("volatilidad_realizada", vol, f"{target_vol:.0%} ± 30 %", ok, unit="anual"))
+        out.append(_metric("volatilidad_realizada", vol, tgt_txt, vol <= ceiling, unit="anual",
+                           note="por debajo del objetivo es normal sin apalancamiento"))
     else:
-        out.append(_metric("volatilidad_realizada", None, f"{target_vol:.0%} ± 30 %", None, unit="anual",
+        out.append(_metric("volatilidad_realizada", None, tgt_txt, None, unit="anual",
                            note=f"{sessions} sesiones; hacen falta {MIN_POINTS_FOR_VOL}"))
 
     # 7. Max drawdown inside the configured limit.

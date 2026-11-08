@@ -378,3 +378,13 @@ def test_rejected_strategy_never_reaches_the_broker(tmp_path: Path) -> None:
     rep = run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
     assert "strategy_rejected: sma_crossover" in rep["blocks"] and rep["pretrade"]["n_approved"] == 0
     assert "risk_restricted" in rep["pretrade"]["global_blocks"]
+
+
+def test_execute_on_a_holiday_keeps_pending(tmp_path: Path) -> None:
+    s = _orders_ready(tmp_path)
+    run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+    broker = Broker({}, 50_000.0)
+    pre_open = datetime(2026, 11, 10, 8, 0, tzinfo=ET)
+    ex = run_execute(s, gateway_factory=lambda _s: broker, now=pre_open)
+    assert ex["status"] == "market_closed" and broker.orders == {}
+    assert (tmp_path / "data" / "pending_orders.json").exists()
