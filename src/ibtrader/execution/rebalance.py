@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 
 @dataclass
@@ -49,18 +49,23 @@ def build_rebalance_orders(
     *,
     min_notional: float = 0.0,
     max_notional: Optional[float] = None,
+    hold: Optional[Iterable[str]] = None,
 ) -> List[ProposedOrder]:
     """Orders that move ``positions`` toward ``target_weights`` × ``nav``.
 
     Symbols held but absent from ``target_weights`` get target 0 (exit). A symbol without a
     positive finite price is skipped (no order on a price we cannot trust). Exits come first in
     the returned list so a per-run order cap never keeps a reduction waiting behind a purchase.
+    Symbols in ``hold`` (no fresh data today) are never traded.
     """
+    frozen = {str(s).upper() for s in (hold or ())}
     if not (nav > 0 and math.isfinite(nav)):
         return []
     symbols = sorted(set(target_weights) | {s for s, q in positions.items() if int(q) != 0})
     out: List[ProposedOrder] = []
     for sym in symbols:
+        if sym.upper() in frozen:
+            continue
         px = float(prices.get(sym) or 0.0)
         if not (px > 0 and math.isfinite(px)):
             continue

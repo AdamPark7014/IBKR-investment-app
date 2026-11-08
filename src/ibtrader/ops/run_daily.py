@@ -89,6 +89,19 @@ def book_nav(book: Mapping[str, Any], prices: Mapping[str, float]) -> float:
     return float(book.get("cash") or 0.0) + sum(int(q) * float(prices[s]) for s, q in shares.items())
 
 
+def unchanged_targets(weights: Mapping[str, float], book: Mapping[str, Any]) -> List[str]:
+    """Symbols whose target weight did not move since the last plan and that are already held.
+
+    Same rule as the backtest's weight mode (``backtest.engine``): a held position is only traded
+    when its target weight changes, never on price drift. Without it production would turn over
+    more than the research that approved it (and pay costs research never saw).
+    """
+    last = dict(book.get("last_targets") or {})
+    shares = dict(book.get("shares") or {})
+    return [s for s, w in weights.items()
+            if s in last and int(shares.get(s, 0) or 0) != 0 and abs(float(w) - float(last[s])) < 1e-9]
+
+
 def halve_risk(weights: Mapping[str, float], spec: Any = None) -> Dict[str, float]:
     """Drawdown de-risking: halve the risky weights; the freed half goes to the cash ETF if there is one."""
     from ..pipeline.system import KNOWN_CASH_ETFS
@@ -296,7 +309,11 @@ def run_plan(
         weights, dict(book.get("shares") or {}), prices, nav,
         min_notional=settings.pretrade.min_order_notional_usd,
         max_notional=settings.pretrade.max_order_notional_usd,
+        hold=list(meta.get("stale_symbols") or []) + [s for s in (book.get("shares") or {}) if s not in data]
+        + unchanged_targets(weights, book),
     )
+    if meta.get("stale_symbols"):
+        report.setdefault("warnings", []).append(f"held without trading (no bar today): {meta['stale_symbols']}")
     as_of = pd.Timestamp(meta.get("as_of")).date() if meta.get("as_of") else None
     ctx = PretradeContext(
         nav=nav, positions=dict(book.get("shares") or {}), prices=prices,
@@ -318,6 +335,7 @@ def run_plan(
         book = apply_fills(book, fills)
         book["basis"] = "shadow"
         book["last_session"] = session.isoformat()
+        book["last_targets"] = {s: float(w) for s, w in weights.items()}
         save_book(paths.book, book)
         report["shadow_fills"] = [f.__dict__ for f in fills]
         report["note"] = "shadow: fills simulated at the close ± half spread + IBKR Fixed commission (optimistic)"
@@ -325,6 +343,7 @@ def run_plan(
         paths.pending.parent.mkdir(parents=True, exist_ok=True)
         paths.pending.write_text(json.dumps(
             {"run_date": session.isoformat(), "created_at": now.isoformat(), "mode": mode,
+             "targets": {s: float(w) for s, w in weights.items()},
              "orders": [o.to_dict() for o in dec.approved]}, indent=2, default=str), encoding="utf-8")
         report["pending_orders"] = str(paths.pending)
 
@@ -418,7 +437,7 @@ def run_execute(
         report["status"] = "reconcile_break_after"
         _alert(settings, report, "reconcile_break", "critical", "; ".join(post.reasons), post.to_dict())
     save_book(paths.book, {"cash": float(cash2 or 0.0), "shares": shares2, "basis": "broker", "account": acct,
-                           "synced_at": now.isoformat()})
+                           "synced_at": now.isoformat(), "last_targets": dict(pending.get("targets") or {})})
     paths.pending.rename(paths.pending.with_suffix(".done.json"))
     failed = [m for m in managed if m.state.value in ("REJECTED", "CANCELLED")]
     if failed:
@@ -477,6 +496,6 @@ def secondary_loader_for(settings: AppSettings) -> Optional[Loader]:
 
 
 __all__ = [
-    "Paths", "book_nav", "credit_corporate_actions", "drawdown_now", "exit_code_for", "halve_risk",
+    "Paths", "book_nav", "credit_corporate_actions", "drawdown_now", "exit_code_for", "halve_risk", "unchanged_targets",
     "primary_provider", "raw_last_prices", "run_execute", "run_plan", "secondary_loader_for",
 ]

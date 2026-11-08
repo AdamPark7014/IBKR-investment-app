@@ -56,10 +56,16 @@ def compute_target_weights(
     closes = pd.DataFrame({s: pd.Series(df["close"], dtype=float) for s, df in data.items()}).sort_index()
     closes.index = pd.DatetimeIndex(closes.index)
     meta["as_of"] = str(closes.index.max().date())
+    # A symbol without a bar on the last date has no target today: it is left out (held as is)
+    # instead of reading NaN as 0 and selling it because one provider was late.
+    stale = sorted(s for s in symbols if pd.isna(closes[s].iloc[-1]))
+    if stale:
+        meta["stale_symbols"] = stale
 
     if name == "static":
         raw = dict((settings.strategy.params or {}).get("weights") or {})
-        weights = {str(k).upper(): float(v) for k, v in raw.items() if str(k).upper() in data}
+        weights = {str(k).upper(): float(v) for k, v in raw.items()
+                   if str(k).upper() in data and str(k).upper() not in stale}
         missing = sorted(set(str(k).upper() for k in raw) - set(weights))
         if missing:
             meta["missing_symbols"] = missing
@@ -75,8 +81,8 @@ def compute_target_weights(
         if out.warmup_end is None or last < out.warmup_end:
             meta["reason"] = "pipeline_warmup"
             return {s: 0.0 for s in symbols}, meta
-        row = out.target_weights.reindex(columns=symbols).loc[last].fillna(0.0)
-        return {s: float(row[s]) for s in symbols}, meta
+        row = out.target_weights.reindex(columns=symbols).loc[last]
+        return {s: float(0.0 if pd.isna(row[s]) else row[s]) for s in symbols if s not in stale}, meta
 
     if name == "sma_crossover":
         from ..strategy.sma_crossover import SMACrossover
@@ -86,7 +92,7 @@ def compute_target_weights(
         sig = strat.generate_signals(dict(data))
         on = [s for s in symbols if len(sig[s]) and int(sig[s].iloc[-1]) > 0]
         meta["legacy"] = "rejected by research (audit 2026-11-07); kept for old freezes"
-        return {s: (1.0 / len(on) if s in on else 0.0) for s in symbols}, meta
+        return {s: (1.0 / len(on) if s in on else 0.0) for s in symbols if s not in stale}, meta
 
     raise ValueError(f"unknown STRATEGY__NAME={settings.strategy.name!r} (pipeline | static | sma_crossover)")
 

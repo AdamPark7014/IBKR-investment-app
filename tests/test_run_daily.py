@@ -247,3 +247,21 @@ def test_halve_risk_moves_freed_weight_to_cash_etf() -> None:
     out = halve_risk({"SPY": 0.6, "IEF": 0.3, "BIL": 0.1})
     assert out == pytest.approx({"SPY": 0.3, "IEF": 0.15, "BIL": 0.55})
     assert halve_risk({"SPY": 0.6}) == {"SPY": 0.3}
+
+
+def test_live_trades_only_when_target_moves_like_backtest(tmp_path: Path) -> None:
+    from ibtrader.ops.run_daily import unchanged_targets
+
+    book = {"shares": {"SPY": 10, "IEF": 5}, "last_targets": {"SPY": 0.3, "IEF": 0.3}}
+    assert unchanged_targets({"SPY": 0.3, "IEF": 0.25, "GLD": 0.1}, book) == ["SPY"]
+    assert unchanged_targets({"SPY": 0.3}, {"shares": {"SPY": 10}}) == []  # first plan trades
+
+
+def test_stale_symbol_is_held_not_sold(tmp_path: Path) -> None:
+    s = _settings(tmp_path)
+    run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+    frames = _frames()
+    frames["IEF"] = frames["IEF"].iloc[:-1]  # IEF's provider is a day late
+    rep = run_plan(s, loader=lambda _s: frames, now=PLAN_AT)
+    assert all(o["symbol"] != "IEF" for o in rep["pretrade"]["approved"])
+    assert rep["targets"]["meta"]["stale_symbols"] == ["IEF"] and "IEF" not in rep["targets"]["weights"]
