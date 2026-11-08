@@ -161,6 +161,13 @@ def _cached_candidate(
         if (first_ts.normalize() - pd.Timestamp(need)).days > CACHE_START_SLACK_DAYS:
             reasons.append(f"caché corta: primera barra {first_ts.date()}, se pide historia desde {need}")
     candidate = _clip(spec, symbol, cached)
+    if start is not None:
+        # A cache written by a longer run must not silently lengthen this one either.
+        cut = pd.Timestamp(start)
+        idx = candidate.index
+        if getattr(idx, "tz", None) is not None:
+            cut = cut.tz_localize(idx.tz)
+        candidate = candidate[idx >= cut]
     if meta is not None:
         reasons.extend(_validation_reasons(settings, gate, symbol, candidate, meta, today))
     if reasons:

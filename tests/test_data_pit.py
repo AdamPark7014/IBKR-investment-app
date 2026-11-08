@@ -374,6 +374,17 @@ def test_service_cache_rejected_when_shorter_than_requested_history(
     assert any("caché corta" in r.getMessage() for r in caplog.records)
 
 
+def test_service_cache_clipped_when_longer_than_requested_history(tmp_path: Any, monkeypatch: Any) -> None:
+    prov = _Prov({"SPY": _good(600)})
+    monkeypatch.setattr(svc_mod, "YahooProvider", lambda: prov)
+    s = _settings(tmp_path, monkeypatch, ["SPY"])
+    s.engine.history_days = 900
+    assert len(svc_mod.load_universe_v2(s)["SPY"]) == 600
+    s.engine.history_days = 365  # shorter run served from the same cache: only the window it asked for
+    out = svc_mod.load_universe_v2(s)["SPY"]
+    assert prov.calls == ["SPY"] and 250 <= len(out) <= 262
+
+
 def test_service_cache_rejected_when_lineage_missing(tmp_path: Any, monkeypatch: Any, caplog: Any) -> None:
     from ibtrader.data.cache import save_to_cache
 
