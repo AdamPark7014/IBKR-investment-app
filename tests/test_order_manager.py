@@ -214,3 +214,24 @@ def test_ib_gateway_records_order_errors_but_not_info_codes() -> None:
     assert st.error and "201" in st.error
     assert gw.status("7").error == "unknown order id"
     assert ib.mdt == 1
+
+
+def test_waves_sells_first_and_one_timeout_per_wave(tmp_path: Path) -> None:
+    clock = FakeClock()
+    gw = FakeGateway(clock, {"limit": BrokerOrderStatus("Submitted", 0, 10, 0.0),
+                             "adaptive": BrokerOrderStatus("Filled", 10, 0, 100.0)})
+    orders = [_order("SPY", "BUY"), _order("IEF", "SELL"), _order("GLD", "BUY"), _order("TLT", "SELL")]
+    out = _mgr(tmp_path, gw, clock).execute(orders, D, send=True)
+    assert all(m.state is OrderState.FILLED for m in out)
+    sides = [p[2] for p in gw.placed]
+    assert sides == ["SELL", "SELL", "SELL", "SELL", "BUY", "BUY", "BUY", "BUY"]  # limits+adaptive per wave
+    # Two waves × (passive + adaptive) windows, not 4 orders × 2 windows.
+    assert 20 <= clock.t <= 22
+
+
+def test_slippage_is_measured_against_arrival_midpoint(tmp_path: Path) -> None:
+    clock = FakeClock()
+    gw = FakeGateway(clock, {"limit": BrokerOrderStatus("Filled", 10, 0, 102.0)}, mid=102.0)
+    _mgr(tmp_path, gw, clock).execute([_order(px=100.0)], D, send=True)  # overnight gap +2 %
+    slip = json.loads((tmp_path / "slip.jsonl").read_text().splitlines()[0])
+    assert slip["decision_px"] == 102.0 and abs(slip["slip_bps"]) < 1e-9

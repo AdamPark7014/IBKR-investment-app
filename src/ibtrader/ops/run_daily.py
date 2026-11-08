@@ -21,6 +21,7 @@ import json
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
@@ -86,6 +87,65 @@ def book_nav(book: Mapping[str, Any], prices: Mapping[str, float]) -> float:
     if missing:
         return float("nan")
     return float(book.get("cash") or 0.0) + sum(int(q) * float(prices[s]) for s, q in shares.items())
+
+
+def halve_risk(weights: Mapping[str, float], spec: Any = None) -> Dict[str, float]:
+    """Drawdown de-risking: halve the risky weights; the freed half goes to the cash ETF if there is one."""
+    from ..pipeline.system import KNOWN_CASH_ETFS
+
+    boxes = {e.symbol: e.box for e in spec.entries} if spec is not None else {}
+    cash = [s for s in weights if boxes.get(s) == "cash" or (s not in boxes and s.upper() in KNOWN_CASH_ETFS)]
+    out = {s: (w if s in cash else w * 0.5) for s, w in weights.items()}
+    if cash:
+        freed = sum(w * 0.5 for s, w in weights.items() if s not in cash and w > 0)
+        out[cash[0]] = out.get(cash[0], 0.0) + freed
+    return out
+
+
+def credit_corporate_actions(
+    book: Dict[str, Any], data: Mapping[str, pd.DataFrame], since: Optional[date], until: date
+) -> List[Dict[str, Any]]:
+    """Dividends (and splits) for the shadow book, from the adjusted vs raw close of each bar.
+
+    A holder's total return on a bar is ``close_t / close_{t-1}`` (adjusted). The cash dividend per
+    share that reconciles it with the raw prices is ``D = a · raw_{t-1} − raw_t``. A ratio
+    ``a / r`` far from 1 (raw moved ×2 or ×½ while the adjusted price did not) is a split: shares
+    are scaled and rounded down. Without a separate ``close_raw`` column nothing is credited.
+    Mutates ``book``; returns one event per credit.
+    """
+    events: List[Dict[str, Any]] = []
+    if since is None:
+        return events
+    shares = book.setdefault("shares", {})
+    for sym, q in list(shares.items()):
+        df = data.get(sym)
+        if not q or df is None or "close_raw" not in df.columns or len(df) < 2:
+            continue
+        adj, raw = df["close"].astype(float), df["close_raw"].astype(float)
+        days = [d for d in df.index if since < pd.Timestamp(d).date() <= until]
+        for d in days:
+            i = df.index.get_loc(d)
+            if not isinstance(i, int) or i == 0:
+                continue
+            a = adj.iloc[i] / adj.iloc[i - 1]
+            r = raw.iloc[i] / raw.iloc[i - 1]
+            if not (math.isfinite(a) and math.isfinite(r) and a > 0 and r > 0):
+                continue
+            k = a / r
+            if k > 1.4 or k < 0.7:
+                k = float(Fraction(k).limit_denominator(10))  # 2:1, 3:2, 1:4 ... (data carries rounding noise)
+                new_q = int(math.floor(int(shares[sym]) * k + 1e-9))
+                events.append({"date": str(pd.Timestamp(d).date()), "symbol": sym, "split": round(k, 4),
+                               "shares_before": int(shares[sym]), "shares_after": new_q})
+                shares[sym] = new_q
+                continue
+            div = a * raw.iloc[i - 1] - raw.iloc[i]
+            if div > 1e-6 * raw.iloc[i - 1]:
+                cash = float(div) * int(shares[sym])
+                book["cash"] = float(book.get("cash") or 0.0) + cash
+                events.append({"date": str(pd.Timestamp(d).date()), "symbol": sym,
+                               "dividend_per_share": round(float(div), 6), "cash": round(cash, 2)})
+    return events
 
 
 def drawdown_now(equity_path: Path) -> Optional[float]:
@@ -206,8 +266,8 @@ def run_plan(
         report["blocks"].append(f"drawdown_stop: {dd:.1%} <= {-1.5 * limit:.0%}")
         _alert(settings, report, "drawdown_stop", "critical", f"drawdown {dd:.1%}: new risk stopped, review")
     elif dd is not None and dd <= -limit:
-        weights = {s: w * 0.5 for s, w in weights.items()}
-        report["derisk"] = f"weights halved: drawdown {dd:.1%} <= {-limit:.0%}"
+        weights = halve_risk(weights, spec)
+        report["derisk"] = f"risky weights halved (freed weight to cash ETF): drawdown {dd:.1%} <= {-limit:.0%}"
         _alert(settings, report, "drawdown_derisk", "warn", report["derisk"])
 
     prices = raw_last_prices(data)
@@ -226,6 +286,10 @@ def run_plan(
             _alert(settings, report, "book_missing", "critical", "no paper_account.json and no broker to init")
             _save_report(paths, report)
             return report
+    if book.get("basis") == "shadow":
+        last = book.get("last_session")
+        report["corporate_actions"] = credit_corporate_actions(
+            book, data, date.fromisoformat(last) if last else None, session)
     nav = book_nav(book, prices)
     report["nav_before"] = nav
     orders = build_rebalance_orders(
@@ -253,6 +317,7 @@ def run_plan(
             fills.append(Fill(o.symbol, o.side, o.quantity, px, estimate_cost(settings, o.symbol, o.quantity, px)))
         book = apply_fills(book, fills)
         book["basis"] = "shadow"
+        book["last_session"] = session.isoformat()
         save_book(paths.book, book)
         report["shadow_fills"] = [f.__dict__ for f in fills]
         report["note"] = "shadow: fills simulated at the close ± half spread + IBKR Fixed commission (optimistic)"
@@ -411,5 +476,7 @@ def secondary_loader_for(settings: AppSettings) -> Optional[Loader]:
     return load
 
 
-__all__ = ["Paths", "book_nav", "drawdown_now", "exit_code_for", "primary_provider", "raw_last_prices",
-           "run_execute", "run_plan", "secondary_loader_for"]
+__all__ = [
+    "Paths", "book_nav", "credit_corporate_actions", "drawdown_now", "exit_code_for", "halve_risk",
+    "primary_provider", "raw_last_prices", "run_execute", "run_plan", "secondary_loader_for",
+]

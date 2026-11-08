@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from ibtrader.config import AppSettings
 from ibtrader.execution.order_manager import BrokerOrderStatus, OrderGateway
@@ -222,3 +223,27 @@ def test_scorecard_after_shadow_runs(tmp_path: Path) -> None:
     assert by["descuadres_con_broker"]["status"] == "pass"
     assert by["sesiones_en_paper"]["status"] == "fail" and by["slippage_mediano"]["status"] == "insufficient"
     assert sc["ready_for_live"] is False
+
+
+def test_shadow_book_receives_dividends_and_splits() -> None:
+    from datetime import date as _date
+
+    from ibtrader.ops.run_daily import credit_corporate_actions
+
+    idx = pd.bdate_range("2026-11-02", periods=4)
+    raw = pd.Series([100.0, 100.0, 99.0, 49.5], index=idx)  # $1 dividend on day 3, 2:1 split on day 4
+    adj = pd.Series([99.0, 99.0, 99.0, 99.0], index=idx)
+    data = {"VNQ": pd.DataFrame({"close": adj, "close_raw": raw})}
+    book = {"cash": 0.0, "shares": {"VNQ": 10}}
+    ev = credit_corporate_actions(book, data, _date(2026, 11, 2), _date(2026, 11, 5))
+    assert abs(book["cash"] - 10.0) < 1e-6 and book["shares"]["VNQ"] == 20
+    assert [("dividend_per_share" in e, "split" in e) for e in ev] == [(True, False), (False, True)]
+    assert credit_corporate_actions({"cash": 0, "shares": {"VNQ": 1}}, data, None, _date(2026, 11, 5)) == []
+
+
+def test_halve_risk_moves_freed_weight_to_cash_etf() -> None:
+    from ibtrader.ops.run_daily import halve_risk
+
+    out = halve_risk({"SPY": 0.6, "IEF": 0.3, "BIL": 0.1})
+    assert out == pytest.approx({"SPY": 0.3, "IEF": 0.15, "BIL": 0.55})
+    assert halve_risk({"SPY": 0.6}) == {"SPY": 0.3}
