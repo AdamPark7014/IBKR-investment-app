@@ -31,6 +31,7 @@ from ..backtest.engine import BacktestResult, backtest, restricted_counts
 from ..backtest.metrics import compute_stats
 from ..config import AppSettings
 from ..data.universe import UniverseSpec
+from ..engine.targets import min_trade_frac_for
 from ..ops.artifacts import config_hash, dataset_hash, git_commit
 from ..pipeline.rules import DEFAULT_RULES
 from ..pipeline.system import SystemConfig
@@ -719,6 +720,7 @@ def run_portfolio_research(
             long_only=long_only,
             short_only=short_only,
             max_leverage=1.0,
+            min_trade_frac=min_trade_frac_for(settings, capital),
             **smoke_kw,
         )
         strategy = PipelineStrategy(cfg)
@@ -745,6 +747,7 @@ def run_portfolio_research(
             "idm_max": cfg.idm_max,
             "tau": cfg.tau,
             "buffer_frac": cfg.buffer_frac,
+            "min_trade_frac": cfg.min_trade_frac,
             "long_only": cfg.long_only,
             "short_only": cfg.short_only,
             "max_leverage": cfg.max_leverage,

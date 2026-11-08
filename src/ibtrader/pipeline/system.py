@@ -98,6 +98,10 @@ class SystemConfig:
     instrument_weighting: InstrumentWeighting = "box_risk_parity"
     idm_max: float = 2.5
     buffer_frac: float = 0.10
+    #: Smallest trade as a fraction of ``capital`` (0 = off). Research/production parity: production
+    #: skips orders below ``PRETRADE__MIN_ORDER_NOTIONAL_USD`` (1 000 USD = 0.01 of 100 000), so the
+    #: backtest must not count thousands of small trades production would never send.
+    min_trade_frac: float = 0.0
     long_only: bool = True
     #: Gross exposure cap (fraction of capital). 1.0 = no leverage: see the ``tau`` note above.
     max_leverage: float = 1.0
@@ -157,6 +161,8 @@ class SystemConfig:
             raise ValueError("SystemConfig.capital must be > 0")
         if self.buffer_frac < 0.0:
             raise ValueError("SystemConfig.buffer_frac must be >= 0")
+        if not 0.0 <= self.min_trade_frac < 0.5:
+            raise ValueError("SystemConfig.min_trade_frac must be in [0, 0.5)")
         if self.max_leverage <= 0.0:
             raise ValueError("SystemConfig.max_leverage must be > 0")
         if self.long_only and self.short_only:
@@ -421,7 +427,23 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
         w[sweep] = idle.where(has_px, 0.0)
         return w
 
-    out.target_weights = _with_cash(out.target_weights)
+    def _banded_cash(w: pd.DataFrame) -> pd.DataFrame:
+        """Cash is sold whenever buys need it, but parked only in chunks of at least ``min_trade_frac``."""
+        w = _with_cash(w)
+        if cfg.min_trade_frac <= 0:
+            return w
+        col = w[sweep].to_numpy(dtype=float).copy()
+        held = 0.0
+        for i, x in enumerate(col):
+            if np.isnan(x):
+                continue
+            if x < held or x - held >= cfg.min_trade_frac or x == 0.0:
+                held = x
+            col[i] = held
+        w[sweep] = col
+        return w
+
+    out.target_weights = _banded_cash(out.target_weights)
     out.mtm_weights = _with_cash(out.mtm_weights)
     return out
 
@@ -570,6 +592,7 @@ def _run_core(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
                     positions[sym],
                     _as_series(position_buffer(avg_abs[sym], buffer_frac=cfg.buffer_frac), index, "position_buffer"),
                     trade_to_edge=True,
+                    min_trade=(cfg.min_trade_frac * cfg.capital / px[sym]) if cfg.min_trade_frac > 0 else None,
                 ),
                 index,
                 f"apply_buffer[{sym}]",

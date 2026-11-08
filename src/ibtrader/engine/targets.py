@@ -25,6 +25,13 @@ from ..config import AppSettings
 from ..data.universe import UniverseSpec
 
 
+def min_trade_frac_for(settings: AppSettings, capital: float) -> float:
+    """``PRETRADE__MIN_ORDER_NOTIONAL_USD`` as a fraction of capital, for ``SystemConfig.min_trade_frac``."""
+    if capital <= 0:
+        return 0.0
+    return min(0.25, max(0.0, float(settings.pretrade.min_order_notional_usd) / capital))
+
+
 def _system_config(settings: AppSettings, symbols: list[str], spec: Optional[UniverseSpec]) -> Any:
     from ..pipeline.system import SystemConfig
 
@@ -38,6 +45,8 @@ def _system_config(settings: AppSettings, symbols: list[str], spec: Optional[Uni
     params.setdefault("long_only", settings.trading.direction == "long_only")
     params.setdefault("short_only", settings.trading.direction == "short_only")
     params.setdefault("max_leverage", float(settings.pretrade.max_gross_exposure))
+    # Same minimum trade the research backtest used (orders below it are never sent anyway).
+    params.setdefault("min_trade_frac", min_trade_frac_for(settings, float(params["capital"])))
     return SystemConfig(**params)
 
 

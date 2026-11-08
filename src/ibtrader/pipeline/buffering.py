@@ -10,6 +10,8 @@ but it only looks at the past: position ``t`` uses targets and buffers up to ``t
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 
@@ -23,7 +25,8 @@ def position_buffer(average_abs_position: pd.Series, buffer_frac: float = 0.10) 
     return out
 
 
-def apply_buffer(target: pd.Series, buffer: pd.Series, trade_to_edge: bool = True) -> pd.Series:
+def apply_buffer(target: pd.Series, buffer: pd.Series, trade_to_edge: bool = True,
+                 min_trade: Optional[pd.Series] = None) -> pd.Series:
     """Path-dependent buffered position, starting from 0 shares.
 
     At each date, with ``actual`` the position carried from the previous date:
@@ -34,9 +37,16 @@ def apply_buffer(target: pd.Series, buffer: pd.Series, trade_to_edge: bool = Tru
 
     A NaN target keeps the current position; a NaN buffer is treated as 0 (no band).
     ``buffer`` is aligned to ``target.index``.
+
+    ``min_trade`` (shares, optional): the smallest trade worth paying a commission for (production
+    skips orders below ``PRETRADE__MIN_ORDER_NOTIONAL_USD``). The band is at least that wide, and a trade
+    to the edge smaller than it waits until the target has moved a full minimum away. A move to or from
+    zero is never blocked (entries and exits must happen).
     """
     tgt = target.astype(float).to_numpy()
     buf = buffer.astype(float).reindex(target.index).to_numpy()
+    mins = (min_trade.astype(float).reindex(target.index).to_numpy() if min_trade is not None
+            else np.zeros(len(tgt)))
     n = len(tgt)
     out = np.empty(n, dtype=float)
     pos = 0.0
@@ -47,11 +57,19 @@ def apply_buffer(target: pd.Series, buffer: pd.Series, trade_to_edge: bool = Tru
             continue
         b = buf[i]
         b = 0.0 if np.isnan(b) else abs(b)
+        m = mins[i]
+        m = 0.0 if np.isnan(m) else abs(m)
+        if t != 0.0 and pos != 0.0:
+            b = max(b, m)
         if abs(t - pos) <= b:
             out[i] = pos
             continue
         if trade_to_edge:
-            pos = t - b if pos < t else t + b
+            edge = t - b if pos < t else t + b
+            if m > 0.0 and pos != 0.0 and t != 0.0 and abs(edge - pos) < m:
+                out[i] = pos  # not worth a commission yet: wait until the edge is a full minimum away
+                continue
+            pos = edge
         else:
             pos = t
         out[i] = pos
