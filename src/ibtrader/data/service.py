@@ -117,10 +117,24 @@ def _validation_reasons(
     return reasons
 
 
+#: Weekends, holidays and a provider's first bar a few days after listing.
+CACHE_START_SLACK_DAYS = 10
+
+
 def _cached_candidate(
-    settings: AppSettings, gate: DataQualityGate, spec: Optional[UniverseSpec], symbol: str, today: date
+    settings: AppSettings,
+    gate: DataQualityGate,
+    spec: Optional[UniverseSpec],
+    symbol: str,
+    today: date,
+    start: Optional[date] = None,
 ) -> Optional[pd.DataFrame]:
-    """Serve the cache only when lineage, freshness and validation all agree; log why when they do not."""
+    """Serve the cache only when lineage, freshness, coverage and validation all agree; log why when not.
+
+    Coverage: a cache written with a shorter ``history_days`` must not silently shorten a run that
+    asks for more history. The cache must start within ``CACHE_START_SLACK_DAYS`` of ``start`` (or of
+    the symbol's ``listed_from`` when it listed later).
+    """
     bar = settings.engine.bar_size
     cached = load_from_cache(settings.data.cache_dir, symbol, bar)
     if cached is None or cached.empty:
@@ -138,6 +152,14 @@ def _cached_candidate(
     max_age = max(settings.data.max_cache_age_days, 1)
     if age_days > max_age:
         reasons.append(f"caché vencida: última barra {last_ts.date()} ({age_days} días > {max_age})")
+    if start is not None:
+        entry = spec.get(symbol) if spec is not None else None
+        need = max(start, entry.listed_from) if entry is not None and entry.listed_from else start
+        first_ts = pd.Timestamp(cached.index.min())
+        if first_ts.tzinfo is not None:
+            first_ts = first_ts.tz_convert("UTC").tz_localize(None)
+        if (first_ts.normalize() - pd.Timestamp(need)).days > CACHE_START_SLACK_DAYS:
+            reasons.append(f"caché corta: primera barra {first_ts.date()}, se pide historia desde {need}")
     candidate = _clip(spec, symbol, cached)
     if meta is not None:
         reasons.extend(_validation_reasons(settings, gate, symbol, candidate, meta, today))
@@ -217,7 +239,7 @@ def load_universe_v2(settings: AppSettings) -> Dict[str, pd.DataFrame]:
     failures: Dict[str, List[str]] = {}
     for sym in settings.universe.symbols:
         if settings.engine.use_cache:
-            cached = _cached_candidate(settings, gate, spec, sym, today)
+            cached = _cached_candidate(settings, gate, spec, sym, today, start=date.fromisoformat(start_s))
             if cached is not None:
                 out[sym] = cached
                 continue

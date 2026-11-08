@@ -224,6 +224,7 @@ def _settings(tmp_path: Any, monkeypatch: Any, symbols: List[str]) -> Any:
     s.resolve_paths()
     s.data.providers = ["yahoo"]
     s.universe.symbols = list(symbols)
+    s.engine.history_days = 365  # the 260-bar test frames cover it, so the cache is reusable
     return s
 
 
@@ -342,6 +343,20 @@ def test_service_rejects_unusable_provider_list(tmp_path: Any, monkeypatch: Any)
     s.data.tiingo_token = ""
     with pytest.raises(RuntimeError, match="Ningún proveedor"):
         svc_mod.load_universe_v2(s)
+
+
+def test_service_cache_rejected_when_shorter_than_requested_history(
+    tmp_path: Any, monkeypatch: Any, caplog: Any
+) -> None:
+    prov = _Prov({"SPY": _good()})
+    monkeypatch.setattr(svc_mod, "YahooProvider", lambda: prov)
+    s = _settings(tmp_path, monkeypatch, ["SPY"])
+    svc_mod.load_universe_v2(s)
+    s.engine.history_days = 365 * 12  # a longer research run must not get the 1-year cache
+    with _ibtrader_logs(caplog):
+        svc_mod.load_universe_v2(s)
+    assert prov.calls == ["SPY", "SPY"]
+    assert any("caché corta" in r.getMessage() for r in caplog.records)
 
 
 def test_service_cache_rejected_when_lineage_missing(tmp_path: Any, monkeypatch: Any, caplog: Any) -> None:
