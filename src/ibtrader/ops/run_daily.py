@@ -20,10 +20,11 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -309,7 +310,7 @@ def run_plan(
     freeze_ok = bool(freeze.get("ok")) or mode == "shadow"
     if not freeze.get("ok"):
         if mode == "shadow":
-            report["warnings"] = [f"freeze:{freeze.get('reason')} (shadow: not blocking)"]
+            report["warnings"] = [f"freeze:{freeze.get('reason')} (modo sombra: no bloquea)"]
         else:
             report["blocks"].append(f"freeze:{freeze.get('reason')}")
 
@@ -322,7 +323,7 @@ def run_plan(
     if meta.get("legacy"):
         # sma_crossover was rejected by research: it may feed the shadow book, never the broker.
         if mode == "shadow":
-            report.setdefault("warnings", []).append("strategy sma_crossover was rejected by research (shadow only)")
+            report.setdefault("warnings", []).append("sma_crossover fue rechazada por la investigación (solo sombra)")
         else:
             report["blocks"].append("strategy_rejected: sma_crossover")
             freeze_ok = False  # same effect as an invalid freeze: nothing new reaches the broker
@@ -332,7 +333,7 @@ def run_plan(
     risk_can_increase = not loss_blocks
     if loss_blocks:
         report["blocks"].extend(loss_blocks)
-        _alert(settings, report, "loss_limit", "critical", "; ".join(loss_blocks) + ": no new risk, reductions only")
+        _alert(settings, report, "loss_limit", "critical", "; ".join(loss_blocks) + ": solo reducciones")
 
     prices = raw_last_prices(data)
     book = load_book(paths.book)
@@ -347,7 +348,7 @@ def run_plan(
             report["book_initialized"] = "from_broker"
         else:
             report["status"] = "book_missing"
-            _alert(settings, report, "book_missing", "critical", "no paper_account.json and no broker to init")
+            _alert(settings, report, "book_missing", "critical", "sin paper_account.json ni broker")
             _save_report(paths, report)
             return report
     if book.get("basis") == "shadow":
@@ -366,7 +367,7 @@ def run_plan(
         + unchanged_targets(weights, book),
     )
     if meta.get("stale_symbols"):
-        report.setdefault("warnings", []).append(f"held without trading (no bar today): {meta['stale_symbols']}")
+        report.setdefault("warnings", []).append(f"se mantienen sin operar (sin barra de hoy): {meta['stale_symbols']}")
     as_of = pd.Timestamp(meta.get("as_of")).date() if meta.get("as_of") else None
     ctx = PretradeContext(
         nav=nav, positions=dict(book.get("shares") or {}), prices=prices,
@@ -392,8 +393,8 @@ def run_plan(
         book["settled"] = settled
         save_book(paths.book, book)
         report["shadow_fills"] = [f.__dict__ for f in fills]
-        report["note"] = ("shadow: fills at the close with the backtest cost model (half spread + impact, "
-                          "commission + SEC/FINRA fees); no queue or partial fills, so still optimistic")
+        report["note"] = ("sombra: ejecuta al cierre con el modelo de costes del backtest (medio spread + impacto, "
+                          "comisión + tasas SEC/FINRA); sin cola ni ejecuciones parciales: aún optimista")
     else:
         paths.pending.parent.mkdir(parents=True, exist_ok=True)
         paths.pending.write_text(json.dumps(
@@ -438,7 +439,7 @@ def run_execute(
     if run_date != expected:
         report["status"] = "pending_stale"
         _alert(settings, report, "pending_stale", "warn",
-               f"pending orders from {run_date} but last session is {expected}: not executed")
+               f"órdenes pendientes del {run_date} pero la última sesión es {expected}: no se ejecutan")
         paths.pending.rename(paths.pending.with_suffix(".stale.json"))
         _save_report(paths, report)
         return report
@@ -449,6 +450,13 @@ def run_execute(
         # Holiday, weekend or outside 09:30-16:00 ET: DAY orders would be rejected or wait for a
         # stale open. Leave the pending file for the next session (the next plan replaces it).
         report["status"] = "market_closed"
+        _save_report(paths, report)
+        return report
+    open_et = now.astimezone(ZoneInfo("America/New_York")).replace(hour=9, minute=30, second=0, microsecond=0)
+    if now < open_et + timedelta(minutes=settings.execution.min_minutes_after_open):
+        # Los spreads de los ETF son más anchos en la subasta y los primeros minutos (patrón en U
+        # intradía); esperar media hora abarata cada orden sin cambiar la señal.
+        report["status"] = "too_early"
         _save_report(paths, report)
         return report
 
@@ -479,8 +487,8 @@ def run_execute(
         paths.pending.rename(paths.pending.with_suffix(".interrupted.json"))
         report["status"] = "resumed_after_crash"
         _alert(settings, report, "execute_interrupted", "critical",
-               f"execute for {run_date} had started at {pending['execution_started_at']} and did not finish: "
-               "orders were NOT resent; book synced to the broker, check orders.jsonl")
+               f"la ejecución del {run_date} empezó a las {pending['execution_started_at']} y no terminó: "
+               "NO se reenviaron órdenes; libro sincronizado con el broker, revisa orders.jsonl")
         _save_report(paths, report)
         return report
     ref_px = {str(o.get("symbol")): float(o.get("ref_price") or 0.0) for o in pending.get("orders") or []}
@@ -541,7 +549,7 @@ def run_execute(
 
 # --------------------------------------------------------------------------- CLI helpers
 #: run status → process exit code for the scheduler: 0 normal, 1 blocked safely, 2 needs a human.
-_EXIT_OK = {"ok", "shadow_nothing_to_execute", "no_pending_orders", "market_closed"}
+_EXIT_OK = {"ok", "shadow_nothing_to_execute", "no_pending_orders", "market_closed", "too_early"}
 _EXIT_SAFE_BLOCK = {"blocked_new_risk", "pending_stale", "not_permitted"}
 
 

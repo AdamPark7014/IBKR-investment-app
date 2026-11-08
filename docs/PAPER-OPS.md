@@ -36,7 +36,7 @@ ibtrader ai-review                   # git diff → Claude vía puerta (look-ahe
 Programación (Windows). El plan corre a las 19:00 de Nueva York porque Tiingo publica el cierre hacia las 17:30–18:00 ET; antes vería el bar de ayer y bloquearía:
 
 ```powershell
-pwsh -File scripts/schedule-run-daily.ps1 -Action Register -PlanTime 19:00 -ExecuteTime 09:40   # horas de Nueva York; conviértelas a tu zona
+pwsh -File scripts/schedule-run-daily.ps1 -Action Register -PlanTime 19:00 -ExecuteTime 10:05   # horas de Nueva York; conviértelas a tu zona
 ```
 
 Archivos nuevos en `data/`: `pending_orders.json` (→ `.done.json` / `.stale.json`), `orders.jsonl`

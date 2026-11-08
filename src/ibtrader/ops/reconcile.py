@@ -98,7 +98,7 @@ def reconcile(
             res.share_diffs.append({"symbol": sym, "expected": e, "broker": b, "delta": b - e})
     if res.share_diffs:
         res.ok = False
-        res.reasons.append(f"share_mismatch: {len(res.share_diffs)} symbol(s)")
+        res.reasons.append(f"share_mismatch: {len(res.share_diffs)} símbolo(s)")
     if broker_cash is not None and expected.get("cash") is not None:
         res.cash_diff = float(broker_cash) - float(expected["cash"])
         surplus_ok = (cash_surplus_tolerance_usd is not None

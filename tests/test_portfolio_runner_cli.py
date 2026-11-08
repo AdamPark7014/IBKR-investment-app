@@ -98,6 +98,7 @@ def test_portfolio_candidates_profiles() -> None:
     assert len({c[0] for c in full}) == len(full)
     assert {c[2] for c in full} == {"box_risk_parity", "hrp", "equal"}
     assert pr.STATIC_BASELINE in full
+    assert "pipeline_core_trend_box_risk_parity" in {c[0] for c in full}
     with pytest.raises(ValueError):
         portfolio_candidates("nope")
 
@@ -171,6 +172,7 @@ def test_run_portfolio_research_full_profile_counts_trials(
     monkeypatch.setattr(pr, "rule_sets", lambda: {"ewmac": ("ewmac16_64", "ewmac32_128", "ewmac64_256")})
     monkeypatch.setitem(pr.RANDOM_PORTFOLIOS, "full", 30)
     monkeypatch.setattr(pr, "INCLUDE_STATIC_BASELINE", False)
+    monkeypatch.setattr(pr, "INCLUDE_CORE_TREND", False)
     s = _settings(tmp_path)
     out = run_portfolio_research(synthetic, s, synthetic_universe(), profile="full", exp_id="p2_full",
                                  reports_dir=s.data.reports_dir)
@@ -341,6 +343,7 @@ def test_random_walk_no_longer_passes(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(pr, "rule_sets", lambda: {"tsmom": ("tsmom_1_3_12",)})
     monkeypatch.setitem(pr.RANDOM_PORTFOLIOS, "full", 50)
     monkeypatch.setattr(pr, "INCLUDE_STATIC_BASELINE", False)
+    monkeypatch.setattr(pr, "INCLUDE_CORE_TREND", False)
     s = _settings(tmp_path)
     s.research.holdout_start = str(data["SPY"].index[-60].date())
     out = run_portfolio_research(data, s, synthetic_universe(), profile="full", exp_id="rw",

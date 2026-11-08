@@ -9,33 +9,33 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class RiskConfig(BaseModel):
-    max_position_pct: float = Field(100.0, description="Max position size as % of equity")
-    max_total_exposure_pct: float = Field(100.0, description="Max total gross exposure %")
+    max_position_pct: float = Field(100.0, description="Tamaño máximo por posición en % del capital")
+    max_total_exposure_pct: float = Field(100.0, description="Exposición bruta total máxima en %")
     daily_loss_limit_pct: float = Field(
-        5.0, description="If daily PnL < -limit% of starting equity, halt"
+        5.0, description="Si la pérdida del día supera el límite % del capital inicial, se detiene"
     )
     cumulative_loss_limit_pct: float = Field(
-        20.0, description="If cumulative PnL < -limit% vs first equity, restrict (blocks new entries)"
+        20.0, description="Pérdida acumulada mayor que el límite % del primer capital: bloquea entradas nuevas"
     )
     drawdown_limit_pct: float = Field(
-        20.0, description="If drawdown from peak < -limit%, restrict (blocks new entries)"
+        20.0, description="Si la caída desde el máximo supera el límite %, restringe (bloquea entradas nuevas)"
     )
-    target_vol_annual: float = Field(0.10, description="Volatility target for sizing (annualized)")
-    risk_on_threshold: float = Field(0.5, description="Minimum risk-on probability to allow trades")
+    target_vol_annual: float = Field(0.10, description="Volatilidad objetivo para dimensionar (anualizada)")
+    risk_on_threshold: float = Field(0.5, description="Probabilidad mínima de régimen favorable para operar")
     max_orders_per_day: int = 50
     allowed_symbols: List[str] = Field(default_factory=list)
     killswitch_file: str = "./data/KILL_SWITCH"
     stop_loss_per_position_pct: float = Field(
         0.0,
-        description="Optional per-position stop loss (% from average price). 0 disables.",
+        description="Stop loss opcional por posición (% desde el precio medio). 0 lo desactiva.",
     )
     emergency_flatten_on_kill: bool = Field(
-        True, description="If killswitch is active, force emergency flatten at next open"
+        True, description="Con el kill switch activo, cerrar todo de emergencia en la siguiente apertura"
     )
-    cooldown_bars: int = Field(0, description="After a forced exit, bars to wait before reopening")
+    cooldown_bars: int = Field(0, description="Tras una salida forzada, barras de espera antes de reabrir")
     killswitch_action: Literal["flatten", "block_new_only"] = Field(
         "flatten",
-        description="Kill-switch behavior: 'flatten' liquidates positions; 'block_new_only' prevents new opens only.",
+        description="Kill switch: 'flatten' liquida posiciones; 'block_new_only' solo impide aperturas nuevas.",
     )
 
     @field_validator(
@@ -205,23 +205,23 @@ class PretradeConfig(BaseModel):
     """
 
     capital_usd: Optional[float] = Field(
-        default=None, description="Declared capital; None = unknown (caps stay at the conservative defaults)"
+        default=None, description="Capital declarado; None = desconocido (topes en valores conservadores)"
     )
-    max_order_notional_usd: float = Field(default=10_000.0, gt=0, description="Hard cap per order (USD)")
+    max_order_notional_usd: float = Field(default=10_000.0, gt=0, description="Tope duro por orden (USD)")
     min_order_notional_usd: float = Field(
-        default=1_000.0, ge=0, description="Skip increases/reductions smaller than this (IBKR USD 1 min = 10 bp)"
+        default=1_000.0, ge=0, description="Omite aumentos/reducciones menores que esto (mínimo IBKR de 1 USD = 10 pb)"
     )
     max_orders_per_run: int = Field(default=12, ge=1)
     cash_buffer_pct: float = Field(
-        default=0.5, ge=0, le=10, description="Share of NAV never invested (commissions, spread, rounding)"
+        default=0.5, ge=0, le=10, description="Parte del NAV que nunca se invierte (comisiones, spread, redondeo)"
     )
     max_weight_per_symbol: float = Field(default=0.40, gt=0, le=1.0)
-    max_gross_exposure: float = Field(default=1.0, gt=0, le=1.5, description="Sum |w|; 1.0 = no leverage")
+    max_gross_exposure: float = Field(default=1.0, gt=0, le=1.5, description="Suma de |w|; 1.0 = sin apalancamiento")
     max_limit_deviation_pct: float = Field(
-        default=3.0, gt=0, description="Fat finger: reject limits further than this % from the reference close"
+        default=3.0, gt=0, description="Dedo gordo: rechaza límites más lejos que este % del cierre de referencia"
     )
     max_reference_age_days: int = Field(
-        default=4, ge=0, description="Calendar days a reference price may be old (covers weekends + 1 holiday)"
+        default=4, ge=0, description="Antigüedad máxima del precio de referencia en días (fin de semana + 1 feriado)"
     )
 
 
@@ -229,13 +229,17 @@ class ExecutionConfig(BaseModel):
     """How approved orders reach IBKR (audit 2026-11-07, §3.5)."""
 
     mode: Literal["shadow", "paper_orders", "live_orders"] = Field(
-        default="shadow", description="shadow = log orders, send nothing"
+        default="shadow", description="shadow = registra órdenes, no envía nada"
     )
-    limit_offset_bps: float = Field(default=0.0, ge=0, description="Limit = mid ± offset (0 = at mid)")
-    order_timeout_sec: float = Field(default=300.0, gt=0, description="Unfilled limit after this → escalate/cancel")
+    limit_offset_bps: float = Field(default=0.0, ge=0, description="Límite = medio ± desplazamiento (0 = en el medio)")
+    order_timeout_sec: float = Field(default=300.0, gt=0, description="Límite sin ejecutar → escalar/cancelar")
     escalate_to_adaptive: bool = True
-    max_msgs_per_sec: float = Field(default=40.0, gt=0, le=50, description="IBKR API hard limit is 50/s")
+    max_msgs_per_sec: float = Field(default=40.0, gt=0, le=50, description="El límite duro de la API de IBKR es 50/s")
     order_ref_prefix: str = "ibt"
+    min_minutes_after_open: int = Field(
+        default=30, ge=0, le=300,
+        description="No enviar antes de apertura + N min: el spread de los ETF es más ancho al abrir",
+    )
 
 
 class OpsConfig(BaseModel):
@@ -243,7 +247,7 @@ class OpsConfig(BaseModel):
 
     alerts_file: str = "./data/alerts.jsonl"
     heartbeat_file: str = "./data/heartbeat.json"
-    telegram_bot_token: str = Field(default="", description="OPS__TELEGRAM_BOT_TOKEN; empty disables Telegram")
+    telegram_bot_token: str = Field(default="", description="OPS__TELEGRAM_BOT_TOKEN; vacío desactiva Telegram")
     telegram_chat_id: str = ""
     ai_triage: bool = Field(default=False, description="Ask Claude (via the puerta) to triage critical alerts")
     ai_monthly_budget_usd: float = Field(default=10.0, ge=0)

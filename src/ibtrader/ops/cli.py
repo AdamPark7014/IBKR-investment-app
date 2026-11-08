@@ -72,6 +72,7 @@ def warn_unknown_trading_env() -> None:
 
 @app.command()
 def status() -> None:
+    """Resumen del estado: modo, rutas, kill switch y configuración activa."""
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
@@ -80,6 +81,7 @@ def status() -> None:
 
 @app.command("download-data")
 def download_data() -> None:
+    """Descarga los datos del universo con los proveedores configurados y el filtro de calidad."""
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
@@ -95,6 +97,7 @@ def backtest_sample(
     with_risk: bool = False,
     risk_on_threshold: Optional[float] = None,
 ) -> None:
+    """Backtest de ejemplo con la estrategia configurada (sin órdenes)."""
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
@@ -245,6 +248,7 @@ class _DirectionWrapper(SMACrossover):
 
 @app.command("compare-directions")
 def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = None) -> None:
+    """Compara solo largos, solo cortos y largo-corto en el mismo backtest (sin órdenes)."""
     s = AppSettings()
     s.resolve_paths()
     warn_unknown_trading_env()
@@ -364,7 +368,7 @@ def compare_directions(symbol: Optional[str] = None, exp_id: Optional[str] = Non
 
 @app.command("ibc-checklist")
 def ibc_checklist() -> None:
-    """Print a manual paper Gateway/IBC checklist as JSON (no installs, no orders)."""
+    """Lista de comprobación manual del Gateway/IBC en paper, en JSON (sin instalar nada, sin órdenes)."""
     import json as _json
 
     from .ibc_checklist import build_ibc_checklist
@@ -377,15 +381,15 @@ def slippage_report(
     path: str = typer.Option(
         "data/slippage_ledger.jsonl",
         "--path",
-        help="Path to slippage JSONL ledger.",
+        help="Ruta del registro JSONL de slippage.",
     ),
     window_days: int = typer.Option(
         30,
         "--window-days",
-        help="Lookback window in days.",
+        help="Ventana hacia atrás en días.",
     ),
 ) -> None:
-    """Print slippage ledger summary as JSON (zero orders)."""
+    """Resumen del registro de slippage en JSON (cero órdenes)."""
     import json as _json
 
     from .slippage_report import summarize_cli
@@ -397,6 +401,7 @@ def slippage_report(
 
 @app.command()
 def kill() -> None:
+    """Activa el kill switch: bloquea toda orden nueva hasta clear-kill."""
     s = AppSettings()
     s.resolve_paths()
     activate_killswitch(s.risk.killswitch_file)
@@ -405,6 +410,7 @@ def kill() -> None:
 
 @app.command("clear-kill")
 def clear_kill() -> None:
+    """Desactiva el kill switch (hazlo solo tras revisar la causa)."""
     s = AppSettings()
     s.resolve_paths()
     clear_killswitch(s.risk.killswitch_file)
@@ -414,7 +420,7 @@ def clear_kill() -> None:
 @app.command("regime-fit")
 def regime_fit(symbol: Optional[str] = None, n_components: int = 2, exp_id: Optional[str] = None) -> None:
     """
-    P6 Regime Engine: learned regimes via GaussianMixture on benchmark returns/volatility.
+    Motor de regímenes: regímenes aprendidos con GaussianMixture sobre retornos/volatilidad del índice.
     """
     s = AppSettings()
     s.resolve_paths()
@@ -453,7 +459,7 @@ def signal_validate(
     exp_id: Optional[str] = None,
 ) -> None:
     """
-    P7 Signal Validation: CV evaluation of SMA signal against forward returns.
+    Validación de señal: validación cruzada de la señal SMA contra retornos futuros.
     """
     s = AppSettings()
     s.resolve_paths()
@@ -498,7 +504,7 @@ def run_with_risk(
     risk_on_threshold: Optional[float] = None,
 ) -> None:
     """
-    P8 Risk Integration: regime veto + volatility-target sizing. No live orders; prints decision.
+    Integración de riesgo: veto por régimen + tamaño por volatilidad objetivo. Sin órdenes; imprime la decisión.
     """
     s = AppSettings()
     s.resolve_paths()
@@ -583,7 +589,7 @@ def run_with_risk(
 @app.command("walk-forward")
 def walk_forward(exp_id: Optional[str] = None) -> None:
     """
-    P9 Walk Forward: train/validate/test by time with frozen params; OOS never used for tuning.
+    Walk forward: entrenar/validar/probar por tiempo con parámetros congelados; el fuera de muestra no ajusta nada.
     """
     s = AppSettings()
     s.resolve_paths()
@@ -719,23 +725,23 @@ def research_run(
     profile: str = typer.Option(
         "full",
         "--profile",
-        help="Research suite profile: smoke (fast SMA+DSR) or full.",
+        help="Perfil: smoke (SMA+DSR rápido) o full.",
     ),
     confirmation: bool = typer.Option(
         False,
         "--confirmation",
         help=(
-            "Open the frozen hold-out (RESEARCH__HOLDOUT_START) for a ONE-TIME confirmation run. "
-            "Every opening is logged in <reports>/research/holdout_openings.jsonl; beyond "
-            "RESEARCH__MAX_HOLDOUT_OPENINGS every row FAILs with holdout_overused. "
-            "The flag must be typed explicitly: RESEARCH__CONFIRMATION_MODE alone is ignored."
+            "Abre el hold-out congelado (RESEARCH__HOLDOUT_START) para UNA corrida de confirmación. "
+            "Cada apertura queda en <reports>/research/holdout_openings.jsonl; pasado "
+            "RESEARCH__MAX_HOLDOUT_OPENINGS toda fila FALLA con holdout_overused. "
+            "La opción hay que escribirla a mano: RESEARCH__CONFIRMATION_MODE sola se ignora."
         ),
     ),
 ) -> None:
     """
-    V3 research suite: gated strategy tracks + loss-mitigation overlays +
-    multi-factor market analyzer + overfitting/cost diagnostics.
-    Does not change production strategy defaults. Most candidates are expected to FAIL gates.
+    Suite de investigación: estrategias con compuertas + capas de mitigación de pérdidas +
+    diagnósticos de sobreajuste y costes.
+    No cambia la estrategia de producción. Se espera que la mayoría de candidatos FALLEN las compuertas.
     """
     import json as _json
     from datetime import datetime as _dt
@@ -915,22 +921,22 @@ def research_portfolio(
     profile: str = typer.Option(
         "smoke",
         "--profile",
-        help="Phase-2 profile: smoke (1 config) or full (rules × weighting grid).",
+        help="Perfil: smoke (1 configuración) o full (reglas × ponderaciones).",
     ),
     universe: Optional[str] = typer.Option(
         None,
         "--universe",
-        help="Path to UniverseSpec JSON (default: DATA__UNIVERSE_FILE or config/universe-10etf.json).",
+        help="Ruta del JSON de universo (por defecto: DATA__UNIVERSE_FILE o config/universe-10etf.json).",
     ),
     confirmation: bool = typer.Option(
         False,
         "--confirmation",
-        help="Open the frozen hold-out once (same semantics as research-run --confirmation).",
+        help="Abre el hold-out congelado una vez (igual que research-run --confirmation).",
     ),
 ) -> None:
     """
-    Phase-2 portfolio research: pipeline stage graph vs 60/40 + All Weather + random portfolios.
-    Strict gates decide PASS/FAIL. PASS ≠ deploy.
+    Investigación de cartera: el pipeline contra 60/40, All Weather y carteras aleatorias.
+    Compuertas estrictas deciden PASS/FAIL. PASS no significa desplegar.
     """
     import json as _json
     from dataclasses import fields as _dc_fields
@@ -1238,18 +1244,18 @@ def golden_regen(
     yes: bool = typer.Option(
         False,
         "--yes",
-        help="Required. Overwrites tests/golden/*.json; commit the result explicitly (never from CI).",
+        help="Obligatorio. Sobrescribe tests/golden/*.json; sube el resultado a mano (nunca desde CI).",
     ),
-    out_dir: str = typer.Option("tests/golden", "--out-dir", help="Where the golden JSON files live."),
+    out_dir: str = typer.Option("tests/golden", "--out-dir", help="Carpeta de los JSON golden."),
     fixture_dir: Optional[str] = typer.Option(
-        None, "--fixture-dir", help="Fixture directory (default: DATA__FIXTURE_DIR or ./tests/fixtures)."
+        None, "--fixture-dir", help="Carpeta de fixtures (por defecto: DATA__FIXTURE_DIR o ./tests/fixtures)."
     ),
 ) -> None:
     """
-    Regenerate the golden files (Lean-style ExpectedStatistics) for sma_crossover, tsmom,
-    rotation and mean_reversion over tests/fixtures. CI compares every run against them
-    (tests/test_golden.py), so run this ONLY after an intended engine/cost/strategy change
-    and commit the new JSON in its own explicit commit.
+    Regenera los archivos golden (estilo ExpectedStatistics de Lean) de sma_crossover, tsmom,
+    rotation y mean_reversion sobre tests/fixtures. CI compara cada corrida contra ellos
+    (tests/test_golden.py): ejecútalo SOLO tras un cambio intencionado de motor/costes/estrategia
+    y sube el JSON nuevo en su propio commit.
     """
     import json as _json
 
@@ -1270,10 +1276,10 @@ def golden_regen(
 @app.command("paper-stack")
 def paper_stack(
     db_path: Optional[str] = typer.Option(
-        None, "--db", help="SQLite path (default: data/paper_stack.sqlite)."
+        None, "--db", help="Ruta SQLite (por defecto: data/paper_stack.sqlite)."
     ),
 ) -> None:
-    """Print paper desired/held/drift snapshot JSON. PAPER ONLY — orders_sent always 0."""
+    """Foto en JSON de lo deseado/en cartera/desvío en paper. SOLO PAPER: orders_sent siempre 0."""
     import json as _json
 
     from .stack import cmd_paper_stack
@@ -1286,16 +1292,16 @@ def paper_vs_oos(
     equity_path: str = typer.Option(
         "data/paper_equity.jsonl",
         "--equity-path",
-        help="Paper equity JSONL path.",
+        help="Ruta del JSONL de capital de paper.",
     ),
     assumed_sharpe: float = typer.Option(0.8, "--assumed-sharpe"),
     expected_oos_sharpe: Optional[float] = typer.Option(None, "--expected-oos-sharpe"),
     expected_oos_max_dd: Optional[float] = typer.Option(None, "--expected-oos-max-dd"),
 ) -> None:
-    """Compare paper equity DD vs OOS/assumed Sharpe. Zero orders.
+    """Compara la caída del capital en paper con el Sharpe fuera de muestra/supuesto. Cero órdenes.
 
-    Only real equity points count (``cash+shares`` or broker ``nav``) and the kill check needs at
-    least ``MIN_POINTS_FOR_KILL`` of them.
+    Solo cuentan puntos reales (``cash+shares`` o ``nav`` del broker) y el chequeo de corte necesita
+    al menos ``MIN_POINTS_FOR_KILL``.
     """
     import json as _json
     from pathlib import Path as _Path
@@ -1321,24 +1327,24 @@ def config_freeze_cmd(
     path: str = typer.Option(
         "data/paper_config_freeze.json",
         "--path",
-        help="Freeze JSON path.",
+        help="Ruta del JSON de congelación.",
     ),
     write: bool = typer.Option(
         False,
         "--write/--verify",
-        help="Write freeze file; default is verify.",
+        help="Escribe la congelación; por defecto solo verifica.",
     ),
     force: bool = typer.Option(
         False,
         "--force",
-        help="With --write: replace a freeze whose config differs (re-baselines the paper period).",
+        help="Con --write: reemplaza una congelación distinta (reinicia el periodo de paper).",
     ),
 ) -> None:
-    """Write or verify paper config freeze. Zero orders.
+    """Escribe o verifica la congelación de configuración de paper. Cero órdenes.
 
-    ``--write`` only writes when there is no freeze, the config is unchanged, or the freeze is the
-    old schema with the same sections. A freeze whose config changed is never overwritten silently:
-    that is the drift the freeze exists to catch (exit 1 unless ``--force``).
+    ``--write`` solo escribe si no hay congelación, si la configuración no cambió o si es el
+    esquema viejo con las mismas secciones. Una congelación distinta nunca se sobrescribe en silencio:
+    ese desvío es justo lo que debe detectar (código 1 salvo ``--force``).
     """
     import json as _json
 
@@ -1376,15 +1382,15 @@ def paper_equity(
     path: str = typer.Option(
         "data/paper_equity.jsonl",
         "--path",
-        help="Paper equity JSONL path.",
+        help="Ruta del JSONL de capital de paper.",
     ),
     append: Optional[float] = typer.Option(
         None,
         "--append",
-        help="Append today's paper NAV as read from the broker (basis 'nav').",
+        help="Añade el NAV de paper de hoy leído del broker (base 'nav').",
     ),
 ) -> None:
-    """Load/append paper equity curve. Zero orders."""
+    """Lee o añade puntos a la curva de capital de paper. Cero órdenes."""
     import json as _json
     from pathlib import Path as _Path
 
@@ -1419,17 +1425,17 @@ def open_orders_cmd(
     path: str = typer.Option(
         "data/paper_open_orders.json",
         "--path",
-        help="Open orders JSON path.",
+        help="Ruta del JSON de órdenes abiertas.",
     ),
     write_sample_flag: bool = typer.Option(
         False,
         "--write-sample",
-        help="Write an example file (marked sample, ignored by triage) next to --path and summarize it.",
+        help="Escribe un archivo de ejemplo (marcado sample, ignorado por el triage) junto a --path y lo resume.",
     ),
 ) -> None:
-    """Summarize paper open orders (age/touchable). Zero orders.
+    """Resume las órdenes abiertas de paper (antigüedad/tocables). Cero órdenes.
 
-    ``--write-sample`` never touches the operational file: it writes ``<stem>.sample.json``.
+    ``--write-sample`` nunca toca el archivo operativo: escribe ``<stem>.sample.json``.
     """
     import json as _json
 
@@ -1446,10 +1452,10 @@ def paper_status_cmd(
     data_dir: str = typer.Option(
         "data",
         "--data-dir",
-        help="Paper data directory (freeze/equity/stack/open-orders/slippage).",
+        help="Carpeta de datos de paper (congelación/capital/stack/órdenes abiertas/slippage).",
     ),
 ) -> None:
-    """Aggregate paper ops presence + summaries as JSON. Zero orders."""
+    """Resumen agregado de la operación en paper, en JSON. Cero órdenes."""
     import json as _json
 
     from .paper_status import build_paper_status
@@ -1496,7 +1502,7 @@ def run_daily_cmd(
         from .notify import emit_alert
 
         emit_alert(s.ops, "run_daily_crash", "critical", f"{phase}: {type(exc).__name__}: {exc}")
-        typer.echo(f"run-daily {phase} crashed: {type(exc).__name__}: {exc}", err=True)
+        typer.echo(f"run-daily {phase} falló: {type(exc).__name__}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
     finally:
         for b in brokers:

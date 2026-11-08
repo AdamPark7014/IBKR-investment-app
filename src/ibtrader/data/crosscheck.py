@@ -69,7 +69,7 @@ def check_freshness(frames: Mapping[str, pd.DataFrame], now: datetime, grace_min
             res.stale[sym] = last.isoformat() if last else None
     if res.stale:
         res.ok = False
-        res.reasons.append(f"stale_data: {sorted(res.stale)} last bar < {expected.isoformat()}")
+        res.reasons.append(f"stale_data: {sorted(res.stale)} última barra < {expected.isoformat()}")
     return res
 
 

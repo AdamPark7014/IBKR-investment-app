@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Paper ops smoke: Status of scheduled triage tasks, or RunOnce CLI paper checks.
@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
-Write-Host 'PAPER triage only — zero broker orders — NO LIVE.'
+Write-Host 'Solo triage en PAPER: cero órdenes al broker, NADA en real.'
 
 switch ($Action) {
     'Status' {
@@ -44,17 +44,17 @@ switch ($Action) {
             $code = $LASTEXITCODE
             if ($null -eq $code) { $code = 0 }
             if ($code -ne 0) {
-                Write-Warning "$cmd exited $code (continuing)."
+                Write-Warning "$cmd terminó con código $code (se continúa)."
                 $failed += "$cmd=$code"
             }
         }
 
-        Write-Host '=== PAPER triage summary ==='
+        Write-Host '=== Resumen del triage en PAPER ==='
         if ($failed.Count -eq 0) {
-            Write-Host 'All checks exited 0.'
+            Write-Host 'Todas las comprobaciones terminaron con código 0.'
             exit 0
         }
-        Write-Host ("Failures: " + ($failed -join ', '))
+        Write-Host ("Fallos: " + ($failed -join ', '))
         exit 1
     }
 }

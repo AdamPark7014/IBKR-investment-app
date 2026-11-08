@@ -273,3 +273,11 @@ def test_service_lifecycle_can_starve_a_symbol_into_exclusion(tmp_path: Any, mon
     s.universe.symbols = ["SPY", "NEW"]
     out = svc_mod.load_universe_v2(s)
     assert set(out) == {"SPY"}
+
+
+def test_sixteen_etf_spec_is_a_superset_with_cash_last() -> None:
+    ten = load_universe_spec(TEN_ETF)
+    sixteen = load_universe_spec(REPO / "config" / "universe-16etf.json")
+    assert len(sixteen.symbols) == 16 and set(ten.symbols) < set(sixteen.symbols)
+    assert sixteen.symbols[-1] == "BIL"
+    assert len(set(sixteen.boxes())) == 16

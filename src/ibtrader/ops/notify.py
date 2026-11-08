@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, Mapping, Optional
 from ..config import OpsConfig
 
 SEVERITIES = ("info", "warn", "critical")
+_SEV_ES = {"info": "INFO", "warn": "AVISO", "critical": "CRÍTICO"}
 
 
 def _now() -> datetime:
@@ -69,7 +70,7 @@ def emit_alert(
         "context": dict(context or {}),
     }
     if sev != "info":
-        row["delivery"] = _telegram(cfg, f"[ibtrader {sev.upper()}] {code}: {message}", post)
+        row["delivery"] = _telegram(cfg, f"[ibtrader {_SEV_ES.get(sev, sev.upper())}] {code}: {message}", post)
     p = Path(cfg.alerts_file)
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
@@ -107,13 +108,13 @@ def check_heartbeat(
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=timezone.utc)
             if now - ts > timedelta(hours=max_age_hours):
-                reason = f"heartbeat_stale: last {last}"
+                reason = f"heartbeat_stale: último {last}"
         except (OSError, ValueError, json.JSONDecodeError):
             reason = "heartbeat_unreadable"
     out: Dict[str, Any] = {"ok": reason is None, "last": last, "reason": reason}
     if reason is not None:
         out["alert"] = emit_alert(cfg, "heartbeat", "critical",
-                                  f"daily run did not report ({reason})", post=post, now=now)
+                                  f"la corrida diaria no reportó ({reason})", post=post, now=now)
     return out
 
 

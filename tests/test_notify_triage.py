@@ -35,7 +35,7 @@ def test_alert_telegram_and_delivery_never_raises(tmp_path: Path) -> None:
     sent: List[Dict[str, Any]] = []
     row = emit_alert(cfg, "x", "critical", "boom",
                      post=lambda url, json, timeout: sent.append(json) or SimpleNamespace(status_code=200), now=NOW)
-    assert row["delivery"] == "sent" and "CRITICAL" in sent[0]["text"]
+    assert row["delivery"] == "sent" and "CRÍTICO" in sent[0]["text"]
 
     def bad(*_a: Any, **_k: Any) -> Any:
         raise ConnectionError("down")

@@ -7,13 +7,13 @@
   EXECUTION__MODE=shadow (default) sends zero orders; execute then does nothing.
   Times are LOCAL to this PC. Plan = 19:00 New York (Tiingo publishes end-of-day prices around
   17:30-18:00 ET and corrects them later; earlier runs see yesterday's bar and block). Execute =
-  09:40 New York (open + 10 min). Convert both to your time zone.
+  10:05 New York (open + 35 min: ETF spreads are widest at the open). Convert both to your time zone.
 #>
 param(
     [ValidateSet('Register', 'Unregister', 'Status')]
     [string]$Action = 'Status',
     [string]$PlanTime = '19:00',
-    [string]$ExecuteTime = '09:40',
+    [string]$ExecuteTime = '10:05',
     [string]$HeartbeatTime = '12:00'
 )
 
@@ -43,15 +43,15 @@ foreach ($t in $Tasks) {
             $Tr = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"$inner`""
             schtasks /Create /TN $t.Name /TR $Tr /SC WEEKLY /D $t.Days /ST $t.Time /F
             if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create $($t.Name) failed ($LASTEXITCODE)."; exit $LASTEXITCODE }
-            Write-Host "Registered '$($t.Name)' $($t.Days) at $($t.Time)."
+            Write-Host "Registrada '$($t.Name)' $($t.Days) a las $($t.Time)."
         }
         'Unregister' {
             schtasks /Delete /TN $t.Name /F 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "Task '$($t.Name)' not found (OK)." } else { Write-Host "Unregistered '$($t.Name)'." }
+            if ($LASTEXITCODE -ne 0) { Write-Host "Tarea '$($t.Name)' no encontrada (OK)." } else { Write-Host "Eliminada '$($t.Name)'." }
         }
         'Status' {
             schtasks /Query /TN $t.Name /FO LIST 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "Task '$($t.Name)' not registered." }
+            if ($LASTEXITCODE -ne 0) { Write-Host "Tarea '$($t.Name)' no registrada." }
         }
     }
 }

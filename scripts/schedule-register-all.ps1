@@ -10,7 +10,7 @@ param(
     [ValidateSet('Register', 'Unregister', 'Status')]
     [string]$Action = 'Status',
     [string]$PlanTime = '19:00',
-    [string]$ExecuteTime = '09:40',
+    [string]$ExecuteTime = '10:05',
     [string]$HeartbeatTime = '12:00',
     [string]$IbcTime = '08:00'
 )

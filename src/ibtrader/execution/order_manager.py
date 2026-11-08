@@ -153,17 +153,17 @@ def execution_permission(settings: AppSettings) -> Tuple[bool, str]:
     """Can orders actually be sent with these settings? Shadow is always allowed."""
     mode = settings.execution.mode
     if mode == "shadow":
-        return True, "shadow: nothing is sent"
+        return True, "sombra: no se envía nada"
     if not settings.trading.allow_broker_orders:
         return False, "TRADING__ALLOW_BROKER_ORDERS=false"
     if mode == "paper_orders":
         if settings.mode.upper() != "PAPER":
-            return False, "execution.mode=paper_orders requires MODE=PAPER"
+            return False, "execution.mode=paper_orders exige MODE=PAPER"
         if settings.ib_port() != settings.ib.paper_port:
-            return False, "paper_orders must use the paper port"
-        return True, "paper orders allowed"
+            return False, "paper_orders debe usar el puerto de paper"
+        return True, "órdenes en paper permitidas"
     ok, msg = settings.live_safety_ok()
-    return (ok, msg if not ok else "live orders allowed")
+    return (ok, msg if not ok else "órdenes reales permitidas")
 
 
 _DONE = {"Filled", "Cancelled", "ApiCancelled", "Inactive"}

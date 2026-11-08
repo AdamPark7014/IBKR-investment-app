@@ -19,7 +19,7 @@ from ibtrader.ops.run_daily import run_execute, run_plan
 
 ET = ZoneInfo("America/New_York")
 PLAN_AT = datetime(2026, 11, 9, 16, 45, tzinfo=ET)  # Monday after the close
-EXEC_AT = datetime(2026, 11, 10, 9, 40, tzinfo=ET)  # Tuesday after the open
+EXEC_AT = datetime(2026, 11, 10, 10, 5, tzinfo=ET)  # Tuesday, 35 min after the open
 
 
 def _frames(last="2026-11-09") -> Dict[str, pd.DataFrame]:
@@ -183,6 +183,18 @@ def test_execute_not_permitted_without_allow_flag(tmp_path: Path) -> None:
     s.trading.allow_broker_orders = False
     ex = run_execute(s, gateway_factory=lambda _s: Broker({}, 50_000.0), now=EXEC_AT)
     assert ex["status"] == "not_permitted"
+
+
+def test_execute_waits_until_spreads_settle_after_open(tmp_path: Path) -> None:
+    s = _orders_ready(tmp_path)
+    run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+    broker = Broker({}, 50_000.0)
+    early = datetime(2026, 11, 10, 9, 40, tzinfo=ET)  # 10 min after the open: wide spreads
+    ex = run_execute(s, gateway_factory=lambda _s: broker, now=early)
+    assert ex["status"] == "too_early" and broker.orders == {}
+    assert (tmp_path / "data" / "pending_orders.json").exists()
+    from ibtrader.ops.run_daily import exit_code_for
+    assert exit_code_for("too_early") == 0
 
 
 def test_exit_codes_and_secondary_loader() -> None:

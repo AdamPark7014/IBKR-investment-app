@@ -71,6 +71,15 @@ STATIC_BASELINE: Tuple[str, Tuple[str, ...], str] = (
     "pipeline_static_box_risk_parity", ("long_const",), "box_risk_parity"
 )
 INCLUDE_STATIC_BASELINE = True
+#: Núcleo + tendencia: mitad del peso de pronóstico en ``long_const`` (siempre invertido) y mitad en
+#: las reglas de tendencia. Solo-largo, la tendencia pura pierde la deriva alcista de las acciones
+#: mientras está fuera; el núcleo la conserva y la tendencia recorta en caídas largas. En 9 mercados
+#: sintéticos (tendencia, ruido, alza) nunca fue el peor de los tres.
+CORE_TREND_RULES: Tuple[str, ...] = ("long_const",) + tuple(DEFAULT_RULES)
+CORE_TREND_WEIGHTS: Dict[str, float] = {
+    "long_const": 0.5, **{r: 0.5 / len(DEFAULT_RULES) for r in DEFAULT_RULES}
+}
+INCLUDE_CORE_TREND = True
 
 # Statistical gates on top of ``evaluate_strict_gates`` (playbook: t >= 3, DSR, PBO, frozen hold-out).
 MIN_T_STAT = 3.0
@@ -107,7 +116,10 @@ def portfolio_candidates(profile: str) -> List[Tuple[str, Tuple[str, ...], str]]
             (f"pipeline_{rs_name}_{weighting}", rules, weighting)
             for rs_name, rules in rule_sets().items()
             for weighting in INSTRUMENT_WEIGHTINGS
-        ] + ([STATIC_BASELINE] if INCLUDE_STATIC_BASELINE else [])
+        ] + ([STATIC_BASELINE] if INCLUDE_STATIC_BASELINE else []) + (
+            [("pipeline_core_trend_box_risk_parity", CORE_TREND_RULES, "box_risk_parity")]
+            if INCLUDE_CORE_TREND else []
+        )
     raise ValueError(f"unknown profile {profile!r}: expected 'smoke' or 'full'")
 
 
@@ -686,8 +698,10 @@ def run_portfolio_research(
             if profile == "smoke"
             else {}
         )
+        rule_weights = dict(CORE_TREND_WEIGHTS) if tuple(rules) == CORE_TREND_RULES else None
         cfg = SystemConfig(
             rules=tuple(rules),
+            rule_weights=rule_weights,
             instrument_weighting=weighting,  # type: ignore[arg-type]
             boxes=boxes,
             capital=capital,
@@ -711,6 +725,7 @@ def run_portfolio_research(
         params: Dict[str, Any] = {
             "family": "pipeline",
             "rules": list(rules),
+            "rule_weights": rule_weights,
             "instrument_weighting": weighting,
             "forecast_scalar_mode": cfg.forecast_scalar_mode,
             "scalar_source": dict(out.scalar_source) if out is not None else {},
