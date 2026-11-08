@@ -10,6 +10,14 @@
   habilita al aprobar la cuenta (Settings > Paper Trading Account).
 - Al existir la paper: entrar a Gateway en modo Paper → Configure > Settings > API > Settings: Socket Clients on,
   puerto 4002 (`IB__PAPER_PORT`), solo localhost on, Read-Only off (el sistema manda órdenes a paper).
+- 08-11: solicitud con formularios completos; falta que IBKR valide el domicilio y acredite el primer depósito.
+- Puerta IA: proyecto `ibkr` (Haiku 5.5, 5 USD/mes), token en `C:\dev\secrets\puerta-ia\ibkr.token`.
+  **`ANTHROPIC_*` no pueden ir en `.env`**: `AppSettings` prohíbe claves extra y todo el CLI truena. Pasarlas al
+  proceso (ver cómo en la prueba del copiloto). Extra `.[ai]` instalado en el venv (faltaba: `sdk_missing`).
+- `.env`: `DATA__TIINGO_TOKEN`, `OPS__COPILOT=true`, `OPS__AI_MODEL=claude-haiku-5-5`. `copilot-research` probado
+  por la puerta: 1 hipótesis, US$0.006.
+- Freeze de paper **no vigente**: `hash_mismatch` en `execution` y `pretrade` (cambios de 4e2cc1f). No se
+  re-baselinó: decide Adam (`config-freeze --write --force`).
 
 ## Hecho (2026-10-26, claude-code — los cinco pendientes de la revisión)
 - `short_only`: el runner armaba un sistema long-only que el motor short-only anulaba (cero operaciones).
