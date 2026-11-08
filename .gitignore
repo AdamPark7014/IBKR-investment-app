@@ -44,4 +44,5 @@ data/orders.jsonl
 data/alerts.jsonl
 data/heartbeat.json
 data/ai_usage.jsonl
+data/copilot_opinions.jsonl
 data/logs/
