@@ -16,8 +16,13 @@
   proceso (ver cómo en la prueba del copiloto). Extra `.[ai]` instalado en el venv (faltaba: `sdk_missing`).
 - `.env`: `DATA__TIINGO_TOKEN`, `OPS__COPILOT=true`, `OPS__AI_MODEL=claude-haiku-5-5`. `copilot-research` probado
   por la puerta: 1 hipótesis, US$0.006.
-- Freeze de paper **no vigente**: `hash_mismatch` en `execution` y `pretrade` (cambios de 4e2cc1f). No se
-  re-baselinó: decide Adam (`config-freeze --write --force`).
+- 08-11, con el sí directo de Adam: `.env` con `STRATEGY__NAME=pipeline` y universo de 10 ETF (elegido en sombra; el
+  pipeline aún no pasa compuertas con datos reales). Freeze re-congelado (hash `661b3d57407b55b9`).
+- Tareas registradas con `run-task.ps1`, hora local de Puebla (UTC-6 todo el año): `ibtrader-run-daily-execute`
+  09:05 L-V, `ibtrader-heartbeat-check` 12:00 Ma-S, `ibtrader-run-daily-plan` 18:00 L-V. `ibtrader-autopilot` y
+  `ibtrader-paper-reconcile` siguen sin tocar y sin `run-task.ps1`.
+- `ibtrader chequeo`: `listo_sombra=true`; `listo_paper=false` solo por `gateway_ibkr`. Al haber cuenta paper,
+  probar con `scripts\ib_readonly_check.py`.
 
 ## Hecho (2026-10-26, claude-code — los cinco pendientes de la revisión)
 - `short_only`: el runner armaba un sistema long-only que el motor short-only anulaba (cero operaciones).
