@@ -250,11 +250,32 @@ def test_halve_risk_moves_freed_weight_to_cash_etf() -> None:
 
 
 def test_live_trades_only_when_target_moves_like_backtest(tmp_path: Path) -> None:
-    from ibtrader.ops.run_daily import unchanged_targets
+    from ibtrader.execution.rebalance import ProposedOrder
+    from ibtrader.ops.run_daily import settled_after, unchanged_targets
 
-    book = {"shares": {"SPY": 10, "IEF": 5}, "last_targets": {"SPY": 0.3, "IEF": 0.3}}
+    book = {"shares": {"SPY": 10, "IEF": 5}, "last_targets": {"SPY": 0.3, "IEF": 0.3}, "settled": ["SPY", "IEF"]}
     assert unchanged_targets({"SPY": 0.3, "IEF": 0.25, "GLD": 0.1}, book) == ["SPY"]
     assert unchanged_targets({"SPY": 0.3}, {"shares": {"SPY": 10}}) == []  # first plan trades
+    # A clipped order (max notional) leaves the symbol unsettled → it keeps building the next day.
+    clipped = ProposedOrder("SPY", "BUY", 19, 500.0, 0.3, 0, 30, notes=["clipped_from=30"])
+    assert settled_after({"SPY": 0.3, "IEF": 0.3}, [clipped], [clipped], []) == ["IEF"]
+    assert unchanged_targets({"SPY": 0.3}, {**book, "settled": ["IEF"]}) == []
+
+
+def test_cash_etf_exempt_from_weight_cap_and_reductions_go_first() -> None:
+    from ibtrader.config import PretradeConfig
+    from ibtrader.execution.rebalance import ProposedOrder
+    from ibtrader.risk.pretrade import PretradeContext, check_orders
+
+    cfg = PretradeConfig(max_order_notional_usd=1e9)
+    px = {"SPY": 100.0, "BIL": 100.0}
+    buy_bil = ProposedOrder("BIL", "BUY", 900, 100.0, 0.9, 0, 900)
+    sell_spy = ProposedOrder("SPY", "SELL", 900, 100.0, 0.0, 900, 0)
+    ctx = PretradeContext(nav=100_000.0, positions={"SPY": 900}, prices=px, cash_symbols=["BIL"])
+    dec = check_orders([buy_bil, sell_spy], ctx, cfg)  # buy listed first on purpose
+    assert [o.symbol for o in dec.approved] == ["SPY", "BIL"] and not dec.rejected
+    ctx2 = PretradeContext(nav=100_000.0, positions={"SPY": 900}, prices=px)
+    assert any("max_weight" in r for _, r in check_orders([buy_bil, sell_spy], ctx2, cfg).rejected)
 
 
 def test_stale_symbol_is_held_not_sold(tmp_path: Path) -> None:

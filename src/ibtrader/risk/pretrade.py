@@ -34,6 +34,9 @@ class PretradeContext:
     risk_can_increase: bool = True  # False when the risk FSM is RESTRICTED / HALTED
     reference_date: Optional[date] = None  # date of the reference prices
     today: Optional[date] = None
+    #: Cash-equivalent ETFs (T-bills): exempt from ``max_weight_per_symbol`` (holding 100 % in BIL
+    #: when every trend is negative is the point of the cash sweep, not a concentration risk).
+    cash_symbols: Sequence[str] = ()
 
 
 @dataclass
@@ -84,7 +87,10 @@ def check_orders(orders: Sequence[ProposedOrder], ctx: PretradeContext, cfg: Pre
             return float("inf")
         return sum(abs(q) * float(ctx.prices.get(s) or 0.0) for s, q in p.items()) / nav
 
-    for o in orders:
+    cash = {s.upper() for s in ctx.cash_symbols}
+    # Reductions first: a purchase must see the gross exposure the same run's sales already freed.
+    ordered = sorted(orders, key=lambda o: 0 if _reduces_risk(o, pos.get(o.symbol, 0)) else 1)
+    for o in ordered:
         cur = pos.get(o.symbol, 0)
         reduces = _reduces_risk(o, cur)
         reason: Optional[str] = None
@@ -117,7 +123,7 @@ def check_orders(orders: Sequence[ProposedOrder], ctx: PretradeContext, cfg: Pre
                 trial = dict(pos)
                 trial[o.symbol] = new_qty
                 w = abs(new_qty) * o.ref_price / nav if nav > 0 else float("inf")
-                if w > cfg.max_weight_per_symbol + 1e-9:
+                if w > cfg.max_weight_per_symbol + 1e-9 and o.symbol.upper() not in cash:
                     reason = f"max_weight_per_symbol: {w:.3f} > {cfg.max_weight_per_symbol:.3f}"
                 elif gross(trial) > cfg.max_gross_exposure + 1e-9:
                     reason = f"max_gross_exposure: {gross(trial):.3f} > {cfg.max_gross_exposure:.3f}"

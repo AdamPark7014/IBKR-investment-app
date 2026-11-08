@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import pandas as pd
 
@@ -97,17 +97,36 @@ def unchanged_targets(weights: Mapping[str, float], book: Mapping[str, Any]) -> 
     more than the research that approved it (and pay costs research never saw).
     """
     last = dict(book.get("last_targets") or {})
+    settled = set(book.get("settled") or [])
     shares = dict(book.get("shares") or {})
     return [s for s, w in weights.items()
-            if s in last and int(shares.get(s, 0) or 0) != 0 and abs(float(w) - float(last[s])) < 1e-9]
+            if s in last and s in settled and int(shares.get(s, 0) or 0) != 0
+            and abs(float(w) - float(last[s])) < 1e-9]
+
+
+def settled_after(weights: Mapping[str, float], orders: Sequence[ProposedOrder],
+                  approved: Sequence[ProposedOrder], stale: Sequence[str]) -> List[str]:
+    """Symbols that will sit at their target once the approved orders fill.
+
+    A clipped (``max_order_notional``) or rejected order leaves its symbol unsettled, so the next
+    plan keeps trading toward the target even if the weight did not move.
+    """
+    ok = {o.symbol for o in approved if not o.notes}
+    touched = {o.symbol for o in orders}
+    return sorted(s for s in weights if s not in stale and (s not in touched or s in ok))
+
+
+def cash_symbols_of(symbols: Sequence[str], spec: Any = None) -> List[str]:
+    """Cash-equivalent ETFs among ``symbols``: box ``cash`` in the universe file, else a known T-bill ETF."""
+    from ..pipeline.system import KNOWN_CASH_ETFS
+
+    boxes = {e.symbol: e.box for e in spec.entries} if spec is not None else {}
+    return [s for s in symbols if boxes.get(s) == "cash" or (s not in boxes and s.upper() in KNOWN_CASH_ETFS)]
 
 
 def halve_risk(weights: Mapping[str, float], spec: Any = None) -> Dict[str, float]:
     """Drawdown de-risking: halve the risky weights; the freed half goes to the cash ETF if there is one."""
-    from ..pipeline.system import KNOWN_CASH_ETFS
-
-    boxes = {e.symbol: e.box for e in spec.entries} if spec is not None else {}
-    cash = [s for s in weights if boxes.get(s) == "cash" or (s not in boxes and s.upper() in KNOWN_CASH_ETFS)]
+    cash = cash_symbols_of(list(weights), spec)
     out = {s: (w if s in cash else w * 0.5) for s, w in weights.items()}
     if cash:
         freed = sum(w * 0.5 for s, w in weights.items() if s not in cash and w > 0)
@@ -305,11 +324,13 @@ def run_plan(
             book, data, date.fromisoformat(last) if last else None, session)
     nav = book_nav(book, prices)
     report["nav_before"] = nav
+    stale = list(meta.get("stale_symbols") or [])
+    invest_nav = nav * (1.0 - settings.pretrade.cash_buffer_pct / 100.0)
     orders = build_rebalance_orders(
-        weights, dict(book.get("shares") or {}), prices, nav,
+        weights, dict(book.get("shares") or {}), prices, invest_nav,
         min_notional=settings.pretrade.min_order_notional_usd,
         max_notional=settings.pretrade.max_order_notional_usd,
-        hold=list(meta.get("stale_symbols") or []) + [s for s in (book.get("shares") or {}) if s not in data]
+        hold=stale + [s for s in (book.get("shares") or {}) if s not in data]
         + unchanged_targets(weights, book),
     )
     if meta.get("stale_symbols"):
@@ -320,10 +341,11 @@ def run_plan(
         allowed_symbols=list(settings.universe.symbols), allow_short=settings.trading.allow_short,
         killswitch_active=Path(settings.risk.killswitch_file).exists(), account_ok=True,
         data_fresh=data_ok, risk_can_increase=risk_can_increase and freeze_ok,
-        reference_date=as_of, today=session,
+        reference_date=as_of, today=session, cash_symbols=cash_symbols_of(list(weights), spec),
     )
     dec = check_orders(orders, ctx, settings.pretrade)
     report["pretrade"] = dec.to_dict()
+    settled = settled_after(weights, orders, dec.approved, stale)
 
     if mode == "shadow":
         mgr = OrderManager(None, settings.execution, ledger_path=paths.orders)
@@ -336,6 +358,7 @@ def run_plan(
         book["basis"] = "shadow"
         book["last_session"] = session.isoformat()
         book["last_targets"] = {s: float(w) for s, w in weights.items()}
+        book["settled"] = settled
         save_book(paths.book, book)
         report["shadow_fills"] = [f.__dict__ for f in fills]
         report["note"] = "shadow: fills simulated at the close ± half spread + IBKR Fixed commission (optimistic)"
@@ -343,7 +366,7 @@ def run_plan(
         paths.pending.parent.mkdir(parents=True, exist_ok=True)
         paths.pending.write_text(json.dumps(
             {"run_date": session.isoformat(), "created_at": now.isoformat(), "mode": mode,
-             "targets": {s: float(w) for s, w in weights.items()},
+             "targets": {s: float(w) for s, w in weights.items()}, "settled_if_filled": settled,
              "orders": [o.to_dict() for o in dec.approved]}, indent=2, default=str), encoding="utf-8")
         report["pending_orders"] = str(paths.pending)
 
@@ -437,7 +460,9 @@ def run_execute(
         report["status"] = "reconcile_break_after"
         _alert(settings, report, "reconcile_break", "critical", "; ".join(post.reasons), post.to_dict())
     save_book(paths.book, {"cash": float(cash2 or 0.0), "shares": shares2, "basis": "broker", "account": acct,
-                           "synced_at": now.isoformat(), "last_targets": dict(pending.get("targets") or {})})
+                           "synced_at": now.isoformat(), "last_targets": dict(pending.get("targets") or {}),
+                           "settled": sorted(set(pending.get("settled_if_filled") or [])
+                                             - {m.symbol for m in managed if m.state.value != "FILLED"})})
     paths.pending.rename(paths.pending.with_suffix(".done.json"))
     failed = [m for m in managed if m.state.value in ("REJECTED", "CANCELLED")]
     if failed:
@@ -496,6 +521,7 @@ def secondary_loader_for(settings: AppSettings) -> Optional[Loader]:
 
 
 __all__ = [
-    "Paths", "book_nav", "credit_corporate_actions", "drawdown_now", "exit_code_for", "halve_risk", "unchanged_targets",
-    "primary_provider", "raw_last_prices", "run_execute", "run_plan", "secondary_loader_for",
+    "Paths", "book_nav", "cash_symbols_of", "credit_corporate_actions", "drawdown_now", "exit_code_for",
+    "halve_risk", "primary_provider", "raw_last_prices", "run_execute", "run_plan", "secondary_loader_for",
+    "settled_after", "unchanged_targets",
 ]

@@ -212,6 +212,9 @@ class PretradeConfig(BaseModel):
         default=1_000.0, ge=0, description="Skip increases/reductions smaller than this (IBKR USD 1 min = 10 bp)"
     )
     max_orders_per_run: int = Field(default=12, ge=1)
+    cash_buffer_pct: float = Field(
+        default=0.5, ge=0, le=10, description="Share of NAV never invested (commissions, spread, rounding)"
+    )
     max_weight_per_symbol: float = Field(default=0.40, gt=0, le=1.0)
     max_gross_exposure: float = Field(default=1.0, gt=0, le=1.5, description="Sum |w|; 1.0 = no leverage")
     max_limit_deviation_pct: float = Field(
