@@ -418,12 +418,34 @@ def run_execute(
         _save_report(paths, report)
         return report
 
-    gw = gateway_factory(settings)
-    shares, cash, acct = gw.account_snapshot()
+    try:
+        gw = gateway_factory(settings)
+        shares, cash, acct = gw.account_snapshot()
+    except Exception as exc:  # noqa: BLE001 - Gateway down / login expired: alert, send nothing
+        report["status"] = "broker_error"
+        _alert(settings, report, "broker_unreachable", "critical", f"{type(exc).__name__}: {exc}")
+        _save_report(paths, report)
+        return report
     exp_acct = (settings.ib.expected_account or "").strip()
     account_ok = (not exp_acct) or acct == exp_acct
     book = load_book(paths.book) or {"cash": float(cash or 0.0), "shares": shares, "basis": "broker"}
-    pre = reconcile(book, shares, cash, cash_tolerance_usd=max(25.0, 0.0005 * float(book.get("cash") or 0.0)))
+    if pending.get("execution_started_at"):
+        # A previous execute died after sending orders. Never send them again: adopt the broker
+        # state as the book, park the pending file and ask for a human look.
+        save_book(paths.book, {"cash": float(cash or 0.0), "shares": shares, "basis": "broker", "account": acct,
+                               "synced_at": now.isoformat(), "last_targets": dict(pending.get("targets") or {}),
+                               "settled": []})
+        paths.pending.rename(paths.pending.with_suffix(".interrupted.json"))
+        report["status"] = "resumed_after_crash"
+        _alert(settings, report, "execute_interrupted", "critical",
+               f"execute for {run_date} had started at {pending['execution_started_at']} and did not finish: "
+               "orders were NOT resent; book synced to the broker, check orders.jsonl")
+        _save_report(paths, report)
+        return report
+    ref_px = {str(o.get("symbol")): float(o.get("ref_price") or 0.0) for o in pending.get("orders") or []}
+    nav_hint = float(cash or 0.0) + sum(abs(q) * ref_px.get(s, 0.0) for s, q in shares.items())
+    pre = reconcile(book, shares, cash, cash_tolerance_usd=max(25.0, 0.0005 * float(book.get("cash") or 0.0)),
+                    cash_surplus_tolerance_usd=max(500.0, 0.01 * nav_hint))
     report["reconcile_before"] = pre.to_dict()
     if not pre.ok:
         activate_killswitch(settings.risk.killswitch_file)
@@ -444,6 +466,8 @@ def run_execute(
     )
     dec = check_orders(orders, ctx, settings.pretrade)
     report["pretrade"] = dec.to_dict()
+    pending["execution_started_at"] = now.isoformat()
+    paths.pending.write_text(json.dumps(pending, indent=2, default=str), encoding="utf-8")
     mgr = OrderManager(gw, settings.execution, ledger_path=paths.orders, slippage_path=paths.slippage)
     managed: List[ManagedOrder] = mgr.execute(dec.approved, run_date, send=True)
     report["orders"] = [m.to_dict() for m in managed]

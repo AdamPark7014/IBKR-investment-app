@@ -34,10 +34,11 @@ class ReconcileResult:
     share_diffs: List[Dict[str, Any]] = field(default_factory=list)
     cash_diff: Optional[float] = None
     reasons: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {"ok": self.ok, "share_diffs": self.share_diffs, "cash_diff": self.cash_diff,
-                "reasons": list(self.reasons)}
+                "reasons": list(self.reasons), "warnings": list(self.warnings)}
 
 
 def load_book(path: str | Path) -> Optional[Dict[str, Any]]:
@@ -83,7 +84,11 @@ def reconcile(
     broker_cash: Optional[float] = None,
     *,
     cash_tolerance_usd: float = 25.0,
+    cash_surplus_tolerance_usd: Optional[float] = None,
 ) -> ReconcileResult:
+    """Shares must match exactly. Cash may differ by ``cash_tolerance_usd`` either way; a *surplus*
+    (broker holds more cash: dividends, interest paid between plan and execute) is accepted up to
+    ``cash_surplus_tolerance_usd`` and reported in ``warnings`` instead of breaking."""
     exp_sh = {str(k).upper(): int(v) for k, v in dict(expected.get("shares") or {}).items() if int(v) != 0}
     brk_sh = {str(k).upper(): int(v) for k, v in dict(broker_shares).items() if int(v) != 0}
     res = ReconcileResult(ok=True)
@@ -96,7 +101,11 @@ def reconcile(
         res.reasons.append(f"share_mismatch: {len(res.share_diffs)} symbol(s)")
     if broker_cash is not None and expected.get("cash") is not None:
         res.cash_diff = float(broker_cash) - float(expected["cash"])
-        if abs(res.cash_diff) > cash_tolerance_usd:
+        surplus_ok = (cash_surplus_tolerance_usd is not None
+                      and cash_tolerance_usd < res.cash_diff <= cash_surplus_tolerance_usd)
+        if surplus_ok:
+            res.warnings.append(f"cash_surplus: {res.cash_diff:+.2f} USD (dividends/interest?)")
+        elif abs(res.cash_diff) > cash_tolerance_usd:
             res.ok = False
             res.reasons.append(f"cash_mismatch: {res.cash_diff:+.2f} USD > ±{cash_tolerance_usd:.2f}")
     return res

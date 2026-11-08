@@ -286,3 +286,41 @@ def test_stale_symbol_is_held_not_sold(tmp_path: Path) -> None:
     rep = run_plan(s, loader=lambda _s: frames, now=PLAN_AT)
     assert all(o["symbol"] != "IEF" for o in rep["pretrade"]["approved"])
     assert rep["targets"]["meta"]["stale_symbols"] == ["IEF"] and "IEF" not in rep["targets"]["weights"]
+
+
+def test_dividend_cash_between_plan_and_execute_is_not_a_break(tmp_path: Path) -> None:
+    from ibtrader.ops.reconcile import reconcile
+
+    r = reconcile({"cash": 1000.0, "shares": {"VNQ": 100}}, {"VNQ": 100}, 1310.0,
+                  cash_tolerance_usd=25.0, cash_surplus_tolerance_usd=500.0)
+    assert r.ok and r.warnings
+    short = reconcile({"cash": 1000.0, "shares": {}}, {}, 600.0, cash_tolerance_usd=25.0,
+                      cash_surplus_tolerance_usd=500.0)
+    assert not short.ok  # missing cash is always a break
+
+
+def test_crashed_execute_is_never_resent(tmp_path: Path) -> None:
+    s = _orders_ready(tmp_path)
+    run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+    pend = tmp_path / "data" / "pending_orders.json"
+    raw = json.loads(pend.read_text())
+    raw["execution_started_at"] = "2026-11-10T14:40:00+00:00"  # died after sending
+    pend.write_text(json.dumps(raw))
+    broker = Broker({"SPY": 5}, 47_000.0)
+    ex = run_execute(s, gateway_factory=lambda _s: broker, now=EXEC_AT)
+    assert ex["status"] == "resumed_after_crash" and broker.orders == {}
+    book = json.loads((tmp_path / "data" / "paper_account.json").read_text())
+    assert book["shares"] == {"SPY": 5} and (tmp_path / "data" / "pending_orders.interrupted.json").exists()
+
+
+def test_gateway_down_is_alerted_not_crashed(tmp_path: Path) -> None:
+    s = _orders_ready(tmp_path)
+    run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+
+    def down(_s):
+        raise ConnectionRefusedError("IB Gateway not running")
+
+    ex = run_execute(s, gateway_factory=down, now=EXEC_AT)
+    assert ex["status"] == "broker_error"
+    assert "broker_unreachable" in (tmp_path / "data" / "alerts.jsonl").read_text()
+    assert (tmp_path / "data" / "pending_orders.json").exists()  # nothing consumed
