@@ -1,114 +1,13 @@
+"""The single gateway to Claude (the "puerta"): ibtrader never holds the Anthropic key.
+
+Only ``puerta_config_error`` lives here; ``intelligence.triage`` is the one module that calls Claude.
+"""
+
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Mapping, Optional
+from typing import Mapping, Optional
 from urllib.parse import urlparse
-
-from .prompt_pack import PromptPack, default_pack
-
-
-def compress_facts(
-    *,
-    radar: Mapping[str, Any] | None = None,
-    paper: Mapping[str, Any] | None = None,
-    posture: Mapping[str, Any] | None = None,
-    slippage: Mapping[str, Any] | None = None,
-    extra: Mapping[str, Any] | None = None,
-) -> Dict[str, Any]:
-    '''JSON pequeño para IA / UI. Sin series crudas.'''
-    r = dict(radar or {})
-    p = dict(paper or {})
-    facts: Dict[str, Any] = {
-        'as_of': r.get('as_of'),
-        'equity_trend': r.get('equity_trend'),
-        'equity_vol_20': _round(r.get('equity_vol_20'), 4),
-        'risk_on_proxy': r.get('risk_on_proxy'),
-        'breadth_proxy': _round(r.get('breadth_proxy'), 3),
-        'rates_slope': _round(r.get('rates_slope'), 4),
-        'commodity_momentum': _round(r.get('commodity_momentum'), 4),
-        'paper_n_drift': p.get('n_drift'),
-        'paper_n_symbols': p.get('n_symbols'),
-        'orders_sent': p.get('orders_sent', 0),
-        'posture': posture or {},
-        'slippage_n': (slippage or {}).get('n'),
-        'slippage_mean_bps': _round((slippage or {}).get('mean_slip_bps'), 2),
-        'disclaimer': r.get('disclaimer') or 'Triage only. Not predictive of returns.',
-    }
-    if extra:
-        facts['extra'] = dict(extra)
-    return facts
-
-
-def _round(v: Any, n: int) -> Any:
-    try:
-        return None if v is None else round(float(v), n)
-    except (TypeError, ValueError):
-        return None
-
-
-def _trend_label(t: Any) -> str:
-    if t == 1:
-        return 'alcista vs MA100'
-    if t == -1:
-        return 'bajista vs MA100'
-    if t == 0:
-        return 'lateral vs MA100'
-    return 'sin señal de tendencia'
-
-
-def deterministic_brief(facts: Mapping[str, Any]) -> str:
-    '''Narrativa intuitiva sin llamar a ningún LLM.'''
-    lines = []
-    lines.append(
-        f"Estado ({facts.get('as_of') or 'n/d'}): mercado {_trend_label(facts.get('equity_trend'))}."
-    )
-    bullets: list[str] = []
-    if facts.get('equity_vol_20') is not None:
-        bullets.append(
-            f"Vol 20d anualizada ≈ {float(facts['equity_vol_20'])*100:.1f}%."
-        )
-    if facts.get('risk_on_proxy') is not None:
-        bullets.append(
-            'VIX bajo su MA50 (risk-on proxy).'
-            if facts['risk_on_proxy'] == 1
-            else 'VIX alto vs MA50 (risk-off proxy).'
-        )
-    if facts.get('breadth_proxy') is not None:
-        bullets.append(
-            f"Breadth: {float(facts['breadth_proxy'])*100:.0f}% de símbolos > MA50."
-        )
-    if facts.get('paper_n_drift') is not None:
-        n_drift = facts["paper_n_drift"]
-        sent = facts.get("orders_sent", 0)
-        bullets.append(f"Paper: {n_drift} símbolos con drift; órdenes={sent}.")
-    if facts.get('slippage_n'):
-        bullets.append(
-            f"Slippage ledger: n={facts['slippage_n']}, mean≈{facts.get('slippage_mean_bps')} bps."
-        )
-    for b in bullets[:5]:
-        lines.append(f"- {b}")
-    
-    extra = facts.get("extra") or {}
-    if isinstance(extra, Mapping):
-        if "urgency_mode" in extra:
-            mode = extra["urgency_mode"]
-            reason = extra.get("urgency_reason") or "n/d"
-            lines.append(f"- Urgency paper: {mode} ({reason}).")
-        if extra.get("config_hash_ok") is False:
-            lines.append("- Config freeze: HASH MISMATCH — do not retune.")
-
-    drift = int(facts.get('paper_n_drift') or 0)
-    if drift > 0:
-        lines.append(
-            'Acción paper: revisar paper-reconcile; no LIVE. ESPERAR órdenes reales.'
-        )
-    else:
-        lines.append(
-            'Acción paper: sin drift material — ESPERAR / observar.'
-        )
-    lines.append(str(facts.get('disclaimer') or ''))
-    return '\n'.join(lines)
-
 
 #: Hosts of the single gateway to Claude (C:\dev\scripts\ai-os\IA-CLAUDE.md). Nothing else is allowed.
 PUERTA_HOSTS = ("ia.zynoratek.com", "puerta-ia:8080")
@@ -116,7 +15,7 @@ PUERTA_TOKEN_PREFIX = "pia_"
 
 
 def puerta_config_error(env: Optional[Mapping[str, str]] = None) -> Optional[str]:
-    """Why ``--use-ai`` cannot run, or None when the environment points at the puerta.
+    """Why Claude cannot be called, or None when the environment points at the puerta.
 
     ibtrader never holds the Anthropic key: ``ANTHROPIC_BASE_URL`` must be the puerta and
     ``ANTHROPIC_API_KEY`` the project token (``pia_ibtrader_…``). The key itself is never printed.
@@ -125,7 +24,7 @@ def puerta_config_error(env: Optional[Mapping[str, str]] = None) -> Optional[str
     base = str(e.get("ANTHROPIC_BASE_URL") or "").strip()
     key = str(e.get("ANTHROPIC_API_KEY") or "").strip()
     if not base:
-        return "ANTHROPIC_BASE_URL is not set: --use-ai only goes through the puerta (https://ia.zynoratek.com)"
+        return "ANTHROPIC_BASE_URL is not set: Claude only goes through the puerta (https://ia.zynoratek.com)"
     host = (urlparse(base).netloc or "").lower()
     if host not in PUERTA_HOSTS:
         return f"ANTHROPIC_BASE_URL points at {host or base!r}, not at the puerta ({', '.join(PUERTA_HOSTS)})"
@@ -136,61 +35,4 @@ def puerta_config_error(env: Optional[Mapping[str, str]] = None) -> Optional[str
     return None
 
 
-def ai_brief(
-    facts: Mapping[str, Any], *, pack: Optional[PromptPack] = None, use_ai: bool = True
-) -> Dict[str, Any]:
-    """Devuelve {text, source, model, pack}. source=deterministic|ai|ai_fallback.
-
-    Con ``use_ai`` solo llama a Claude por la puerta (``puerta_config_error``); sin puerta configurada
-    se queda en el texto determinista y lo dice en ``note``. Sin ``temperature`` (la puerta y la API
-    2026-10-21 la rechazan), sin prefill, ``max_tokens`` justo y ``stop_reason`` revisado.
-    """
-    pack = pack or default_pack()
-    det = deterministic_brief(facts)
-    out: Dict[str, Any] = {
-        "text": det,
-        "source": "deterministic",
-        "model": None,
-        "pack": pack.name,
-        "facts": dict(facts),
-    }
-    if not use_ai:
-        return out
-    problem = puerta_config_error()
-    if problem is not None:
-        out["note"] = f"puerta_not_configured: {problem}"
-        return out
-    try:
-        import anthropic
-    except ImportError:
-        out["note"] = "anthropic SDK not installed (pip install -e .[ai])"
-        return out
-    try:
-        client = anthropic.Anthropic()  # ANTHROPIC_BASE_URL (puerta) + ANTHROPIC_API_KEY (pia_ token)
-        r = client.messages.create(
-            model=pack.model,
-            max_tokens=int(pack.max_tokens),
-            system=[{"type": "text", "text": pack.render_system(), "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": pack.render_user(facts)}],
-            extra_headers={"x-proceso": pack.proceso},
-            extra_body={"output_config": {"effort": pack.effort}},
-        )
-        stop = getattr(r, "stop_reason", None)
-        text = "".join(b.text for b in r.content if getattr(b, "type", None) == "text")
-        if stop in ("refusal", "max_tokens"):
-            out["source"] = "ai_fallback"
-            out["note"] = f"stop_reason={stop}"
-        elif text.strip():
-            out["text"] = text.strip()
-            out["source"] = "ai"
-            out["model"] = pack.model
-        else:
-            out["source"] = "ai_fallback"
-            out["note"] = "empty model response"
-    except Exception as exc:  # noqa: BLE001 — fall closed to deterministic
-        out["source"] = "ai_fallback"
-        out["note"] = f"{type(exc).__name__}: {exc}"
-    return out
-
-
-__all__ = ["compress_facts", "deterministic_brief", "ai_brief", "puerta_config_error", "PUERTA_HOSTS"]
+__all__ = ["PUERTA_HOSTS", "PUERTA_TOKEN_PREFIX", "puerta_config_error"]
