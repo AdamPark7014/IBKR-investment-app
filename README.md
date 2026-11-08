@@ -34,7 +34,8 @@ Requisitos (Windows 11, Python 3.12):
    - Backtest de muestra (SMA crossover): `ibtrader backtest-sample`
      - Puedes generar un ID de experimento: `ibtrader backtest-sample --exp-id p1p5_check`
      - Comparar modos (P5): `ibtrader compare-directions --exp-id p1p5_compare`
-   - Motor de papel (BUY/SELL/WATCH/NO_TRADE, sin órdenes): `ibtrader paper-run`
+   - **Corrida diaria única** (07-11-2026, ver `docs/PAPER-OPS.md`): `ibtrader run-daily --phase plan|execute` (modo sombra por defecto, cero órdenes), `ibtrader heartbeat-check`, `ibtrader scorecard` (calidad medible) y `ibtrader ai-review` (revisión de diffs con Claude vía puerta). Programar: `pwsh -File scripts/schedule-run-daily.ps1 -Action Register`.
+   - Motor de papel viejo (BUY/SELL/WATCH/NO_TRADE, sin órdenes): `ibtrader paper-run`
    - Reconciliación paper (desired vs `data/paper_positions.json`, JSON a stdout, cero órdenes): `ibtrader paper-reconcile`. Fase 3 = cimiento disciplinado (drift + slippage ledger opcional); **no LIVE**. El playbook institucional excluye LLM sobre titulares, alt-data de pago e intradía — aquí solo comparas cartera objetivo vs held.
    - Paper stack (desired/held/drift en SQLite, JSON a stdout, cero órdenes): `ibtrader paper-stack`
    - Slippage report (resumen del ledger, JSON, cero órdenes): `ibtrader slippage-report`
@@ -66,11 +67,11 @@ CI (GitHub Actions):
 
 Datos (P2):
 - Todos los comandos (`download-data`, `backtest-sample`, `compare-directions`) usan un pipeline de proveedores con puerta de calidad:
-  - Primero Yahoo Finance (vía yfinance 1.x) y, si falla, Stooq CSV con cabeceras tipo `curl` (evita 404).
+  - Cadena por defecto `["tiingo","yahoo"]`: Tiingo si hay `DATA__TIINGO_TOKEN` (si no, se omite con WARNING) y Yahoo Finance (yfinance 1.x) después. `run-daily` usa Yahoo como segunda fuente de contraste cuando la primaria es Tiingo.
   - Validación estricta: índice creciente sin duplicados, columnas no vacías. Si falla, se bloquea el backtest.
-  - Stooq: en la práctica NO funcional (JS bot-check frecuente). Se mantiene como fallback "best effort", pero no confiar en él. El error agrega la razón de cada proveedor probado.
+  - Stooq se eliminó el 07-11-2026 (no funcional). El error agrega la razón de cada proveedor probado.
   - Yahoo Finance (yfinance 1.x) es la única fuente gratuita funcional por defecto.
-  - IBKRProvider (vía `ib_async`) está implementado para históricos diarios (TRADES). Es opcional y seleccionable vía `DATA__PROVIDERS` (por defecto `yahoo,stooq`), y requiere IB Gateway/TWS local con API habilitada.
+  - IBKRProvider (vía `ib_async`) está implementado para históricos diarios (TRADES). Es opcional y seleccionable vía `DATA__PROVIDERS` (por defecto `tiingo,yahoo`), y requiere IB Gateway/TWS local con API habilitada.
 
 Histeresis costo-aware (P3–P4):
 - Opcional y desactivada por defecto. Variables:

@@ -11,7 +11,40 @@ registrar tareas, datos y **no retocar** parámetros con el último mes.
 
 Todo comando aquí imprime JSON (o HTML de autopilot) y envía **0 órdenes**.
 
-## Comandos CLI
+## Corrida diaria única (desde 07-11-2026)
+
+Un solo camino datos → objetivos → riesgo → orden, en dos fases. Sustituye a `autopilot` /
+`paper-reconcile` para operar; esos siguen existiendo para el triage viejo.
+
+```text
+ibtrader run-daily --phase plan      # tras el cierre: datos + frescura + contraste, freeze, pesos objetivo,
+                                     # regla de drawdown, pre-trade; sombra = fills simulados con costes
+ibtrader run-daily --phase execute   # tras la apertura: concilia, envía pending_orders.json, vuelve a conciliar
+ibtrader heartbeat-check             # alerta crítica si la corrida no reportó en 30 h
+ibtrader scorecard                   # calidad del modelo en números (meta + pass/fail/insufficient)
+ibtrader ai-review                   # git diff → Claude vía puerta (look-ahead, fugas, bypass de riesgo)
+```
+
+- **Modo** (`EXECUTION__MODE`): `shadow` por defecto (cero órdenes). `paper_orders` exige
+  `TRADING__ALLOW_BROKER_ORDERS=true`, Gateway paper (4002) y un freeze vigente; `live_orders` además
+  `MODE=LIVE` y `LIVE_TRADING_CONFIRMED=yes`.
+- **Códigos de salida**: 0 normal, 1 bloqueo seguro (datos viejos, pending caducado), 2 requiere humano
+  (descuadre con el broker → kill switch, error de datos).
+- **Órdenes idempotentes**: `orderRef = ibt-AAAAMMDD-SÍMBOLO-LADO`; si ya existe en el broker no se reenvía.
+- **Freeze**: el snapshot incluye ahora `pretrade` y `execution`; tras el veredicto de investigación hay que
+  rehacerlo con `config-freeze --write --force`.
+
+Programación (Windows; horas locales del PC = cierre NYSE + 45 min y apertura + 10 min):
+
+```powershell
+pwsh -File scripts/schedule-run-daily.ps1 -Action Register -PlanTime 16:45 -ExecuteTime 09:40
+```
+
+Archivos nuevos en `data/`: `pending_orders.json` (→ `.done.json` / `.stale.json`), `orders.jsonl`
+(ciclo de vida de cada orden), `alerts.jsonl`, `heartbeat.json`, `ai_usage.jsonl` (coste de Claude).
+Informes por día en `reports/daily/`.
+
+## Comandos CLI (triage fase 3)
 
 ```text
 ibtrader autopilot              # triage + UI; opcional --use-ai (puerta IA, sin noticias)

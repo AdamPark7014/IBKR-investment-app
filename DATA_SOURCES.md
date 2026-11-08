@@ -23,7 +23,7 @@ Limitaciones/costos/licencias:
 - Zona horaria: normalizar a UTC en ingestión. Campos de corporate actions varían por activo/mercado.
 
 Fuentes externas (planeadas y opcionales por fase; detrás de interfaces):
-- Precios para backtesting: **Tiingo** (fuente de verdad desde 21-10-2026, ver sección abajo); `yfinance` y Stooq quedan como respaldo — sólo para investigación/backtest, nunca para ejecución.
+- Precios para backtesting: **Tiingo** (fuente de verdad desde 21-10-2026, ver sección abajo); `yfinance` queda como respaldo y contraste (Stooq eliminado el 07-11-2026) — sólo para investigación/backtest, nunca para ejecución.
 - Macro:
   - FRED (Federal Reserve) para tasas, inflación, curvas (`https://fred.stlouisfed.org/`).
   - BEA/BLS para PIB/empleo (EE. UU.).
@@ -42,7 +42,7 @@ Metodología y linaje:
 
 Decisiones de diseño (fase 1):
 - Live/paper market data: IBKR (cuando esté disponible localmente).
-- Backtesting: Tiingo (EOD ajustado + cierre crudo + metadatos de listado) cuando hay `DATA__TIINGO_TOKEN`; `yfinance`/Stooq como respaldo. IBKR no es accesible desde este VM.
+- Backtesting: Tiingo (EOD ajustado + cierre crudo + metadatos de listado) cuando hay `DATA__TIINGO_TOKEN`; `yfinance` como respaldo. IBKR no es accesible desde este VM.
 - Fundamentos/macro: se dejan interfaces y stubs; no se materializa sin credenciales/licencias del propietario.
 
 Referencias:
@@ -59,7 +59,7 @@ Los fondos guardan cada dato con la fecha en que lo recibieron (ArcticDB en Man,
 ### Tiingo — fuente de verdad para precios EOD
 
 - **Token**: variable de entorno `DATA__TIINGO_TOKEN` (o `tiingo_token` en `DataConfig`). Vacío = el proveedor **no se instancia** y queda un `WARNING tiingo_disabled`; la cadena sigue con los demás. Nunca se escribe el token en linaje, manifiesto ni logs.
-- **Activar**: `DATA__PROVIDERS='["tiingo","yahoo","stooq"]'` (el orden es la prioridad de la cadena).
+- **Activar**: `DATA__PROVIDERS='["tiingo","yahoo"]'` (el orden es la prioridad de la cadena).
 - **Tiers** (página oficial de precios, leída el 21-10-2026):
   - *Starter* (gratis): 500 símbolos únicos/mes, 50 peticiones/hora, 1.000/día; uso personal, no comercial.
   - *Power* ($30/mes): 30+ años de EOD, 110.341 símbolos, fundamentales 15+ años, límites mucho más altos.
@@ -121,7 +121,7 @@ Cada carga exitosa (`load_universe_v2`) escribe, si `write_manifest=True` (por d
 `validate_pit(df, symbol, max_price_spike_pct=…, reject_future_bars=…)` devuelve **todas** las razones, no la primera: barras con fecha posterior a hoy (UTC), saltos de cierre día a día mayores que `DATA__MAX_PRICE_SPIKE_PCT` (25 % por defecto; 0 desactiva), duplicados, índice no monótono, NaN en OHLCV, columnas faltantes, cierres ≤ 0. `DATA__REJECT_FUTURE_BARS=false` permite barras futuras (solo para datos sintéticos).
 
 Semántica en `load_universe_v2`:
-- Caché: se sirve solo si tiene sidecar de linaje de una fuente cacheable (`yahoo`, `stooq`, `ibkr`, `tiingo`), no está vencida (`max_cache_age_days`) y pasa gate + PIT; si no, `WARNING cache_rechazada` con las razones y se vuelve a bajar.
+- Caché: se sirve solo si tiene sidecar de linaje de una fuente cacheable (`yahoo`, `ibkr`, `tiingo`), no está vencida (`max_cache_age_days`) y pasa gate + PIT; si no, `WARNING cache_rechazada` con las razones y se vuelve a bajar.
 - Proveedores: el que falla (excepción o datos rechazados) deja `WARNING provider_failed` / `provider_data_rechazada` y se prueba el siguiente.
 - Si **todos** fallan para un símbolo: `ERROR symbol_excluido` con la lista completa de razones y el símbolo queda fuera del resultado; nada suyo se cachea ni entra al vintage.
 - Si al final no queda ningún símbolo: `RuntimeError("Ningún símbolo cargó …")` con todas las razones. Nunca un dict vacío silencioso.

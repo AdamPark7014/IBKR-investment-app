@@ -207,3 +207,18 @@ def test_cli_heartbeat_check_exit_code(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("OPS__ALERTS_FILE", str(tmp_path / "alerts.jsonl"))
     r = CliRunner().invoke(app, ["heartbeat-check"])
     assert r.exit_code == 2 and "heartbeat_missing" in r.output
+
+
+def test_scorecard_after_shadow_runs(tmp_path: Path) -> None:
+    from ibtrader.ops.scorecard import build_scorecard
+
+    s = _settings(tmp_path)
+    empty = build_scorecard(s)
+    assert empty["ready_for_live"] is False and empty["n_pass"] == 0
+    run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+    sc = build_scorecard(s)
+    by = {m["metric"]: m for m in sc["metrics"]}
+    assert by["heartbeats_perdidos"]["status"] == "pass"
+    assert by["descuadres_con_broker"]["status"] == "pass"
+    assert by["sesiones_en_paper"]["status"] == "fail" and by["slippage_mediano"]["status"] == "insufficient"
+    assert sc["ready_for_live"] is False

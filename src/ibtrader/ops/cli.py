@@ -1681,5 +1681,17 @@ def ai_review(
     raise typer.Exit(code={"ok": 0, "needs_changes": 1}.get(rev.verdict, 2))
 
 
+@app.command("scorecard")
+def scorecard_cmd() -> None:
+    """Calidad del modelo en números: cada métrica con su meta y estado pass/fail/insufficient."""
+    import json as _json
+
+    from .scorecard import build_scorecard
+
+    s = AppSettings()
+    s.resolve_paths()
+    typer.echo(_json.dumps(build_scorecard(s), ensure_ascii=False, indent=2))
+
+
 if __name__ == "__main__":
     app()
