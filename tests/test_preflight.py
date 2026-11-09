@@ -44,9 +44,50 @@ def test_ready_for_paper_with_gateway_and_freeze(tmp_path: Path) -> None:
     write_freeze(Path(s.data.data_dir) / "paper_config_freeze.json", s)
     (tmp_path / "data" / "heartbeat.json").write_text(json.dumps({"ts": NOW.isoformat()}))
     rep = run_preflight(s, port_open=lambda h, p: p == 4002, tasks_missing=lambda: [],
-                        tiingo_probe=lambda tok: "2026-11-06", now=NOW)
+                        tiingo_probe=lambda tok: "2026-11-06", account_probe=lambda st: ({}, 50_000.0, "DU123"),
+                        now=NOW)
     assert rep["listo_paper"] is True, rep["pendientes"]
     assert _by_id(rep)["latido"]["ok"] is True
+    assert _by_id(rep)["cuenta_ibkr"]["ok"] is True
+
+
+def _paper_ready(tmp: Path) -> AppSettings:
+    s = _settings(tmp)
+    write_freeze(Path(s.data.data_dir) / "paper_config_freeze.json", s)
+    (tmp / "data" / "heartbeat.json").write_text(json.dumps({"ts": NOW.isoformat()}))
+    return s
+
+
+def test_open_port_alone_is_not_ready_for_paper(tmp_path: Path) -> None:
+    rep = run_preflight(_paper_ready(tmp_path), port_open=lambda h, p: True, tasks_missing=lambda: [],
+                        tiingo_probe=lambda tok: "x", now=NOW)
+    assert rep["listo_paper"] is False
+    assert _by_id(rep)["cuenta_ibkr"]["ok"] is None
+
+
+def test_unfunded_account_blocks_paper(tmp_path: Path) -> None:
+    rep = run_preflight(_paper_ready(tmp_path), port_open=lambda h, p: True, tasks_missing=lambda: [],
+                        tiingo_probe=lambda tok: "x", account_probe=lambda st: ({}, 0.0, "DU123"), now=NOW)
+    c = _by_id(rep)["cuenta_ibkr"]
+    assert rep["listo_paper"] is False and c["ok"] is False and "saldo 0" in c["detalle"]
+    assert rep["listo_sombra"] is True  # la sombra no necesita la cuenta
+
+
+def test_non_paper_account_blocks_paper(tmp_path: Path) -> None:
+    rep = run_preflight(_paper_ready(tmp_path), port_open=lambda h, p: True, tasks_missing=lambda: [],
+                        tiingo_probe=lambda tok: "x", account_probe=lambda st: ({}, 1000.0, "U999"), now=NOW)
+    c = _by_id(rep)["cuenta_ibkr"]
+    assert rep["listo_paper"] is False and "no parece paper" in c["detalle"]
+
+
+def test_account_probe_error_is_reported_not_raised(tmp_path: Path) -> None:
+    def boom(st: AppSettings) -> tuple:
+        raise TimeoutError("sin respuesta")
+
+    rep = run_preflight(_paper_ready(tmp_path), port_open=lambda h, p: True, tasks_missing=lambda: [],
+                        tiingo_probe=lambda tok: "x", account_probe=boom, now=NOW)
+    c = _by_id(rep)["cuenta_ibkr"]
+    assert rep["listo_paper"] is False and c["ok"] is False and "sin respuesta" in c["detalle"]
 
 
 def test_missing_token_tasks_and_bad_strategy_block_shadow(tmp_path: Path) -> None:

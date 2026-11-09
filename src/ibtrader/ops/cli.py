@@ -1641,6 +1641,7 @@ def copilot_research(
 @app.command("chequeo")
 def chequeo_cmd(
     sin_red: bool = typer.Option(False, "--sin-red", help="No consulta Tiingo (solo revisa la configuración)."),
+    sin_ibkr: bool = typer.Option(False, "--sin-ibkr", help="No consulta la cuenta de IBKR aunque el Gateway esté."),
 ) -> None:
     """Chequeo previo en un paso: Tiingo, configuración, freeze, Claude, tareas y Gateway de IBKR.
 
@@ -1653,7 +1654,18 @@ def chequeo_cmd(
 
     s = AppSettings()
     s.resolve_paths()
-    rep = run_preflight(s, online=not sin_red)
+    def account_probe(settings: AppSettings) -> Any:
+        from ..broker.ib_gateway import IBGateway
+        from ..broker.ibkr import IBKRBroker
+
+        b = IBKRBroker(settings)
+        b.connect()
+        try:
+            return IBGateway(b.ib).account_snapshot()
+        finally:
+            b.disconnect()
+
+    rep = run_preflight(s, online=not sin_red, account_probe=None if sin_ibkr else account_probe)
     typer.echo(_json.dumps(rep, ensure_ascii=False, indent=2))
     ok = rep["listo_paper"] if s.execution.mode != "shadow" else rep["listo_sombra"]
     raise typer.Exit(0 if ok else 1)

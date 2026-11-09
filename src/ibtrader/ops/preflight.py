@@ -14,7 +14,7 @@ import socket
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..config import AppSettings
 
@@ -55,6 +55,7 @@ def run_preflight(
     port_open: Callable[[str, int], bool] = _port_open,
     tasks_missing: Callable[[], Optional[List[str]]] = _tasks_registered,
     tiingo_probe: Optional[Callable[[str], str]] = None,
+    account_probe: Optional[Callable[[AppSettings], Tuple[Dict[str, int], Optional[float], str]]] = None,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     from ..execution.order_manager import execution_permission
@@ -150,6 +151,37 @@ def run_preflight(
     out.append(_check("gateway_ibkr", gw, f"Gateway {'escucha' if gw else 'no responde'} en {host}:{port}",
                       "abre IB Gateway en modo paper, API activada, puerto 4002, solo 127.0.0.1",
                       sombra=False))
+    # Un puerto abierto no basta: la cuenta tiene que responder, ser paper y tener saldo.
+    if gw and account_probe is not None:
+        try:
+            shares, cash, acct = account_probe(settings)
+            nav = float(cash or 0.0)
+            expected = (settings.ib.expected_account or "").strip()
+            problems = []
+            if not acct:
+                problems.append("la cuenta no respondió")
+            elif settings.mode.upper() == "PAPER" and not acct.upper().startswith("DU"):
+                problems.append(f"la cuenta {acct} no parece paper (las de paper empiezan por DU)")
+            if expected and acct and acct != expected:
+                problems.append(f"cuenta {acct} distinta de IB__EXPECTED_ACCOUNT")
+            if nav <= 0 and not shares:
+                problems.append("saldo 0 y sin posiciones")
+            out.append(_check("cuenta_ibkr", not problems,
+                              f"cuenta {acct or '?'}: efectivo {nav:,.2f} USD, {len(shares)} posiciones"
+                              + (f" ({'; '.join(problems)})" if problems else ""),
+                              "en el portal de IBKR, fondea la cuenta paper (Settings → Paper Trading Account → "
+                              "Reset con el capital deseado) y revisa que el Gateway esté en la cuenta DU",
+                              sombra=False))
+        except Exception as exc:  # noqa: BLE001 - se informa, no se lanza
+            out.append(_check("cuenta_ibkr", False, f"la cuenta no respondió: {type(exc).__name__}: {exc}",
+                              "reinicia IB Gateway en paper y revisa que la API acepte 127.0.0.1", sombra=False))
+    elif gw:  # sin consultar la cuenta no se puede afirmar que esté lista
+        out.append(_check("cuenta_ibkr", None, "cuenta no consultada (usa `ibtrader chequeo` sin --sin-ibkr)",
+                          sombra=False))
+    else:
+        out.append(_check("cuenta_ibkr", None, "sin Gateway: no se pudo consultar la cuenta",
+                          sombra=False, paper=False))
+
     mode = settings.execution.mode
     perm_ok, why = execution_permission(settings)
     if mode == "shadow":
