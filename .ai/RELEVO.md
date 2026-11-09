@@ -1,5 +1,24 @@
 # RELEVO
 
+## Hecho (2026-11-09, claude-code — primera conexión a la cuenta paper y estudio de apalancamiento)
+- IB Gateway en simulado, puerto 4002, API solo lectura **a propósito** (el sistema sigue en sombra). Sin órdenes;
+  sin tocar `.env`, freeze ni tareas.
+- `ib_readonly_check.py`: cuenta paper confirmada (DU…26, INDIVIDUAL), 0 posiciones, **NetLiquidation y efectivo
+  0.00 USD**: la paper no tiene saldo. Sin saldo no se puede dimensionar ni ejecutar nada en paper.
+- Trampa: los primeros minutos tras abrir el Gateway, cuenta y posiciones expiran («request timed out») y el script
+  imprime `positions: 0, cash_usd: null` con exit 0. Ese 0 no es dato; repetir hasta que `cash_usd` no sea null.
+- `ibtrader chequeo`: `listo_sombra=true`, `listo_paper=true`, sin pendientes. Pero `gateway_ibkr` solo prueba el
+  puerto TCP (`preflight.py:149`): dio `true` con la cuenta sin responder y con saldo 0.
+- `research-leverage` 1.0/1.25/1.5, universo 10 ETF, ventana 2016-10/11 → 2026-11-06, `ENGINE__HISTORY_DAYS=4400` y
+  tasa por variable de proceso. Mejor configuración (`ewmac_hrp`), CAGR / vol / Sharpe / max DD:
+  1.0× 6,07 % / 6,69 % / 0,915 / −11,0 %; a 6 %: 1.25× 6,42 / 7,97 / 0,821 / −11,9, 1.5× 6,42 / 9,04 / 0,733 / −14,3;
+  a 4 %: 1.25× 6,77 / 7,97 / 0,862 / −11,8, 1.5× 7,10 / 9,04 / 0,805 / −13,9. En las 3 configuraciones el Sharpe baja
+  con cada nivel de apalancamiento y a ambas tasas. Tasa constante: la real varió. 925 vetos de exposición en la
+  corrida a 6 %, sin separar por nivel.
+- **Corrección a lo de abajo («hold-out 2024-11-08 sin abrir»)**: no se registró apertura formal, pero ya hay corridas
+  sin hold-out hasta 2026-11 sobre las mismas configuraciones (`portfolio_minimo*-20261108`, `20261108T05*`). Ese
+  tramo ya no es dato virgen para ellas.
+
 ## Hecho (2026-11-07, claude-code — conexión Tiingo e IBKR)
 - Tiingo: token en `.env` (`DATA__TIINGO_TOKEN`, ignorado por `.gitignore:15`, nunca en git). Probado:
   `/tiingo/daily/SPY` responde OK (historia 1993-01-29 → 2026-11-06).
