@@ -35,6 +35,14 @@ foreach ($t in $Tasks) {
             if ($Tr.Length -gt 261) { Write-Error "La orden de la tarea pasa de 261 caracteres (límite de schtasks): mueve el repo a una ruta más corta."; exit 1 }
             schtasks /Create /TN $t.Name /TR $Tr /SC WEEKLY /D $t.Days /ST $t.Time /F
             if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create $($t.Name) failed ($LASTEXITCODE)."; exit $LASTEXITCODE }
+            # schtasks /Create cannot set these. A laptop on battery or asleep must not lose the daily run;
+            # a late start is safe because run-daily rejects stale plans and orders outside market hours.
+            $Task = Get-ScheduledTask -TaskName $t.Name
+            $Task.Settings.DisallowStartIfOnBatteries = $false
+            $Task.Settings.StopIfGoingOnBatteries = $false
+            $Task.Settings.WakeToRun = $true
+            $Task.Settings.StartWhenAvailable = $true
+            Set-ScheduledTask -InputObject $Task | Out-Null
             Write-Host "Registrada '$($t.Name)' $($t.Days) a las $($t.Time)."
         }
         'Unregister' {

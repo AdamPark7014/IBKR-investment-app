@@ -7,10 +7,14 @@
   Con 9 posiciones ficticias contra 0 en el broker, `reconcile_before` habría activado el kill switch en la primera
   ejecución; `PAPER-OPS.md` no lo menciona. Sin libro, el plan inicializa desde el broker (necesita el Gateway abierto).
 - Ninguna orden a mano. Flujo: plan 18:00 hoy → ejecución 09:05 mañana (hora de Puebla).
-- **Falta / riesgos para la primera ejecución**: (1) «API de solo lectura» del Gateway debe desmarcarse a mano, sin eso
-  IBKR rechaza las órdenes; (2) las tareas tienen «No iniciar en batería»: `execute` ya dio 0x800710E0 y `plan` no ha
-  corrido (0x41303); (3) `max_order_notional_usd`=10,000 con NAV 1M: a lo más ~100k USD el primer día, no llega a pesos
-  objetivo. No se cambió: depende del capital real.
+- 09-11 15:10: Adam desmarcó «API de solo lectura» y activó el reinicio diario del Gateway (23:45). `chequeo` con
+  what-if real: `listo_paper=true`, `permiso_ordenes=true`, 0 órdenes abiertas. Tareas `plan`, `execute` y `heartbeat`:
+  corren en batería, despiertan el equipo y arrancan al estar disponibles; `schedule-run-daily.ps1` lo reaplica al registrar.
+- **Antes de la primera ejecución**: `plan` nunca ha corrido (0x41303) y `execute` dio 0x800710E0; ver
+  `data/logs/ibtrader-run-daily-plan.log` tras las 18:00. `max_order_notional_usd`=10,000 con NAV 1M: a lo más ~100k USD
+  el primer día, no llega a pesos objetivo. No se cambió: depende del capital real.
+- **Trampa pytest**: no hay `conftest` que bloquee la red y `.env` ya permite órdenes. Correr la suite con
+  `$env:EXECUTION__MODE='shadow'; $env:TRADING__ALLOW_BROKER_ORDERS='false'`.
 
 ## Hecho (2026-11-09, claude-code — primera conexión a la cuenta paper y estudio de apalancamiento)
 - IB Gateway en simulado, puerto 4002, API solo lectura **a propósito** (el sistema sigue en sombra). Sin órdenes;
