@@ -116,3 +116,34 @@ def test_tiingo_failure_is_reported_not_raised(tmp_path: Path) -> None:
 def test_every_command_is_registered_before_the_main_guard() -> None:
     src = Path("src/ibtrader/ops/cli.py").read_text(encoding="utf-8")
     assert src.rfind("@app.command") < src.index('if __name__ == "__main__":')
+
+
+def _orders_settings(tmp: Path) -> AppSettings:
+    s = _paper_ready(tmp)
+    s.execution.mode = "paper_orders"
+    s.trading.allow_broker_orders = True
+    write_freeze(Path(s.data.data_dir) / "paper_config_freeze.json", s)
+    return s
+
+
+def _run_orders(tmp: Path, probe: object) -> dict:
+    return run_preflight(_orders_settings(tmp), port_open=lambda h, p: True, tasks_missing=lambda: [],
+                         tiingo_probe=lambda tok: "x", account_probe=lambda st: ({}, 1000.0, "DU123"),
+                         orders_probe=probe, now=NOW)  # type: ignore[arg-type]
+
+
+def test_read_only_gateway_blocks_paper_orders(tmp_path: Path) -> None:
+    rep = _run_orders(tmp_path, lambda st: "321 Error validating request: API is read-only")
+    c = _by_id(rep)["permiso_ordenes"]
+    assert rep["listo_paper"] is False and c["ok"] is False and "Read-Only API" in c["arreglo"]
+
+
+def test_gateway_accepting_whatif_is_ready_for_orders(tmp_path: Path) -> None:
+    rep = _run_orders(tmp_path, lambda st: None)
+    assert _by_id(rep)["permiso_ordenes"]["ok"] is True
+    assert rep["listo_paper"] is True, rep["pendientes"]
+
+
+def test_config_permission_alone_is_not_enough(tmp_path: Path) -> None:
+    rep = _run_orders(tmp_path, None)
+    assert _by_id(rep)["permiso_ordenes"]["ok"] is None and rep["listo_paper"] is False

@@ -61,6 +61,7 @@ def run_preflight(
     tasks_missing: Callable[[], Optional[List[str]]] = _tasks_registered,
     tiingo_probe: Optional[Callable[[str], str]] = None,
     account_probe: Optional[Callable[[AppSettings], Tuple[Dict[str, int], Optional[float], str]]] = None,
+    orders_probe: Optional[Callable[[AppSettings], Optional[str]]] = None,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     from ..execution.order_manager import execution_permission
@@ -192,10 +193,27 @@ def run_preflight(
     if mode == "shadow":
         out.append(_check("permiso_ordenes", None,
                           "modo sombra: no se envía nada (EXECUTION__MODE=shadow)", sombra=False, paper=False))
-    else:
-        out.append(_check("permiso_ordenes", perm_ok, why,
+    elif not perm_ok:
+        out.append(_check("permiso_ordenes", False, why,
                           "EXECUTION__MODE=paper_orders, TRADING__ALLOW_BROKER_ORDERS=true, MODE=PAPER",
                           sombra=False))
+    elif not gw or orders_probe is None:
+        # La configuración lo permite, pero sin preguntar a IBKR no se sabe si el Gateway acepta órdenes.
+        out.append(_check("permiso_ordenes", None, f"{why}; no se comprobó si el Gateway acepta órdenes",
+                          sombra=False))
+    else:
+        try:
+            err = orders_probe(settings)
+        except Exception as exc:  # noqa: BLE001 - se informa, no se lanza
+            err = f"{type(exc).__name__}: {exc}"
+        if err and "321" in err:
+            arreglo = ("en IB Gateway: Configure → Settings → API → Settings, desmarca «Read-Only API» "
+                       "y reinicia el Gateway")
+        else:
+            arreglo = "revisa el log del Gateway; la orden de prueba (what-if, no se envía) fue rechazada"
+        out.append(_check("permiso_ordenes", err is None,
+                          "el Gateway acepta órdenes (prueba what-if, no se envió nada)" if err is None
+                          else f"el Gateway rechaza órdenes: {err}", arreglo, sombra=False))
 
     listo_sombra = all(c["ok"] is not False for c in out if c["necesario_sombra"])
     listo_paper = all(c["ok"] is True or (c["ok"] is None and c["id"] in ("tareas_programadas",))

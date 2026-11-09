@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any, List, Optional, cast
 
 import numpy as np
 import pandas as _pd
@@ -1665,7 +1665,35 @@ def chequeo_cmd(
         finally:
             b.disconnect()
 
-    rep = run_preflight(s, online=not sin_red, account_probe=None if sin_ibkr else account_probe)
+    def orders_probe(settings: AppSettings) -> Optional[str]:
+        """Orden what-if de 1 SPY: IBKR la evalúa pero nunca la ejecuta. Devuelve el error o None."""
+        from ib_insync import MarketOrder, Stock
+
+        from ..broker.ibkr import IBKRBroker
+
+        b = IBKRBroker(settings)
+        b.connect()
+        errors: List[str] = []
+
+        def on_error(req_id: int, code: int, msg: str, *_: Any) -> None:
+            if code not in (2104, 2106, 2107, 2108, 2158):  # avisos de conexión, no errores
+                errors.append(f"{code} {msg}")
+
+        b.ib.errorEvent += on_error
+        try:
+            contract = Stock("SPY", "SMART", "USD")
+            b.ib.qualifyContracts(contract)
+            state = b.ib.whatIfOrder(contract, MarketOrder("BUY", 1))
+            b.ib.sleep(1)
+            if errors:
+                return "; ".join(errors)
+            return None if state else "IBKR no devolvió la evaluación de la orden"
+        finally:
+            b.ib.errorEvent -= on_error
+            b.disconnect()
+
+    rep = run_preflight(s, online=not sin_red, account_probe=None if sin_ibkr else account_probe,
+                        orders_probe=None if sin_ibkr else orders_probe)
     typer.echo(_json.dumps(rep, ensure_ascii=False, indent=2))
     ok = rep["listo_paper"] if s.execution.mode != "shadow" else rep["listo_sombra"]
     raise typer.Exit(0 if ok else 1)
