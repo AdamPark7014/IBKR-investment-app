@@ -11,8 +11,10 @@
   what-if real: `listo_paper=true`, `permiso_ordenes=true`, 0 órdenes abiertas. Tareas `plan`, `execute` y `heartbeat`:
   corren en batería, despiertan el equipo y arrancan al estar disponibles; `schedule-run-daily.ps1` lo reaplica al registrar.
 - **Antes de la primera ejecución**: `plan` nunca ha corrido (0x41303) y `execute` dio 0x800710E0; ver
-  `data/logs/ibtrader-run-daily-plan.log` tras las 18:00. `max_order_notional_usd`=10,000 con NAV 1M: a lo más ~100k USD
-  el primer día, no llega a pesos objetivo. No se cambió: depende del capital real.
+  `data/logs/ibtrader-run-daily-plan.log` tras las 18:00.
+- **Escala en paper (Adam, 09-11: «vamos escalando»)**: se deja `max_order_notional_usd`=10,000 sin re-congelar. El recorte
+  ya es la rampa: máximo 10k por ETF y sesión, y `settled_after` sigue comprando hasta el objetivo. Subir el tope solo
+  tras una semana con ejecuciones y conciliación limpias, porque re-congela y reinicia el conteo de paper. Tamaño real: sin definir.
 - **Trampa pytest**: no hay `conftest` que bloquee la red y `.env` ya permite órdenes. Correr la suite con
   `$env:EXECUTION__MODE='shadow'; $env:TRADING__ALLOW_BROKER_ORDERS='false'`.
 
