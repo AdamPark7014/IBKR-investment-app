@@ -13,7 +13,7 @@ from .base import Broker, Order, Quote
 
 class IBKRBroker(Broker):
     """
-    Interactive Brokers broker via ib_insync (official API wrapper).
+    Interactive Brokers broker via ib_async (official API wrapper).
     Handles reconnects and basic order placement (market/limit).
     """
 

@@ -147,3 +147,10 @@ def test_gateway_accepting_whatif_is_ready_for_orders(tmp_path: Path) -> None:
 def test_config_permission_alone_is_not_enough(tmp_path: Path) -> None:
     rep = _run_orders(tmp_path, None)
     assert _by_id(rep)["permiso_ordenes"]["ok"] is None and rep["listo_paper"] is False
+
+
+def test_no_module_imports_the_old_ib_insync_package() -> None:
+    # La función que habla con IBKR se simula en los tests; un import roto solo se vería en la PC.
+    offenders = [str(p) for p in Path("src").rglob("*.py") if "import ib_insync" in p.read_text(encoding="utf-8")
+                 or "from ib_insync" in p.read_text(encoding="utf-8")]
+    assert offenders == []

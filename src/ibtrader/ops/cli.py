@@ -1667,7 +1667,7 @@ def chequeo_cmd(
 
     def orders_probe(settings: AppSettings) -> Optional[str]:
         """Orden what-if de 1 SPY: IBKR la evalúa pero nunca la ejecuta. Devuelve el error o None."""
-        from ib_insync import MarketOrder, Stock
+        from ib_async import MarketOrder, Stock
 
         from ..broker.ibkr import IBKRBroker
 
@@ -1683,7 +1683,7 @@ def chequeo_cmd(
         try:
             contract = Stock("SPY", "SMART", "USD")
             b.ib.qualifyContracts(contract)
-            state = b.ib.whatIfOrder(contract, MarketOrder("BUY", 1))
+            state = b.ib.whatIfOrder(contract, MarketOrder("BUY", 1, tif="DAY"))  # sin tif: aviso 10349
             b.ib.sleep(1)
             if errors:
                 return "; ".join(errors)
