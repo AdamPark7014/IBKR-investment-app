@@ -4,7 +4,9 @@
 - IB Gateway en simulado, puerto 4002, API solo lectura **a propósito** (el sistema sigue en sombra). Sin órdenes;
   sin tocar `.env`, freeze ni tareas.
 - `ib_readonly_check.py`: cuenta paper confirmada (DU…26, INDIVIDUAL), 0 posiciones, **NetLiquidation y efectivo
-  0.00 USD**: la paper no tiene saldo. Sin saldo no se puede dimensionar ni ejecutar nada en paper.
+  0.00 USD** a las 15:56 UTC. **Actualización 18:48 UTC, tras reabrir el Gateway: 1,000,000.00 USD**, 0 posiciones,
+  poder de compra 4,000,000; `chequeo` con `cuenta_ibkr=true`, `listo_paper=true`, sin pendientes. Ojo: el Gateway se
+  cerró solo entre las 15:56 y las 17:46 UTC, y `cuenta_ibkr` imprime el número de cuenta completo.
 - Trampa: los primeros minutos tras abrir el Gateway, cuenta y posiciones expiran («request timed out») y el script
   imprime `positions: 0, cash_usd: null` con exit 0. Ese 0 no es dato; repetir hasta que `cash_usd` no sea null.
 - `ibtrader chequeo`: `listo_sombra=true`, `listo_paper=true`, sin pendientes. Pero `gateway_ibkr` solo prueba el
