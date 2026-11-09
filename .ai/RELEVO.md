@@ -1,5 +1,17 @@
 # RELEVO
 
+## Hecho (2026-11-09 tarde, claude-code — paso a órdenes en paper, con el sí directo de Adam)
+- `.env`: `EXECUTION__MODE=paper_orders`, `TRADING__ALLOW_BROKER_ORDERS=true`, `IB__EXPECTED_ACCOUNT=DU…26`; `MODE` sigue
+  PAPER. Freeze re-congelado: hash `31285ba17f3bcf14`. `chequeo`: `listo_paper=true`, `permiso_ordenes=true`.
+- **Libro de sombra apartado** a `data/logs/paper_account.shadow-20261109.json` y `paper_equity.shadow-20261109.jsonl`.
+  Con 9 posiciones ficticias contra 0 en el broker, `reconcile_before` habría activado el kill switch en la primera
+  ejecución; `PAPER-OPS.md` no lo menciona. Sin libro, el plan inicializa desde el broker (necesita el Gateway abierto).
+- Ninguna orden a mano. Flujo: plan 18:00 hoy → ejecución 09:05 mañana (hora de Puebla).
+- **Falta / riesgos para la primera ejecución**: (1) «API de solo lectura» del Gateway debe desmarcarse a mano, sin eso
+  IBKR rechaza las órdenes; (2) las tareas tienen «No iniciar en batería»: `execute` ya dio 0x800710E0 y `plan` no ha
+  corrido (0x41303); (3) `max_order_notional_usd`=10,000 con NAV 1M: a lo más ~100k USD el primer día, no llega a pesos
+  objetivo. No se cambió: depende del capital real.
+
 ## Hecho (2026-11-09, claude-code — primera conexión a la cuenta paper y estudio de apalancamiento)
 - IB Gateway en simulado, puerto 4002, API solo lectura **a propósito** (el sistema sigue en sombra). Sin órdenes;
   sin tocar `.env`, freeze ni tareas.
