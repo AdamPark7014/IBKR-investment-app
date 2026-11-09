@@ -28,6 +28,11 @@ def _check(cid: str, ok: Optional[bool], detalle: str, arreglo: str = "", sombra
             "necesario_sombra": sombra, "necesario_paper": paper}
 
 
+def _mask(acct: str) -> str:
+    """Número de cuenta enmascarado (DU...23) para poder pegar la salida en un chat o log."""
+    return f"{acct[:2]}...{acct[-2:]}" if len(acct) > 4 else ("?" if not acct else "...")
+
+
 def _port_open(host: str, port: int, timeout: float = 2.0) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -161,13 +166,13 @@ def run_preflight(
             if not acct:
                 problems.append("la cuenta no respondió")
             elif settings.mode.upper() == "PAPER" and not acct.upper().startswith("DU"):
-                problems.append(f"la cuenta {acct} no parece paper (las de paper empiezan por DU)")
+                problems.append(f"la cuenta {_mask(acct)} no parece paper (las de paper empiezan por DU)")
             if expected and acct and acct != expected:
-                problems.append(f"cuenta {acct} distinta de IB__EXPECTED_ACCOUNT")
+                problems.append(f"cuenta {_mask(acct)} distinta de IB__EXPECTED_ACCOUNT")
             if nav <= 0 and not shares:
                 problems.append("saldo 0 y sin posiciones")
             out.append(_check("cuenta_ibkr", not problems,
-                              f"cuenta {acct or '?'}: efectivo {nav:,.2f} USD, {len(shares)} posiciones"
+                              f"cuenta {_mask(acct)}: efectivo {nav:,.2f} USD, {len(shares)} posiciones"
                               + (f" ({'; '.join(problems)})" if problems else ""),
                               "en el portal de IBKR, fondea la cuenta paper (Settings → Paper Trading Account → "
                               "Reset con el capital deseado) y revisa que el Gateway esté en la cuenta DU",

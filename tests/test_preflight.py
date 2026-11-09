@@ -49,6 +49,7 @@ def test_ready_for_paper_with_gateway_and_freeze(tmp_path: Path) -> None:
     assert rep["listo_paper"] is True, rep["pendientes"]
     assert _by_id(rep)["latido"]["ok"] is True
     assert _by_id(rep)["cuenta_ibkr"]["ok"] is True
+    assert "DU123" not in json.dumps(rep) and "DU...23" in _by_id(rep)["cuenta_ibkr"]["detalle"]
 
 
 def _paper_ready(tmp: Path) -> AppSettings:
