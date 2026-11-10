@@ -22,6 +22,17 @@ _INFO_CODES = {
 }
 
 
+def market_data_type_for(execution_mode: str) -> int:
+    """IBKR market data type for the order gateway.
+
+    Paper accounts share the live account's subscriptions; without one every quote fails with error
+    354 and no order goes out (``no_midpoint``). Type 3 returns live quotes when subscribed and
+    15-minute delayed ones otherwise, which is enough to price a paper limit. Live orders keep type 1:
+    a lapsed subscription must stop them, not price them on stale quotes.
+    """
+    return 3 if execution_mode == "paper_orders" else 1
+
+
 class IBGateway(OrderGateway):
     def __init__(self, ib: Any, *, regular_hours_only: bool = True, market_data_type: int = 1) -> None:
         """``ib`` is a connected ``ib_async.IB``. ``market_data_type`` 1 = live, 3 = delayed."""

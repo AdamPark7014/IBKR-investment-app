@@ -31,7 +31,11 @@ foreach ($t in $Tasks) {
             # run-task.ps1 enters the repo, loads the puerta token (Claude copilot/triage) from outside the
             # repo and appends the output to data\logs\<task>.log: a scheduled task has no console.
             $Runner = Join-Path $RepoRoot 'scripts\run-task.ps1'
-            $Tr = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Runner`" -Name $($t.Name) -Command `"$($t.Args)`""
+            # Full path: WindowsPowerShell is not always on PATH (0x80070002, file not found, on 09-11).
+            $Ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            # Hidden: with an interactive logon the console is visible, and closing it killed the 10-11
+            # execute mid-run (0xC000013A) before the Adaptive escalation and the final reconcile.
+            $Tr = "`"$Ps`" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Runner`" -Name $($t.Name) -Command `"$($t.Args)`""
             if ($Tr.Length -gt 261) { Write-Error "La orden de la tarea pasa de 261 caracteres (límite de schtasks): mueve el repo a una ruta más corta."; exit 1 }
             schtasks /Create /TN $t.Name /TR $Tr /SC WEEKLY /D $t.Days /ST $t.Time /F
             if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create $($t.Name) failed ($LASTEXITCODE)."; exit $LASTEXITCODE }

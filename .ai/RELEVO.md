@@ -1,5 +1,20 @@
 # RELEVO
 
+## Hecho (2026-11-10, claude-code — primeras órdenes paper reales)
+- El plan de las 18:00 del 09-11 **no corrió**: las tareas llamaban `powershell.exe` sin ruta y no está en el PATH
+  (`0x80070002`); `chequeo` solo ve que estén registradas. Ahora usan la ruta completa de System32 y `-WindowStyle Hidden`;
+  `schedule-run-daily.ps1` registra igual.
+- 14:42 (Puebla): plan y execute desde el Programador. 10 compras aprobadas por el pretrade, todas `SKIPPED no_midpoint`:
+  sin suscripción a datos de mercado, IBKR da el error 354. Arreglo: `market_data_type_for("paper_orders")` = 3
+  (diferidos si no hay suscripción); live sigue en 1. Freeze sin cambios.
+- 14:49–14:50: 10 órdenes LMT `ibt-20261109-*` enviadas. Llenadas BIL 109 @91.50, PDBC 541 @18.33, TIP 94 @105.30,
+  GLD 23 @369.66 y VWO 176 @56.48, a ≤3 pb del medio. TLT, VEA, VNQ, IEF y SPY caducaron al cierre. Comisiones y tasas ≈6.71 USD.
+  Al cierre: NetLiq 999,977 USD, efectivo 951,762.
+- **El execute murió a las 14:57:51 con `0xC000013A`** (consola cerrada o Ctrl+C; la ventana era visible). No escaló a
+  Adaptive, no hizo `reconcile_after`, no guardó el libro y `reports/daily/2026-11-09-execute.json` sigue siendo el de 14:42.
+  `data/pending_orders.json` quedó con `execution_started_at`; el plan siguiente lo reescribe y el libro sale del broker.
+- Sin datos en vivo, el límite usa el medio diferido 15 min. Vale para paper; para dinero real hacen falta datos en vivo.
+
 ## Hecho (2026-11-09 tarde, claude-code — paso a órdenes en paper, con el sí directo de Adam)
 - `.env`: `EXECUTION__MODE=paper_orders`, `TRADING__ALLOW_BROKER_ORDERS=true`, `IB__EXPECTED_ACCOUNT=DU…26`; `MODE` sigue
   PAPER. Freeze re-congelado: hash `31285ba17f3bcf14`. `chequeo`: `listo_paper=true`, `permiso_ordenes=true`.

@@ -1495,13 +1495,13 @@ def run_daily_cmd(
     brokers: list[Any] = []
 
     def gateway_factory(settings: AppSettings) -> Any:
-        from ..broker.ib_gateway import IBGateway
+        from ..broker.ib_gateway import IBGateway, market_data_type_for
         from ..broker.ibkr import IBKRBroker
 
         b = IBKRBroker(settings)
         b.connect()
         brokers.append(b)
-        return IBGateway(b.ib)
+        return IBGateway(b.ib, market_data_type=market_data_type_for(settings.execution.mode))
 
     if phase not in ("plan", "execute"):
         raise typer.BadParameter("phase must be plan|execute", param_hint="--phase")
