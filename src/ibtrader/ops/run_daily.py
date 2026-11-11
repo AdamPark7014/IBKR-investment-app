@@ -474,7 +474,7 @@ def run_execute(
         report["status"] = "pending_stale"
         _alert(settings, report, "pending_stale", "warn",
                f"órdenes pendientes del {run_date} pero la última sesión es {expected}: no se ejecutan")
-        paths.pending.rename(paths.pending.with_suffix(".stale.json"))
+        paths.pending.replace(paths.pending.with_suffix(".stale.json"))  # replace: rename fails on Windows if it exists
         _save_report(paths, report)
         return report
 
@@ -518,7 +518,7 @@ def run_execute(
         save_book(paths.book, {"cash": float(cash or 0.0), "shares": shares, "basis": "broker", "account": acct,
                                "synced_at": now.isoformat(), "last_targets": dict(pending.get("targets") or {}),
                                "settled": []})
-        paths.pending.rename(paths.pending.with_suffix(".interrupted.json"))
+        paths.pending.replace(paths.pending.with_suffix(".interrupted.json"))
         report["status"] = "resumed_after_crash"
         _alert(settings, report, "execute_interrupted", "critical",
                f"la ejecución del {run_date} empezó a las {pending['execution_started_at']} y no terminó: "
@@ -570,7 +570,7 @@ def run_execute(
                            "synced_at": now.isoformat(), "last_targets": dict(pending.get("targets") or {}),
                            "settled": sorted(set(pending.get("settled_if_filled") or [])
                                              - {m.symbol for m in managed if m.state.value != "FILLED"})})
-    paths.pending.rename(paths.pending.with_suffix(".done.json"))
+    paths.pending.replace(paths.pending.with_suffix(".done.json"))
     failed = [m for m in managed if m.state.value in ("REJECTED", "CANCELLED")]
     if failed:
         _alert(settings, report, "orders_not_filled", "warn",

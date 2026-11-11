@@ -12,8 +12,21 @@
   Al cierre: NetLiq 999,977 USD, efectivo 951,762.
 - **El execute murió a las 14:57:51 con `0xC000013A`** (consola cerrada o Ctrl+C; la ventana era visible). No escaló a
   Adaptive, no hizo `reconcile_after`, no guardó el libro y `reports/daily/2026-11-09-execute.json` sigue siendo el de 14:42.
-  `data/pending_orders.json` quedó con `execution_started_at`; el plan siguiente lo reescribe y el libro sale del broker.
+  **Corrección (11-11):** no era cierto que «el libro sale del broker»: el primer execute de las 14:42 guardó
+  `paper_account.json` con 0 acciones; con 5 en el broker habría activado el kill switch. Apartado en
+  `data/logs/paper_account.broker0-20261110.json`.
 - Sin datos en vivo, el límite usa el medio diferido 15 min. Vale para paper; para dinero real hacen falta datos en vivo.
+
+## Hecho (2026-11-11, claude-code — segunda tanda de la rampa)
+- Laptop dormida o apagada: no corrieron el plan de las 18:00 ni el execute de las 9:05. Al encenderla, a las 10:08, los dos
+  arrancaron solos (StartWhenAvailable) y murieron en segundos con `0xC000013A` sin escribir log. **Causa sin encontrar.**
+  Lanzados a mano con `Start-ScheduledTask`, funcionaron.
+- Plan 10:16, run_date 2026-11-10, libro tomado del broker: 8 compras ≈10k USD. Execute: 8/8 llenadas, 4 con límite y 4 tras
+  escalar a Adaptive; slippage −2.0 a +9.3 pb contra el medio. Comisiones y tasas ≈9.73 USD. NetLiq 1,000,253 USD,
+  efectivo 872,076, 10 ETF en cartera; libro = broker.
+- El execute salió con código 2 al final: `Path.rename` falla en Windows si el destino existe (`pending_orders.done.json`
+  del día anterior). Ahora usa `replace` en los tres sitios (`run_daily.py`), con prueba. Se perdió solo
+  `reports/daily/2026-11-10-execute.json`; órdenes, libro y slippage sí quedaron. Pending de hoy archivado a mano en `.done.json`.
 
 ## Hecho (2026-11-09 tarde, claude-code — paso a órdenes en paper, con el sí directo de Adam)
 - `.env`: `EXECUTION__MODE=paper_orders`, `TRADING__ALLOW_BROKER_ORDERS=true`, `IB__EXPECTED_ACCOUNT=DU…26`; `MODE` sigue

@@ -163,6 +163,18 @@ def test_plan_then_execute_paper_orders(tmp_path: Path) -> None:
     assert len(slip) == 2
 
 
+def test_execute_overwrites_yesterdays_done_file(tmp_path: Path) -> None:
+    # Path.rename fails on Windows when the target exists: on 11-11 the execute filled every order
+    # and then died with exit 2 because pending_orders.done.json was still there from the day before.
+    s = _orders_ready(tmp_path)
+    (tmp_path / "data" / "pending_orders.done.json").write_text("{}")
+    run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
+    ex = run_execute(s, gateway_factory=lambda _s: Broker({}, 50_000.0), now=EXEC_AT)
+    assert ex["status"] == "ok", ex
+    assert json.loads((tmp_path / "data" / "pending_orders.done.json").read_text()) != {}
+    assert not (tmp_path / "data" / "pending_orders.json").exists()
+
+
 def test_execute_refuses_stale_pending_and_breaks(tmp_path: Path) -> None:
     s = _orders_ready(tmp_path)
     run_plan(s, loader=lambda _s: _frames(), now=PLAN_AT)
