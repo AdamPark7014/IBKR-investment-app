@@ -27,6 +27,9 @@
 - El execute salió con código 2 al final: `Path.rename` falla en Windows si el destino existe (`pending_orders.done.json`
   del día anterior). Ahora usa `replace` en los tres sitios (`run_daily.py`), con prueba. Se perdió solo
   `reports/daily/2026-11-10-execute.json`; órdenes, libro y slippage sí quedaron. Pending de hoy archivado a mano en `.done.json`.
+- **Decisión de Adam (11-11):** unos 6 meses de paper antes de dinero real. Claude no envía órdenes reales ni activa live
+  (Adam pidió mover 5 USD reales: rechazado). Al terminar el periodo, Claude prepara un script de paso a live con
+  verificaciones (cuenta U…, puerto 4001, freeze, chequeo); Adam lo ejecuta y da el login/2FA.
 
 ## Hecho (2026-11-09 tarde, claude-code — paso a órdenes en paper, con el sí directo de Adam)
 - `.env`: `EXECUTION__MODE=paper_orders`, `TRADING__ALLOW_BROKER_ORDERS=true`, `IB__EXPECTED_ACCOUNT=DU…26`; `MODE` sigue
