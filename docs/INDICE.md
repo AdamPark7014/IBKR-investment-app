@@ -1,0 +1,35 @@
+# Documentación de IBKR-INVESTMENT-app
+
+Índice único del repo (generado en la limpieza del 2026-11-14). Empieza por el README y el RELEVO.
+
+- Estado y continuidad: [`.ai/RELEVO.md`](../.ai/RELEVO.md)
+- Reglas de agentes: [`AGENTS.md`](../AGENTS.md)
+- Índice de todos los proyectos: `C:\dev\DOCS.md` · memoria compartida: `C:\dev\.ai\memoria`
+
+## (raíz)
+- [`ARCHITECTURE.md`](../ARCHITECTURE.md) — Arquitectura del sistema (fase 1)
+- [`COST_MODEL.md`](../COST_MODEL.md) — Modelo de costos de ejecución de `ibtrader`
+- [`DATA_SOURCES.md`](../DATA_SOURCES.md) — Fuentes de datos (qué provee IBKR y qué requiere externos)
+- [`DECISION_ENGINE.md`](../DECISION_ENGINE.md) — Motor de decisiones (fase 1)
+- [`README.md`](../README.md) — IBKR Investment System (institucional, fase 1)
+- [`RISK_MODEL.md`](../RISK_MODEL.md) — Modelo de riesgo (fase 1)
+- [`ROADMAP.md`](../ROADMAP.md) — Roadmap por fases (extracto)
+
+## docs
+- [`docs/PAPER-OPS.md`](../docs/PAPER-OPS.md) — Paper ops — Fase 3 (triage)
+
+## docs/research
+- [`docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md`](../docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md) — Institutional systematic stack — research synthesis (V3)
+- [`docs/research/MEJORAS-EVIDENCIA-2026-11-08.md`](../docs/research/MEJORAS-EVIDENCIA-2026-11-08.md) — Mejoras con evidencia (2026-11-08)
+- [`docs/research/PROTOCOLO-INVESTIGACION.md`](../docs/research/PROTOCOLO-INVESTIGACION.md) — Protocolo de investigación de `ibtrader` (fase 1 del playbook)
+- [`docs/research/QUANT-FUNDS-PLAYBOOK-2026-10-21.md`](../docs/research/QUANT-FUNDS-PLAYBOOK-2026-10-21.md) — Cómo generan sus algoritmos los fondos cuantitativos gigantes, y qué de eso cabe en ibtrad
+
+## docs/research/quant-funds-2026-10-21
+- [`docs/research/quant-funds-2026-10-21/04-ejecucion-costos-ibkr.md`](../docs/research/quant-funds-2026-10-21/04-ejecucion-costos-ibkr.md) — Anexo 4 — Ejecución, costos de transacción e Interactive Brokers
+
+## docs/specs
+- [`docs/specs/SPEC-v3-research-alpha.md`](../docs/specs/SPEC-v3-research-alpha.md) — V3 — RESEARCH / ALPHA LABORATORY (owner-authorized)
+
+## .ai
+- [`.ai/EXEC-PACKET.md`](../.ai/EXEC-PACKET.md) — EXEC-PACKET — Oleada F3++
+

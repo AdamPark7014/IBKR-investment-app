@@ -1,5 +1,7 @@
 # RELEVO
 
+- **2026-11-14 (claude-code) — Limpieza de documentación (Adam: «quita documentación y unifica»).** Borrados 13 documentos obsoletos sin referencias (auditorías, planes y prompts viejos; están en el historial de git). Índice único del repo: `docs/INDICE.md`; índice de todos los proyectos: `C:\dev\DOCS.md`; memoria compartida de Codex/Claude/Cursor/Grok: `C:\dev\.ai\memoria`.
+
 ## Hecho (2026-11-10, claude-code — primeras órdenes paper reales)
 - El plan de las 18:00 del 09-11 **no corrió**: las tareas llamaban `powershell.exe` sin ruta y no está en el PATH
   (`0x80070002`); `chequeo` solo ve que estén registradas. Ahora usan la ruta completa de System32 y `-WindowStyle Hidden`;
