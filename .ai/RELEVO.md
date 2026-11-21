@@ -1,5 +1,17 @@
 # RELEVO
 
+## Hecho (2026-11-21 tarde, claude-code — núcleo 60/40 + tendencia activado en paper, con el sí de Adam)
+- Adam eligió en la tarjeta «Sí, 25 % núcleo + 75 % tendencia». PC en main `1de7dc1`.
+- `.env`: `STRATEGY__PARAMS={"core_weights":{"SPY":0.6,"IEF":0.4},"core_frac":0.25}` (única línea cambiada). Copias:
+  `data/logs/env.antes-nucleo-20261121.bak` y `data/logs/paper_config_freeze.antes-nucleo-20261121.json`.
+- Freeze re-congelado: hash `be1e46753ec10540` (antes `31285ba17f3bcf14`). **El conteo de paper empieza de nuevo el
+  2026-11-21**; `paper_equity.jsonl` no se tocó (los 5 puntos anteriores son de la estrategia vieja).
+- Pesos objetivo con datos al 2026-11-20: BIL 60,4 %, SPY 15,8 %, IEF 12,2 %, VNQ 3,2 %, TIP 3,1 %, PDBC 2,1 %,
+  TLT 1,2 %, VEA 0,8 %, GLD 0,7 %, VWO 0,7 %. Suman 1.
+- `chequeo`: `listo_sombra=true`, `listo_paper=false` por dos pendientes: Gateway cerrado (127.0.0.1:4002) y latido
+  vencido (116 h). Sin órdenes, sin plan nuevo. No había proceso de plan colgado.
+- Sigue pendiente: que el sistema corra a diario (laptop y Gateway) y el tope de 10k por orden para BIL.
+
 ## Hecho (2026-11-21, claude-code — «mejora e hiper perfecciona el algoritmo»)
 - **Nada de producción cambió**: ni `.env`, ni freeze, ni tareas. Informe: `docs/research/MEJORA-ALGORITMO-2026-11-21.md`.
 - Nuevo `ibtrader research-retador` (`research/challenger.py`): prueba pareada retador contra titular, Sharpe sobre
