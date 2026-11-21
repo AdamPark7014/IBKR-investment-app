@@ -208,6 +208,11 @@ class PretradeConfig(BaseModel):
         default=None, description="Capital declarado; None = desconocido (topes en valores conservadores)"
     )
     max_order_notional_usd: float = Field(default=10_000.0, gt=0, description="Tope duro por orden (USD)")
+    max_cash_order_notional_usd: Optional[float] = Field(
+        default=None, gt=0,
+        description=("Tope por orden solo para ETF de letras del Tesoro (BIL y similares); None = el mismo tope. "
+                     "Estacionar efectivo en letras no añade riesgo de mercado, así que puede ir más rápido."),
+    )
     min_order_notional_usd: float = Field(
         default=1_000.0, ge=0, description="Omite aumentos/reducciones menores que esto (mínimo IBKR de 1 USD = 10 pb)"
     )

@@ -1,5 +1,14 @@
 # RELEVO
 
+## Hecho (2026-11-21 tarde, claude-code — fase 0 del plan maestro: que corra solo; Adam eligió «en mi laptop actual»)
+- **Por qué murió el plan del sábado 10:26**: llegó hasta escribir el punto de equity del 20-11 y se colgó en el copiloto
+  (el SDK de Anthropic espera 10 min y reintenta) antes del latido y del informe. Ahora latido e informe se escriben
+  antes del copiloto, y la llamada a la puerta tiene `AI_TIMEOUT_SEC=45` y un reintento. Yahoo (contraste) con `timeout=15`.
+- **Tope por orden para letras**: `PRETRADE__MAX_CASH_ORDER_NOTIONAL_USD` (None = igual que el general). Solo aplica a los
+  ETF de la caja `cash`; pretrade y `build_rebalance_orders` usan el mismo tope (`risk.pretrade.order_cap`). Entra en el
+  freeze: hay que re-congelar al actualizar.
+- Telegram sigue sin configurar (`OPS__TELEGRAM_BOT_TOKEN`/`CHAT_ID` vacíos): las alertas solo van a `data/alerts.jsonl`.
+
 - **2026-11-21 (claude-code) — Plan maestro** (Adam: «más predictivo, como los fondos grandes»): `docs/research/PLAN-MAESTRO-2026-11-21.md`.
   Tesis: IC de la tendencia lenta 0,04–0,10 (normal en la industria); falta amplitud, no complejidad. Fases: 0 operación
   confiable → 1 medición (2008, costes reales) → 2 universo de 25–35 ETF → 3 carry, momentum relativo, valor → 4 fallos →

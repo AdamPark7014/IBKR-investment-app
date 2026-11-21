@@ -125,6 +125,10 @@ def _log_usage(data_dir: str | Path, row: Mapping[str, Any]) -> None:
         f.write(json.dumps(dict(row), ensure_ascii=False, separators=(",", ":"), default=str) + "\n")
 
 
+#: Segundos máximos por llamada a la puerta de IA (opcional: nunca debe frenar el plan ni la ejecución).
+AI_TIMEOUT_SEC = 45.0
+
+
 def _call(
     *,
     proceso: str,
@@ -158,7 +162,9 @@ def _call(
         except ImportError:
             _log_usage(data_dir, {**base_row, "status": "sdk_missing", "usd": 0.0})
             return None
-        client = anthropic.Anthropic()  # ANTHROPIC_BASE_URL (puerta) + ANTHROPIC_API_KEY (pia_ token)
+        # Tope de tiempo corto y un solo reintento: el SDK espera 10 min por defecto y colgaba la corrida diaria.
+        # Usa ANTHROPIC_BASE_URL (puerta) + ANTHROPIC_API_KEY (token pia_).
+        client = anthropic.Anthropic(timeout=AI_TIMEOUT_SEC, max_retries=1)
     try:
         r = client.messages.create(
             model=model,

@@ -34,7 +34,7 @@ from ..data.crosscheck import check_freshness, cross_check, last_completed_sessi
 from ..engine.targets import compute_target_weights
 from ..execution.order_manager import ManagedOrder, OrderGateway, OrderManager, execution_permission
 from ..execution.rebalance import ProposedOrder, build_rebalance_orders
-from ..risk.pretrade import PretradeContext, check_orders
+from ..risk.pretrade import PretradeContext, check_orders, order_cap
 from .config_freeze import verify_freeze
 from .killswitch import activate_killswitch
 from .notify import emit_alert, write_heartbeat
@@ -363,10 +363,12 @@ def run_plan(
     report["nav_before"] = nav
     stale = list(meta.get("stale_symbols") or [])
     invest_nav = nav * (1.0 - settings.pretrade.cash_buffer_pct / 100.0)
+    cash_syms = cash_symbols_of(list(weights), spec)
     orders = build_rebalance_orders(
         weights, dict(book.get("shares") or {}), prices, invest_nav,
         min_notional=settings.pretrade.min_order_notional_usd,
         max_notional=settings.pretrade.max_order_notional_usd,
+        max_notional_by_symbol={s: order_cap(settings.pretrade, s, cash_syms) for s in cash_syms},
         hold=stale + [s for s in (book.get("shares") or {}) if s not in data]
         + unchanged_targets(weights, book),
     )
@@ -378,7 +380,7 @@ def run_plan(
         allowed_symbols=list(settings.universe.symbols), allow_short=settings.trading.allow_short,
         killswitch_active=Path(settings.risk.killswitch_file).exists(), account_ok=True,
         data_fresh=data_ok, risk_can_increase=risk_can_increase and freeze_ok,
-        reference_date=as_of, today=session, cash_symbols=cash_symbols_of(list(weights), spec),
+        reference_date=as_of, today=session, cash_symbols=cash_syms,
     )
     dec = check_orders(orders, ctx, settings.pretrade)
     report["pretrade"] = dec.to_dict()
@@ -411,13 +413,16 @@ def run_plan(
     report["nav_after"] = nav_after
     if math.isfinite(nav_after):
         append_daily_equity_point(paths.equity, nav_after, session.isoformat(), basis=str(book.get("basis")))
-    if settings.ops.copilot:
-        report["copilot"] = copilot_opinion(settings, session, weights, book, prices, data, report, paths)
     if report["blocks"]:
         report["status"] = "blocked_new_risk"
+    # Latido e informe ANTES del copiloto: es una llamada de red opcional y, si se cuelga o matan el
+    # proceso, el plan ya quedó registrado (el 2026-11-21 el plan murió ahí sin latido ni informe).
     write_heartbeat(settings.ops, {"phase": "plan", "run_date": session.isoformat(), "status": report["status"],
                                    "n_orders": len(dec.approved), "mode": mode}, now=now)
     _save_report(paths, report)
+    if settings.ops.copilot:
+        report["copilot"] = copilot_opinion(settings, session, weights, book, prices, data, report, paths)
+        _save_report(paths, report)
     return report
 
 

@@ -129,6 +129,7 @@ class YahooProvider(MarketDataProvider):
             progress=False,
             actions=False,
             threads=False,
+            timeout=15,
         )
         if df is None or df.empty:
             raise RuntimeError("yfinance vacío")

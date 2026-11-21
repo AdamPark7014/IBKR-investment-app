@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ..config import PretradeConfig
 from ..execution.rebalance import ProposedOrder
@@ -58,6 +58,14 @@ class PretradeDecision:
 def _reduces_risk(order: ProposedOrder, cur: int) -> bool:
     new = cur + order.signed_qty
     return abs(new) < abs(cur) and (new == 0 or (new > 0) == (cur > 0))
+
+
+def order_cap(cfg: PretradeConfig, symbol: str, cash_symbols: Iterable[str]) -> float:
+    """Tope por orden: el de efectivo para ETF de letras (si está definido), el general para el resto."""
+    is_cash = symbol.upper() in {s.upper() for s in cash_symbols}
+    if is_cash and cfg.max_cash_order_notional_usd is not None:
+        return float(cfg.max_cash_order_notional_usd)
+    return float(cfg.max_order_notional_usd)
 
 
 def check_orders(orders: Sequence[ProposedOrder], ctx: PretradeContext, cfg: PretradeConfig) -> PretradeDecision:
@@ -113,8 +121,8 @@ def check_orders(orders: Sequence[ProposedOrder], ctx: PretradeContext, cfg: Pre
                 f"fat_finger: limit {o.limit_price:.4f} vs ref {o.ref_price:.4f} "
                 f"> {cfg.max_limit_deviation_pct}%"
             )
-        elif o.notional > cfg.max_order_notional_usd + 1e-9 and not o.is_exit:
-            reason = f"max_order_notional: {o.notional:.2f} > {cfg.max_order_notional_usd:.2f}"
+        elif o.notional > order_cap(cfg, o.symbol, cash) + 1e-9 and not o.is_exit:
+            reason = f"max_order_notional: {o.notional:.2f} > {order_cap(cfg, o.symbol, cash):.2f}"
         elif not reduces:
             new_qty = cur + o.signed_qty
             if new_qty < 0 and not ctx.allow_short:

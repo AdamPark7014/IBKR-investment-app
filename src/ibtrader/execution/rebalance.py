@@ -50,13 +50,15 @@ def build_rebalance_orders(
     min_notional: float = 0.0,
     max_notional: Optional[float] = None,
     hold: Optional[Iterable[str]] = None,
+    max_notional_by_symbol: Optional[Mapping[str, float]] = None,
 ) -> List[ProposedOrder]:
     """Orders that move ``positions`` toward ``target_weights`` × ``nav``.
 
     Symbols held but absent from ``target_weights`` get target 0 (exit). A symbol without a
     positive finite price is skipped (no order on a price we cannot trust). Exits come first in
     the returned list so a per-run order cap never keeps a reduction waiting behind a purchase.
-    Symbols in ``hold`` (no fresh data today) are never traded.
+    Symbols in ``hold`` (no fresh data today) are never traded. ``max_notional_by_symbol`` overrides
+    ``max_notional`` for the listed symbols (the cash ETF may move faster than the risky ones).
     """
     frozen = {str(s).upper() for s in (hold or ())}
     if not (nav > 0 and math.isfinite(nav)):
@@ -80,8 +82,9 @@ def build_rebalance_orders(
         notes: List[str] = []
         if not is_exit and abs(delta) * px < min_notional:
             continue
-        if max_notional is not None and not is_exit and not reduces and abs(delta) * px > max_notional:
-            clipped = int(math.floor(max_notional / px))
+        cap = (max_notional_by_symbol or {}).get(sym, max_notional)
+        if cap is not None and not is_exit and not reduces and abs(delta) * px > cap:
+            clipped = int(math.floor(cap / px))
             if clipped <= 0:
                 continue
             notes.append(f"clipped_from={abs(delta)}")
