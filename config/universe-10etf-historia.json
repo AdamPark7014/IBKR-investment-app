@@ -1,0 +1,98 @@
+{
+  "name": "10etf-historia-2008",
+  "as_of": "2026-11-21",
+  "source": "docs/research/PLAN-MAESTRO-2026-11-21.md",
+  "notes": "Solo investigación (fase 1): mismos mercados que el universo de producción con los ETF más antiguos de cada uno, para que 2008 caiga dentro de la ventana evaluada. EFA por VEA, EEM por VWO, DBC por PDBC, SHY como efectivo (BIL lista en 2007). No usar en producción.",
+  "symbols": [
+    {
+      "symbol": "SPY",
+      "asset_class": "equity",
+      "box": "us_equity",
+      "listed_from": "1993-01-22",
+      "delisted_on": null,
+      "spread_bps": 0.5,
+      "notes": "S&P 500"
+    },
+    {
+      "symbol": "EFA",
+      "asset_class": "equity",
+      "box": "developed_ex_us_equity",
+      "listed_from": "2001-08-14",
+      "delisted_on": null,
+      "spread_bps": 1.5,
+      "notes": "Sustituye a VEA (2007)"
+    },
+    {
+      "symbol": "EEM",
+      "asset_class": "equity",
+      "box": "emerging_equity",
+      "listed_from": "2003-04-07",
+      "delisted_on": null,
+      "spread_bps": 1.5,
+      "notes": "Sustituye a VWO (2005)"
+    },
+    {
+      "symbol": "IEF",
+      "asset_class": "fixed_income",
+      "box": "treasuries_intermediate",
+      "listed_from": "2002-07-22",
+      "delisted_on": null,
+      "spread_bps": 1.5,
+      "notes": ""
+    },
+    {
+      "symbol": "TLT",
+      "asset_class": "fixed_income",
+      "box": "treasuries_long",
+      "listed_from": "2002-07-22",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": ""
+    },
+    {
+      "symbol": "TIP",
+      "asset_class": "fixed_income",
+      "box": "tips",
+      "listed_from": "2003-12-04",
+      "delisted_on": null,
+      "spread_bps": 3.0,
+      "notes": ""
+    },
+    {
+      "symbol": "GLD",
+      "asset_class": "commodity",
+      "box": "gold",
+      "listed_from": "2004-11-18",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": ""
+    },
+    {
+      "symbol": "DBC",
+      "asset_class": "commodity",
+      "box": "commodities",
+      "listed_from": "2006-02-03",
+      "delisted_on": null,
+      "spread_bps": 5.0,
+      "notes": "Sustituye a PDBC (2014)"
+    },
+    {
+      "symbol": "VNQ",
+      "asset_class": "real_estate",
+      "box": "reit",
+      "listed_from": "2004-09-23",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": ""
+    },
+    {
+      "symbol": "SHY",
+      "asset_class": "cash",
+      "box": "cash",
+      "listed_from": "2002-07-22",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": "Tesoro 1-3 años como efectivo antes de que existiera BIL"
+    }
+  ]
+}

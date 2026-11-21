@@ -1,0 +1,242 @@
+{
+  "name": "26etf-amplio",
+  "as_of": "2026-11-21",
+  "source": "docs/research/PLAN-MAESTRO-2026-11-21.md",
+  "notes": "Candidato de la fase 2 (solo investigación). Elegido por liquidez, coste y fuente de riesgo ANTES de mirar su rendimiento: 8 de acciones por región, 8 de bonos, 6 de activos reales, 3 de divisas y BIL. Cajas por fuente de riesgo. spread_bps son estimaciones prudentes; calibrar con ejecuciones reales. DBE/DBB/DBA/UUP emiten K-1 en EE. UU.; revisar el efecto fiscal para residente en México antes de producción.",
+  "symbols": [
+    {
+      "symbol": "SPY",
+      "asset_class": "equity",
+      "box": "equity_us",
+      "listed_from": "1993-01-22",
+      "delisted_on": null,
+      "spread_bps": 0.5,
+      "notes": "EE. UU. grandes"
+    },
+    {
+      "symbol": "IWM",
+      "asset_class": "equity",
+      "box": "equity_us",
+      "listed_from": "2000-05-22",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": "EE. UU. pequeñas"
+    },
+    {
+      "symbol": "VGK",
+      "asset_class": "equity",
+      "box": "equity_dev",
+      "listed_from": "2005-03-04",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "Europa"
+    },
+    {
+      "symbol": "EWJ",
+      "asset_class": "equity",
+      "box": "equity_dev",
+      "listed_from": "1996-03-12",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "Japón"
+    },
+    {
+      "symbol": "VWO",
+      "asset_class": "equity",
+      "box": "equity_em",
+      "listed_from": "2005-03-04",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "Emergentes"
+    },
+    {
+      "symbol": "FXI",
+      "asset_class": "equity",
+      "box": "equity_em",
+      "listed_from": "2004-10-05",
+      "delisted_on": null,
+      "spread_bps": 3.0,
+      "notes": "China"
+    },
+    {
+      "symbol": "EWZ",
+      "asset_class": "equity",
+      "box": "equity_em",
+      "listed_from": "2000-07-10",
+      "delisted_on": null,
+      "spread_bps": 3.0,
+      "notes": "Brasil"
+    },
+    {
+      "symbol": "INDA",
+      "asset_class": "equity",
+      "box": "equity_em",
+      "listed_from": "2012-02-02",
+      "delisted_on": null,
+      "spread_bps": 3.0,
+      "notes": "India"
+    },
+    {
+      "symbol": "IEF",
+      "asset_class": "fixed_income",
+      "box": "rates_us",
+      "listed_from": "2002-07-22",
+      "delisted_on": null,
+      "spread_bps": 1.5,
+      "notes": "Tesoro 7-10"
+    },
+    {
+      "symbol": "TLT",
+      "asset_class": "fixed_income",
+      "box": "rates_us",
+      "listed_from": "2002-07-22",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": "Tesoro 20+"
+    },
+    {
+      "symbol": "TIP",
+      "asset_class": "fixed_income",
+      "box": "inflation",
+      "listed_from": "2003-12-04",
+      "delisted_on": null,
+      "spread_bps": 3.0,
+      "notes": "Ligados a inflación"
+    },
+    {
+      "symbol": "BWX",
+      "asset_class": "fixed_income",
+      "box": "rates_intl",
+      "listed_from": "2007-10-02",
+      "delisted_on": null,
+      "spread_bps": 6.0,
+      "notes": "Bonos soberanos ex EE. UU. sin cobertura"
+    },
+    {
+      "symbol": "BNDX",
+      "asset_class": "fixed_income",
+      "box": "rates_intl",
+      "listed_from": "2013-06-04",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "Bonos ex EE. UU. con cobertura"
+    },
+    {
+      "symbol": "LQD",
+      "asset_class": "fixed_income",
+      "box": "credit",
+      "listed_from": "2002-07-22",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": "Crédito grado de inversión"
+    },
+    {
+      "symbol": "HYG",
+      "asset_class": "fixed_income",
+      "box": "credit",
+      "listed_from": "2007-04-04",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": "Alto rendimiento"
+    },
+    {
+      "symbol": "EMB",
+      "asset_class": "fixed_income",
+      "box": "credit",
+      "listed_from": "2007-12-17",
+      "delisted_on": null,
+      "spread_bps": 3.0,
+      "notes": "Deuda emergente en USD"
+    },
+    {
+      "symbol": "VNQ",
+      "asset_class": "real_estate",
+      "box": "real_estate",
+      "listed_from": "2004-09-23",
+      "delisted_on": null,
+      "spread_bps": 2.0,
+      "notes": "Inmobiliario EE. UU."
+    },
+    {
+      "symbol": "GLD",
+      "asset_class": "commodity",
+      "box": "precious",
+      "listed_from": "2004-11-18",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": "Oro"
+    },
+    {
+      "symbol": "SLV",
+      "asset_class": "commodity",
+      "box": "precious",
+      "listed_from": "2006-04-21",
+      "delisted_on": null,
+      "spread_bps": 3.0,
+      "notes": "Plata"
+    },
+    {
+      "symbol": "DBE",
+      "asset_class": "commodity",
+      "box": "energy",
+      "listed_from": "2007-01-05",
+      "delisted_on": null,
+      "spread_bps": 12.0,
+      "notes": "Energía"
+    },
+    {
+      "symbol": "DBB",
+      "asset_class": "commodity",
+      "box": "industrial",
+      "listed_from": "2007-01-05",
+      "delisted_on": null,
+      "spread_bps": 12.0,
+      "notes": "Metales industriales"
+    },
+    {
+      "symbol": "DBA",
+      "asset_class": "commodity",
+      "box": "agri",
+      "listed_from": "2007-01-05",
+      "delisted_on": null,
+      "spread_bps": 8.0,
+      "notes": "Agrícolas"
+    },
+    {
+      "symbol": "UUP",
+      "asset_class": "currency",
+      "box": "fx",
+      "listed_from": "2007-02-20",
+      "delisted_on": null,
+      "spread_bps": 4.0,
+      "notes": "Dólar contra cesta"
+    },
+    {
+      "symbol": "FXE",
+      "asset_class": "currency",
+      "box": "fx",
+      "listed_from": "2005-12-09",
+      "delisted_on": null,
+      "spread_bps": 4.0,
+      "notes": "Euro"
+    },
+    {
+      "symbol": "FXY",
+      "asset_class": "currency",
+      "box": "fx",
+      "listed_from": "2007-02-12",
+      "delisted_on": null,
+      "spread_bps": 5.0,
+      "notes": "Yen"
+    },
+    {
+      "symbol": "BIL",
+      "asset_class": "cash",
+      "box": "cash",
+      "listed_from": "2007-05-25",
+      "delisted_on": null,
+      "spread_bps": 1.0,
+      "notes": "Letras del Tesoro"
+    }
+  ]
+}
