@@ -1,5 +1,24 @@
 # RELEVO
 
+## Hecho (2026-11-21, claude-code — «mejora e hiper perfecciona el algoritmo»)
+- **Nada de producción cambió**: ni `.env`, ni freeze, ni tareas. Informe: `docs/research/MEJORA-ALGORITMO-2026-11-21.md`.
+- Nuevo `ibtrader research-retador` (`research/challenger.py`): prueba pareada retador contra titular, Sharpe sobre
+  BIL, bootstrap por bloques de 21 sesiones, Bonferroni. Datos: vintage `2026-11-08` (Tiingo 2006→2026), ventana
+  2008-12-09 → 2026-11-06, corrido en la nube con los parquet del PC.
+- Titular (lo que corre en paper, `STRATEGY__PARAMS={}`): CAGR 4,7 %, Sharpe 0,55 contra BIL, caída −11,0 %.
+  Variantes de señal y perfiles de riesgo (`SystemConfig.box_budgets`): todas indistinguibles del titular.
+- **Única que pasa**: núcleo pasivo 60/40 al 25 % + tendencia al 75 % (`core_weights`, `core_frac`): CAGR 6,0 %,
+  Sharpe 0,76, caída −9,5 %, diferencia de Sharpe +0,21 (IC al 99,3 %: +0,01 a +0,41). Al 50 % rinde más (7,3 %)
+  pero no pasa y SPY puede chocar con `max_weight_per_symbol` 0,4. La ventana no incluye 2008.
+- Para activarla en paper (solo con el sí de Adam): `STRATEGY__PARAMS={"core_weights":{"SPY":0.6,"IEF":0.4},"core_frac":0.25}`
+  y re-congelar.
+- **Paper casi no corre**: 2 ejecuciones en 9 sesiones (10-11 y 11-11). Sin plan el 12, 13 y 17–20 (laptop apagada a
+  las 18:00); el 17-11 el Gateway no respondió (`broker_unreachable`) y el plan del 16 caducó. El plan de hoy
+  (sábado 10:26) quedó sin línea final tras el cross-check de Yahoo (`VEA: possibly delisted`); sin investigar.
+  87 % del millón sigue en efectivo: objetivo 65 % BIL con tope de 10k por orden = más de 60 sesiones.
+- Registro: 102 pruebas en `portfolio_trials.jsonl`. No añadir variantes de señal; lo pendiente es historia desde 2002
+  para medir la mezcla con 2008 dentro.
+
 - **2026-11-14 (claude-code) — Limpieza de documentación (Adam: «quita documentación y unifica»).** Borrados 13 documentos obsoletos sin referencias (auditorías, planes y prompts viejos; están en el historial de git). Índice único del repo: `docs/INDICE.md`; índice de todos los proyectos: `C:\dev\DOCS.md`; memoria compartida de Codex/Claude/Cursor/Grok: `C:\dev\.ai\memoria`.
 
 ## Hecho (2026-11-10, claude-code — primeras órdenes paper reales)

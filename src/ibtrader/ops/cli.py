@@ -1723,5 +1723,34 @@ def research_leverage(
     rep = run_leverage_study(data, s, uni, leverages=levs, margin_rate_annual=s.research.margin_rate_annual)
     typer.echo(_json.dumps(_noneify(rep), ensure_ascii=False, indent=2))
 
+@app.command("research-retador")
+def research_retador(
+    universe: Optional[str] = typer.Option(None, "--universe", help="JSON de universo (por defecto el de .env)."),
+    out: Optional[str] = typer.Option(None, "--out", help="Ruta donde guardar el informe JSON."),
+    n_boot: int = typer.Option(2000, "--bootstrap", help="Remuestreos del bootstrap por bloques."),
+) -> None:
+    """Compara variantes ya probadas y perfiles de riesgo contra la estrategia que corre en paper.
+
+    Prueba pareada con bootstrap por bloques y corrección de Bonferroni. Solo el veredicto
+    «promover» justifica cambiar la producción. No envía órdenes ni toca la configuración congelada.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    from ..data.universe import load_universe_spec
+    from ..research.challenger import run_challenger_study
+
+    s = AppSettings()
+    s.resolve_paths()
+    uni = load_universe_spec(universe or s.data.universe_file or "config/universe-10etf.json")
+    s.universe.symbols = list(uni.symbols)
+    data = {k: v for k, v in load_universe_v2(s).items() if k in set(uni.symbols)}
+    rep = _noneify(run_challenger_study(data, s, uni, n_boot=n_boot))
+    text = _json.dumps(rep, ensure_ascii=False, indent=2, default=str)
+    if out:
+        _Path(out).parent.mkdir(parents=True, exist_ok=True)
+        _Path(out).write_text(text, encoding="utf-8")
+    typer.echo(text)
+
 if __name__ == "__main__":
     app()

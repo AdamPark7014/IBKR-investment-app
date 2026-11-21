@@ -21,6 +21,7 @@
 ## docs/research
 - [`docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md`](../docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md) — Institutional systematic stack — research synthesis (V3)
 - [`docs/research/MEJORAS-EVIDENCIA-2026-11-08.md`](../docs/research/MEJORAS-EVIDENCIA-2026-11-08.md) — Mejoras con evidencia (2026-11-08)
+- [`docs/research/MEJORA-ALGORITMO-2026-11-21.md`](../docs/research/MEJORA-ALGORITMO-2026-11-21.md) — Mejora del algoritmo: prueba pareada, núcleo 60/40 + tendencia y estado del paper
 - [`docs/research/PROTOCOLO-INVESTIGACION.md`](../docs/research/PROTOCOLO-INVESTIGACION.md) — Protocolo de investigación de `ibtrader` (fase 1 del playbook)
 - [`docs/research/QUANT-FUNDS-PLAYBOOK-2026-10-21.md`](../docs/research/QUANT-FUNDS-PLAYBOOK-2026-10-21.md) — Cómo generan sus algoritmos los fondos cuantitativos gigantes, y qué de eso cabe en ibtrad
 

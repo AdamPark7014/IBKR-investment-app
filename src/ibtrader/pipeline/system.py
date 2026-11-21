@@ -106,6 +106,15 @@ class SystemConfig:
     #: Gross exposure cap (fraction of capital). 1.0 = no leverage: see the ``tau`` note above.
     max_leverage: float = 1.0
     boxes: Optional[Dict[str, str]] = None
+    #: Presupuesto de riesgo por caja para ``box_risk_parity`` (``None`` = igual por caja). Es un dial
+    #: de riesgo (cuánta parte del riesgo va a acciones, bonos o activos reales), no una señal: se
+    #: elige por tolerancia a la caída, nunca por el Sharpe de un backtest.
+    box_budgets: Optional[Dict[str, float]] = None
+    #: Núcleo pasivo: ``core_frac`` del capital se queda siempre en ``core_weights`` (p. ej. 60 % SPY y
+    #: 40 % IEF) y el resto lo maneja el sistema de tendencia. ``core_frac = 0`` = sin núcleo. El peso de
+    #: un símbolo solo cambia cuando cambia su parte de tendencia, así que el núcleo no añade órdenes.
+    core_weights: Optional[Dict[str, float]] = None
+    core_frac: float = 0.0
     short_only: bool = False
     # Secondary knobs (pysystemtrade defaults); exposed so research can shorten warm-ups.
     vol_span: int = 35
@@ -153,6 +162,19 @@ class SystemConfig:
                 )
             if any(float(w) < 0.0 for w in self.rule_weights.values()):
                 raise ValueError("SystemConfig.rule_weights must be non-negative")
+        if self.box_budgets is not None:
+            if self.instrument_weighting != "box_risk_parity":
+                raise ValueError("SystemConfig.box_budgets only applies to instrument_weighting='box_risk_parity'")
+            if any(float(b) < 0.0 for b in self.box_budgets.values()) or sum(self.box_budgets.values()) <= 0.0:
+                raise ValueError("SystemConfig.box_budgets must be non-negative with a positive sum")
+        if not 0.0 <= self.core_frac < 1.0:
+            raise ValueError("SystemConfig.core_frac must be in [0, 1)")
+        if self.core_frac > 0.0:
+            cw = self.core_weights or {}
+            if not cw or any(float(w) < 0.0 for w in cw.values()) or abs(sum(cw.values()) - 1.0) > 1e-9:
+                raise ValueError("SystemConfig.core_weights must be non-negative and sum to 1 when core_frac > 0")
+            if not self.long_only:
+                raise ValueError("SystemConfig.core_frac needs long_only (the core is a long passive book)")
         if self.forecast_cap <= 0.0:
             raise ValueError("SystemConfig.forecast_cap must be > 0")
         if self.tau <= 0.0:
@@ -331,6 +353,7 @@ def _instrument_weights(px: pd.DataFrame, pct_vol: pd.DataFrame, cfg: SystemConf
             lookback=cfg.box_lookback,
             min_periods=cfg.box_min_periods,
             step=cfg.step,
+            box_budgets=cfg.box_budgets,
         )
     else:  # pragma: no cover - Literal guards this
         raise ValueError(f"unknown instrument_weighting {cfg.instrument_weighting!r}")
@@ -410,6 +433,38 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
     and ``long_only``, the first one with a price receives ``1 - gross`` of the risky book in
     ``target_weights`` / ``mtm_weights``: idle capital earns the T-bill rate instead of zero.
     """
+    if cfg.core_frac > 0.0:
+        missing = sorted(set(cfg.core_weights or {}) - {str(c) for c in prices.columns})
+        if missing:
+            raise ValueError(f"run_system: core_weights symbols without prices: {missing}")
+        return _with_core(_run_trend(prices, cfg), cfg)
+    return _run_trend(prices, cfg)
+
+
+def _with_core(out: SystemOutput, cfg: SystemConfig) -> SystemOutput:
+    """``core_frac`` en el núcleo pasivo y ``1 - core_frac`` en lo que pide la tendencia.
+
+    El núcleo entra el mismo día que la tendencia tiene su primer peso (misma ventana evaluada). La
+    exposición bruta nunca pasa de ``max_leverage``: ``(1 - x)·bruto_tendencia + x``.
+    """
+    x = float(cfg.core_frac)
+    core = {str(k): float(v) for k, v in (cfg.core_weights or {}).items()}
+
+    def _mix(w: pd.DataFrame) -> pd.DataFrame:
+        live = w.notna().any(axis=1)
+        mixed = w * (1.0 - x)
+        for sym, cw in core.items():
+            has_px = out.prices[sym].reindex(w.index).notna() if sym in out.prices.columns else live
+            col = mixed[sym] if sym in mixed.columns else pd.Series(np.nan, index=w.index)
+            mixed[sym] = (col.fillna(0.0) + x * cw).where(live & has_px, col)
+        return mixed
+
+    out.target_weights = _mix(out.target_weights)
+    out.mtm_weights = _mix(out.mtm_weights)
+    return out
+
+
+def _run_trend(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
     cash = [c for c in cfg.cash_symbols([str(c) for c in prices.columns]) if prices[c].notna().any()]
     risky = [c for c in prices.columns if c not in cash]
     if not cash or not risky:
