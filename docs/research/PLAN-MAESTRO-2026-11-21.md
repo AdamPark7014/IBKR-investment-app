@@ -99,6 +99,10 @@ parámetros: aplica la misma señal a más mercados poco correlacionados.
 **Criterio de salida:** veredicto «promover» contra la estrategia en producción y coste anual menor
 a un tercio del retorno bruto.
 
+**Resultado (2026-11-21): no pasa.** El universo de 26 ETF dio Sharpe 0,52 contra 0,60 del actual. Los
+ETF añadidos se mueven con los que ya había (correlación 0,94). El universo se queda en 10 ETF. Detalle
+en [`FASES-1-2-RESULTADOS-2026-11-21.md`](FASES-1-2-RESULTADOS-2026-11-21.md).
+
 ### Fase 3. Más familias de señal (6 a 8 semanas)
 
 Una prueba por familia, definida por escrito antes de correrla. Cada familia debe tener IC positivo en

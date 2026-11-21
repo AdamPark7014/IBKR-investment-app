@@ -230,6 +230,47 @@ def paired_comparison(
     }
 
 
+#: Pruebas de estrés fijas del plan maestro (fase 1): de máximo a mínimo del S&P 500 en cada crisis.
+STRESS_WINDOWS: Dict[str, Tuple[str, str]] = {
+    "crisis_2008": ("2007-10-09", "2009-03-09"),
+    "covid_2020": ("2020-02-19", "2020-03-23"),
+    "inflacion_2022": ("2022-01-03", "2022-10-14"),
+}
+
+
+def stress_report(returns: pd.Series) -> Dict[str, Dict[str, float]]:
+    """Retorno total, peor caída y peor mes natural dentro de cada ventana de ``STRESS_WINDOWS``.
+
+    Una ventana que no cae entera dentro de ``returns`` se omite: no se informa media crisis.
+    """
+    out: Dict[str, Dict[str, float]] = {}
+    if returns.empty:
+        return out
+    for name, (a, b) in STRESS_WINDOWS.items():
+        start, end = pd.Timestamp(a), pd.Timestamp(b)
+        if returns.index.min() > start or returns.index.max() < end:
+            continue
+        r = returns.loc[start:end]
+        monthly = (1.0 + r).groupby([r.index.year, r.index.month]).prod() - 1.0
+        out[name] = {
+            "retorno_total": float(np.prod(1.0 + r.to_numpy(dtype=float)) - 1.0),
+            "caida_max": _max_drawdown(r.to_numpy(dtype=float)),
+            "peor_mes": float(monthly.min()),
+        }
+    return out
+
+
+def settings_with_universe_spreads(settings: AppSettings, universe: UniverseSpec) -> AppSettings:
+    """Copia de ``settings`` con el spread por símbolo que declara el universo (no muta el original)."""
+    out = settings.model_copy(deep=True)
+    merged = dict(out.slippage.spread_bps_by_symbol or {})
+    for e in universe.entries:
+        if e.spread_bps is not None:
+            merged[e.symbol] = float(e.spread_bps)
+    out.slippage.spread_bps_by_symbol = merged
+    return out
+
+
 # --------------------------------------------------------------------------- el estudio
 
 
@@ -304,12 +345,13 @@ def run_challenger_study(
             else pd.Series(0.0, index=prices.index))
     inc_r = _cut(runs[incumbent.cid][0])
     rows: List[Dict[str, Any]] = [
-        {"id": incumbent.cid, "tipo": "titular", **summary(inc_r, cash), **runs[incumbent.cid][1]}
+        {"id": incumbent.cid, "tipo": "titular", **summary(inc_r, cash), **runs[incumbent.cid][1],
+         "crisis": stress_report(inc_r)}
     ]
     for c in challengers:
         r = _cut(runs[c.cid][0])
         rows.append({
-            "id": c.cid, "tipo": c.kind, **summary(r, cash), **runs[c.cid][1],
+            "id": c.cid, "tipo": c.kind, **summary(r, cash), **runs[c.cid][1], "crisis": stress_report(r),
             "contra_titular": paired_comparison(inc_r, r, cash, n_comparisons=len(challengers),
                                                 n_boot=n_boot, seed=seed),
         })
@@ -319,7 +361,7 @@ def run_challenger_study(
     sf = _cut(pd.Series(sixty_forty(px, equity=eq_leg, bonds=bond_leg, rebalance=BENCHMARK_REBALANCE,
                                     cost_bps=BENCHMARK_COST_BPS), dtype=float).reindex(px.index).fillna(0.0))
     rows.append({
-        "id": "referencia_60_40", "tipo": "referencia", **summary(sf, cash),
+        "id": "referencia_60_40", "tipo": "referencia", **summary(sf, cash), "crisis": stress_report(sf),
         "contra_titular": paired_comparison(inc_r, sf, cash, n_comparisons=len(challengers),
                                             n_boot=n_boot, seed=seed),
     })
@@ -336,7 +378,71 @@ def run_challenger_study(
     }
 
 
+def run_universe_study(
+    data_incumbent: Mapping[str, pd.DataFrame],
+    universe_incumbent: UniverseSpec,
+    data_challenger: Mapping[str, pd.DataFrame],
+    universe_challenger: UniverseSpec,
+    settings: AppSettings,
+    *,
+    configs: Sequence[Contender],
+    n_boot: int = N_BOOTSTRAP,
+    seed: int = SEED,
+) -> Dict[str, Any]:
+    """Mismo sistema, dos universos: ¿operar más mercados le gana al universo titular?
+
+    Cada configuración de ``configs`` corre en los dos universos con el spread que declara cada uno.
+    La ventana es común a todo (el calentamiento más tardío). El efectivo de referencia para el Sharpe
+    es el ETF de letras del universo titular. Bonferroni sobre ``len(configs)`` comparaciones.
+    """
+    sides = {
+        "titular": (data_incumbent, universe_incumbent),
+        "retador": (data_challenger, universe_challenger),
+    }
+    runs: Dict[Tuple[str, str], Tuple[pd.Series, Dict[str, Any]]] = {}
+    starts: List[pd.Timestamp] = []
+    for side, (data, uni) in sides.items():
+        st = settings_with_universe_spreads(settings, uni)
+        symbols = list(close_frame(dict(data)).columns)
+        boxes = {e.symbol: e.box for e in uni.entries if e.symbol in symbols}
+        for c in configs:
+            rets, start, costs = _run(c, data, st, uni, boxes, symbols)
+            if start is None:
+                raise ValueError(f"{c.cid} ({side}): el sistema no termina el calentamiento con estos datos")
+            runs[(side, c.cid)] = (rets, costs)
+            starts.append(start)
+    window_start = max(starts)
+    prices = close_frame(dict(data_incumbent))
+    cash_syms = [e.symbol for e in universe_incumbent.entries
+                 if e.asset_class.lower() == "cash" and e.symbol in prices.columns]
+    cash = (prices[cash_syms[0]].ffill().pct_change().fillna(0.0) if cash_syms
+            else pd.Series(0.0, index=prices.index))
+
+    def _cut(r: pd.Series) -> pd.Series:
+        return r.loc[window_start:].iloc[1:]
+
+    rows: List[Dict[str, Any]] = []
+    for c in configs:
+        inc_r, cha_r = _cut(runs[("titular", c.cid)][0]), _cut(runs[("retador", c.cid)][0])
+        rows.append({
+            "config": c.cid,
+            "titular": {**summary(inc_r, cash), **runs[("titular", c.cid)][1], "crisis": stress_report(inc_r)},
+            "retador": {**summary(cha_r, cash), **runs[("retador", c.cid)][1], "crisis": stress_report(cha_r)},
+            "contra_titular": paired_comparison(inc_r, cha_r, cash, n_comparisons=len(configs),
+                                                n_boot=n_boot, seed=seed),
+        })
+    return {
+        "nota": "Mismo sistema en dos universos. Solo 'promover' justifica cambiar el universo de producción.",
+        "universo_titular": universe_incumbent.name,
+        "universo_retador": universe_challenger.name,
+        "desde": str(window_start.date()),
+        "n_sesiones": int(len(_cut(runs[("titular", configs[0].cid)][0]))),
+        "filas": rows,
+    }
+
+
 __all__ = [
     "CORE_60_40", "Contender", "DEFAULT_CHALLENGERS", "INCUMBENT", "RISK_GROUPS", "RISK_PROFILES",
-    "box_budgets_from_groups", "paired_comparison", "run_challenger_study", "summary",
+    "STRESS_WINDOWS", "box_budgets_from_groups", "paired_comparison", "run_challenger_study",
+    "run_universe_study", "settings_with_universe_spreads", "stress_report", "summary",
 ]

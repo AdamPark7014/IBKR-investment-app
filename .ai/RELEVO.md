@@ -1,5 +1,16 @@
 # RELEVO
 
+## Hecho (2026-11-21 noche, claude-code — fases 1 y 2 del plan maestro; nada de paper se tocó)
+- Informe: `docs/research/FASES-1-2-RESULTADOS-2026-11-21.md`. Datos: Tiingo desde 2002 (32 ETF) en el PC,
+  `reports/research_data/` (bajados con `scripts/descargar_historia.py`). Ventana 2004-01-28 → 2026-11-20.
+- **Fase 1 (2008 dentro):** núcleo 25 % + tendencia 75 % Sharpe 0,60 contra 0,48 de la tendencia sola; diferencia
+  +0,12 (−0,06 a +0,32) → «indistinguible» (antes «promover» con ventana desde 12-2008). En 2008 la tendencia sola
+  +9,2 %, la mezcla −1,4 %, el 60/40 −32,3 %. Recomendación: dejar el paper como está, bajar la expectativa a ~0,6.
+- **Fase 2 (26 ETF):** no mejora. Sharpe 0,52 contra 0,60 (−0,09; −0,23 a +0,07). Correlación 0,94 con el universo
+  de 10; el reparto por cajas lleva riesgo a bonos y divisas sin prima. El universo se queda en 10 ETF.
+- Código: `stress_report`, `run_universe_study`, `settings_with_universe_spreads` en `research/challenger.py`.
+- Siguiente: fase 3, momentum relativo dentro de cada clase sobre los 10 ETF, definido por escrito antes de correr.
+
 ## Hecho (2026-11-21 16:25 Puebla, claude-code — fase 0 aplicada en el PC)
 - PC en main `803b80b`. `.env`: + `PRETRADE__MAX_CASH_ORDER_NOTIONAL_USD=100000` (copia `data/logs/env.antes-fase0-20261121.bak`).
   Freeze re-congelado: `534b520bbe2103ad`.
