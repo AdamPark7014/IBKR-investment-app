@@ -62,6 +62,10 @@ DEFAULT_RULES: Tuple[str, ...] = ("ewmac16_64", "ewmac32_128", "ewmac64_256", "t
 #: Default lookbacks for ``tsmom_1_3_12`` (1, 3 and 12 months in business days).
 TSMOM_DEFAULT_LOOKBACKS: Tuple[int, ...] = (21, 63, 252)
 
+#: Reglas de corte transversal: comparan cada símbolo con sus pares del mismo grupo, así que
+#: necesitan todos los símbolos a la vez y no pasan por :func:`run_rule`.
+CROSS_SECTIONAL_RULES: Tuple[str, ...] = ("relmom_1_3_12",)
+
 _EWMAC_NAME = re.compile(r"^ewmac(\d+)_(\d+)$")
 
 
@@ -108,6 +112,29 @@ def tsmom_multi(
     frame = pd.DataFrame(cols)
     out: pd.Series = frame.mean(axis=1, skipna=True)
     out.name = "tsmom_" + "_".join(str(lb) for lb in lookbacks)
+    return out
+
+
+def relative_momentum(momentum: pd.DataFrame, groups: Mapping[str, str]) -> pd.DataFrame:
+    """Momentum relativo: el momentum de cada símbolo menos la media de su grupo ese mismo día.
+
+    ``momentum`` es fechas × símbolos (p. ej. el ``tsmom_1_3_12`` bruto, ya normalizado por
+    volatilidad). ``groups`` es símbolo → grupo de pares (clase de activo). Un símbolo sin grupo, o un
+    día con menos de dos pares con dato en el grupo, da NaN: sin pares no hay nada con qué comparar.
+    Punto en el tiempo: la fila ``t`` solo usa la fila ``t`` de ``momentum``.
+    """
+    out = pd.DataFrame(np.nan, index=momentum.index, columns=momentum.columns, dtype=float)
+    by_group: Dict[str, list] = {}
+    for sym in momentum.columns:
+        g = groups.get(str(sym))
+        if g is not None:
+            by_group.setdefault(str(g), []).append(sym)
+    for members in by_group.values():
+        if len(members) < 2:
+            continue
+        block = momentum[members].astype(float)
+        enough = block.notna().sum(axis=1) >= 2
+        out[members] = block.sub(block.mean(axis=1, skipna=True), axis=0).where(enough, np.nan)
     return out
 
 

@@ -36,7 +36,7 @@ from ..backtest.engine import backtest
 from ..config import AppSettings
 from ..data.universe import UniverseSpec
 from ..engine.targets import min_trade_frac_for
-from ..pipeline.rules import DEFAULT_RULES
+from ..pipeline.rules import CROSS_SECTIONAL_RULES, DEFAULT_RULES
 from ..pipeline.system import SystemConfig
 from ..risk.manager import RiskManager, RiskState
 from ..strategy.pipeline_strategy import PipelineStrategy
@@ -92,6 +92,19 @@ CORE_60_40: Dict[str, float] = {"SPY": 0.60, "IEF": 0.40}
 #: Lo que corre en paper: ``STRATEGY__PARAMS={}`` = reglas por defecto y riesgo igual por ETF.
 INCUMBENT = Contender("titular_tendencia_riesgo_igual")
 
+#: Fase 3: mitad del pronóstico para la tendencia (cuatro reglas a partes iguales) y mitad para el
+#: momentum relativo. Reparto por familias fijado antes de correr la prueba.
+RELMOM_RULES: Tuple[str, ...] = (*DEFAULT_RULES, "relmom_1_3_12")
+RELMOM_WEIGHTS: Dict[str, float] = {
+    **{r: 0.5 / len(DEFAULT_RULES) for r in DEFAULT_RULES}, "relmom_1_3_12": 0.5,
+}
+PAPER_MIX = Contender("paper_nucleo_25_tendencia_75", kind="mezcla",
+                      extra={"core_weights": dict(CORE_60_40), "core_frac": 0.25})
+RELMOM_CHALLENGER = Contender(
+    "paper_mas_momentum_relativo", rules=RELMOM_RULES, rule_weights=dict(RELMOM_WEIGHTS), kind="familia",
+    extra={"core_weights": dict(CORE_60_40), "core_frac": 0.25},
+)
+
 #: Lista fijada **antes** de mirar resultados. Las tres variantes ya estaban en el registro de pruebas.
 DEFAULT_CHALLENGERS: Tuple[Contender, ...] = (
     Contender("ewmac_hrp", rules=tuple(r for r in DEFAULT_RULES if r.startswith("ewmac")), weighting="hrp"),
@@ -102,6 +115,16 @@ DEFAULT_CHALLENGERS: Tuple[Contender, ...] = (
     Contender("nucleo_25_tendencia_75", kind="mezcla", extra={"core_weights": dict(CORE_60_40), "core_frac": 0.25}),
     Contender("nucleo_50_tendencia_50", kind="mezcla", extra={"core_weights": dict(CORE_60_40), "core_frac": 0.50}),
 )
+
+
+def peer_groups_from_universe(universe: UniverseSpec, symbols: Sequence[str]) -> Dict[str, str]:
+    """Símbolo → grupo de pares (``RISK_GROUPS`` de su clase de activo). El efectivo no tiene pares."""
+    out: Dict[str, str] = {}
+    for e in universe.entries:
+        group = RISK_GROUPS.get(e.asset_class.lower())
+        if e.symbol in symbols and group is not None:
+            out[e.symbol] = group
+    return out
 
 
 def box_budgets_from_groups(
@@ -280,8 +303,9 @@ def _run(
 ) -> Tuple[pd.Series, Optional[pd.Timestamp], Dict[str, Any]]:
     capital = INITIAL_EQUITY
     budgets = box_budgets_from_groups(universe, symbols, c.group_budgets) if c.group_budgets else None
+    peers = peer_groups_from_universe(universe, symbols) if set(c.rules) & set(CROSS_SECTIONAL_RULES) else None
     cfg = SystemConfig(
-        rules=tuple(c.rules), rule_weights=c.rule_weights, instrument_weighting=c.weighting,  # type: ignore[arg-type]
+        peer_groups=peers, rules=tuple(c.rules), rule_weights=c.rule_weights, instrument_weighting=c.weighting,  # type: ignore[arg-type]
         boxes=boxes, box_budgets=budgets, capital=capital, long_only=True, max_leverage=1.0,
         min_trade_frac=min_trade_frac_for(settings, capital), **c.extra,
     )
@@ -442,7 +466,9 @@ def run_universe_study(
 
 
 __all__ = [
-    "CORE_60_40", "Contender", "DEFAULT_CHALLENGERS", "INCUMBENT", "RISK_GROUPS", "RISK_PROFILES",
-    "STRESS_WINDOWS", "box_budgets_from_groups", "paired_comparison", "run_challenger_study",
+    "CORE_60_40", "Contender", "DEFAULT_CHALLENGERS", "INCUMBENT", "PAPER_MIX", "RELMOM_CHALLENGER",
+    "RELMOM_RULES", "RELMOM_WEIGHTS", "RISK_GROUPS", "RISK_PROFILES",
+    "STRESS_WINDOWS", "box_budgets_from_groups", "paired_comparison", "peer_groups_from_universe",
+    "run_challenger_study",
     "run_universe_study", "settings_with_universe_spreads", "stress_report", "summary",
 ]

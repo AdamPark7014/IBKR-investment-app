@@ -22,6 +22,7 @@
 - [`docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md`](../docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md) — Institutional systematic stack — research synthesis (V3)
 - [`docs/research/MEJORAS-EVIDENCIA-2026-11-08.md`](../docs/research/MEJORAS-EVIDENCIA-2026-11-08.md) — Mejoras con evidencia (2026-11-08)
 - [`docs/research/MEJORA-ALGORITMO-2026-11-21.md`](../docs/research/MEJORA-ALGORITMO-2026-11-21.md) — Mejora del algoritmo: prueba pareada, núcleo 60/40 + tendencia y estado del paper
+- [`docs/research/FASE-3-MOMENTUM-RELATIVO-2026-11-21.md`](../docs/research/FASE-3-MOMENTUM-RELATIVO-2026-11-21.md) — Fase 3: el momentum relativo predice (IC 0,07–0,10) pero no pasa la prueba pareada; no entra a paper
 - [`docs/research/FASES-1-2-RESULTADOS-2026-11-21.md`](../docs/research/FASES-1-2-RESULTADOS-2026-11-21.md) — Fases 1 y 2: con 2008 dentro la mezcla ya no es concluyente; el universo de 26 ETF no mejora
 - [`docs/research/PLAN-MAESTRO-2026-11-21.md`](../docs/research/PLAN-MAESTRO-2026-11-21.md) — Plan maestro por fases: más apuestas independientes, no más complejidad
 - [`docs/research/PROTOCOLO-INVESTIGACION.md`](../docs/research/PROTOCOLO-INVESTIGACION.md) — Protocolo de investigación de `ibtrader` (fase 1 del playbook)

@@ -39,7 +39,13 @@ from .buffering import apply_buffer, position_buffer
 from .combine import combine_forecasts, equal_weights, forecast_div_multiplier
 from .forecast import estimate_forecast_scalar, scale_and_cap
 from .portfolio_stage import average_abs_positions, portfolio_positions, positions_to_weights
-from .rules import DEFAULT_RULES, FIXED_FORECAST_SCALARS, run_rules
+from .rules import (
+    CROSS_SECTIONAL_RULES,
+    DEFAULT_RULES,
+    FIXED_FORECAST_SCALARS,
+    relative_momentum,
+    run_rules,
+)
 from .sizing import subsystem_position, vol_scalar
 from .vol import pct_vol_daily, price_vol_daily
 
@@ -110,6 +116,9 @@ class SystemConfig:
     #: de riesgo (cuánta parte del riesgo va a acciones, bonos o activos reales), no una señal: se
     #: elige por tolerancia a la caída, nunca por el Sharpe de un backtest.
     box_budgets: Optional[Dict[str, float]] = None
+    #: Símbolo → grupo de pares (clase de activo) para las reglas de corte transversal
+    #: (``relmom_1_3_12``). Obligatorio si alguna de ``rules`` es de corte transversal.
+    peer_groups: Optional[Dict[str, str]] = None
     #: Núcleo pasivo: ``core_frac`` del capital se queda siempre en ``core_weights`` (p. ej. 60 % SPY y
     #: 40 % IEF) y el resto lo maneja el sistema de tendencia. ``core_frac = 0`` = sin núcleo. El peso de
     #: un símbolo solo cambia cuando cambia su parte de tendencia, así que el núcleo no añade órdenes.
@@ -152,6 +161,8 @@ class SystemConfig:
             raise ValueError("SystemConfig.rules must not be empty")
         if len(set(self.rules)) != len(self.rules):
             raise ValueError(f"SystemConfig.rules has duplicates: {self.rules}")
+        if set(self.rules) & set(CROSS_SECTIONAL_RULES) and not self.peer_groups:
+            raise ValueError("SystemConfig.peer_groups is required by cross-sectional rules")
         if self.rule_weights is not None:
             missing = set(self.rules) - set(self.rule_weights)
             extra = set(self.rule_weights) - set(self.rules)
@@ -520,13 +531,16 @@ def _run_core(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
     )
 
     # 2. Raw forecasts per rule and symbol.
-    raw_by_rule = run_rules(
-        series_px,
-        {sym: vol_price[sym].reindex(s.index) for sym, s in series_px.items()},
-        list(cfg.rules),
-    )
+    vols_by_symbol = {sym: vol_price[sym].reindex(s.index) for sym, s in series_px.items()}
+    raw_by_rule = run_rules(series_px, vols_by_symbol, [r for r in cfg.rules if r not in CROSS_SECTIONAL_RULES])
     raw_forecasts: Dict[str, pd.DataFrame] = {}
     for rule in cfg.rules:
+        if rule in CROSS_SECTIONAL_RULES:
+            # relmom_1_3_12: el mismo momentum de la tendencia, menos la media de los pares del grupo.
+            base = run_rules(series_px, vols_by_symbol, ["tsmom_1_3_12"])["tsmom_1_3_12"]
+            mom = _frame(index, symbols, {sym: _as_series(v, index, f"tsmom[{sym}]") for sym, v in base.items()})
+            raw_forecasts[rule] = relative_momentum(mom, cfg.peer_groups or {})
+            continue
         per_symbol = raw_by_rule.get(rule) or {}
         raw_forecasts[rule] = _frame(
             index, symbols, {sym: _as_series(v, index, f"run_rules[{rule}][{sym}]") for sym, v in per_symbol.items()}

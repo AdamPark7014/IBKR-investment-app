@@ -1,5 +1,14 @@
 # RELEVO
 
+## Hecho (2026-11-21 noche, claude-code — fase 3: momentum relativo; nada de paper se tocó)
+- Informe: `docs/research/FASE-3-MOMENTUM-RELATIVO-2026-11-21.md`. Regla nueva `relmom_1_3_12` (momentum menos la media
+  de los pares de su clase; `SystemConfig.peer_groups`), apagada por defecto.
+- IC 0,07 (21 d) y 0,10 (63 d), positivo en las dos mitades; correlación 0,50 con la tendencia. Prueba pareada contra
+  paper (2004-2026): Sharpe 0,66 contra 0,60, +0,05 (−0,07 a +0,18) → «indistinguible». Caída máxima −15,1 % contra
+  −10,9 %, coste 0,78 % contra 0,49 %. **No entra a paper. No reajustar la señal.**
+- Conclusión de las fases 1 a 3: con 10 ETF solo en largo el techo es Sharpe ~0,6. Queda carry (necesita dividendos
+  por ETF de Tiingo, se bajan desde el PC). La prioridad real es la fase 0.
+
 ## Hecho (2026-11-21 noche, claude-code — fases 1 y 2 del plan maestro; nada de paper se tocó)
 - Informe: `docs/research/FASES-1-2-RESULTADOS-2026-11-21.md`. Datos: Tiingo desde 2002 (32 ETF) en el PC,
   `reports/research_data/` (bajados con `scripts/descargar_historia.py`). Ventana 2004-01-28 → 2026-11-20.
