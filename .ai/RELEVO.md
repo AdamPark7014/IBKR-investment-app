@@ -1,5 +1,10 @@
 # RELEVO
 
+- **2026-11-21 (claude-code) — Plan maestro** (Adam: «más predictivo, como los fondos grandes»): `docs/research/PLAN-MAESTRO-2026-11-21.md`.
+  Tesis: IC de la tendencia lenta 0,04–0,10 (normal en la industria); falta amplitud, no complejidad. Fases: 0 operación
+  confiable → 1 medición (2008, costes reales) → 2 universo de 25–35 ETF → 3 carry, momentum relativo, valor → 4 fallos →
+  5 ML solo para combinar → 6 real. Nuevo `research/predictive.py` (IC por regla y horizonte; diagnóstico, no cuenta como prueba).
+
 ## Hecho (2026-11-21 tarde, claude-code — núcleo 60/40 + tendencia activado en paper, con el sí de Adam)
 - Adam eligió en la tarjeta «Sí, 25 % núcleo + 75 % tendencia». PC en main `1de7dc1`.
 - `.env`: `STRATEGY__PARAMS={"core_weights":{"SPY":0.6,"IEF":0.4},"core_frac":0.25}` (única línea cambiada). Copias:
