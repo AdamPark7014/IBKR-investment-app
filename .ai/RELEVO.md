@@ -1,5 +1,19 @@
 # RELEVO
 
+## Hecho (2026-11-21 16:25 Puebla, claude-code — fase 0 aplicada en el PC)
+- PC en main `803b80b`. `.env`: + `PRETRADE__MAX_CASH_ORDER_NOTIONAL_USD=100000` (copia `data/logs/env.antes-fase0-20261121.bak`).
+  Freeze re-congelado: `534b520bbe2103ad`.
+- Plan corrido a mano con `run-task.ps1`: 89 s, `status ok`, latido escrito. 9 órdenes pendientes para el lunes 23-11
+  (run_date 2026-11-20): BIL BUY 1 091 (≈99 925 USD), SPY 14, IEF 109, TIP 94, VNQ 108, PDBC 77, TLT 20; ventas VEA 24 y VWO 46.
+  Reemplazó el pending de la mañana (estrategia vieja). Copiloto: `sin_opinion` (la puerta devolvió vacío; sin investigar).
+- **Por qué no corre solo (medido, sin cambiar nada):** tareas con LogonType Interactive (solo con sesión iniciada);
+  equipo con Modern Standby S0 y temporizadores de reactivación apagados en batería (WakeToRun no despierta); nada
+  arranca el Gateway (sin IBC, sin acceso en Inicio) y no había proceso ni puerto 4002.
+- `ibtrader-autopilot` y `ibtrader-paper-reconcile` siguen activas y fallando a diario (0x1). `heartbeat-check` dio 0x2.
+  `ibtrader-ibc-check` no existe. El `*>>` de `run-task.ps1` mete `NativeCommandError` en el log (ruido).
+- Pendiente de Adam: laptop enchufada y sin suspender en horario de bolsa, abrir Gateway paper (2FA semanal), decidir
+  Telegram (bot) e IBC (guardaría credenciales de IBKR en un archivo local).
+
 ## Hecho (2026-11-21 tarde, claude-code — fase 0 del plan maestro: que corra solo; Adam eligió «en mi laptop actual»)
 - **Por qué murió el plan del sábado 10:26**: llegó hasta escribir el punto de equity del 20-11 y se colgó en el copiloto
   (el SDK de Anthropic espera 10 min y reintenta) antes del latido y del informe. Ahora latido e informe se escriben
