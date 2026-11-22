@@ -46,3 +46,8 @@ data/heartbeat.json
 data/ai_usage.jsonl
 data/copilot_opinions.jsonl
 data/logs/
+data/respaldos/
+data/vigia_state.json
+data/vigia.lock
+data/orders.jsonl
+data/pending_orders*.json

@@ -14,7 +14,7 @@ vigía corre cada 15 minutos y en cada vuelta pregunta qué falta:
 
 No decide nada de inversión: solo cuándo llamar a ``run_plan`` y ``run_execute``, que conservan todos sus
 controles (freeze, conciliación, pre-trade, órdenes idempotentes, pendientes caducadas). Un candado
-evita dos corridas a la vez.
+evita dos corridas a la vez. Una vez al día guarda además un respaldo del estado (``ops.respaldo``).
 """
 
 from __future__ import annotations
@@ -199,6 +199,20 @@ def tick(
             rep = run_phase(d.action)
             out["estado"] = rep.get("status")
             out["ordenes_enviadas"] = rep.get("orders_sent")
+        today = now.astimezone(ET).date().isoformat()
+        if state.get("respaldo") != today:
+            from .respaldo import backup_state
+
+            try:
+                res = backup_state(settings, now.astimezone(ET).date())
+            except OSError as exc:  # disco lleno o carpeta sin permiso: avisar, no tumbar la corrida
+                res = {"ok": False, "motivo": f"{type(exc).__name__}: {exc}"}
+            if res.get("ok"):
+                state["respaldo"] = today
+            elif res.get("motivo") != "no hay archivos de estado":
+                emit_alert(settings.ops, "respaldo_fallido", "warn", str(res.get("motivo")), now=now)
+                state["respaldo"] = today  # un aviso al día, no uno cada 15 minutos
+            out["respaldo"] = res.get("ok")
         state["ultima_vuelta"] = out
         _save_state(sp, state)
         return out

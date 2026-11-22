@@ -1569,6 +1569,47 @@ def vigia_cmd() -> None:
     raise typer.Exit(code=exit_code_for(str(out.get("estado") or "ok")))
 
 
+@app.command("respaldo")
+def respaldo_cmd(
+    keep: int = typer.Option(30, "--keep", help="Cuántos respaldos diarios conservar."),
+) -> None:
+    """Guarda un .zip con el estado de paper (libro, curva, órdenes, alertas, freeze). Cero órdenes."""
+    import json as _json
+    from datetime import date as _date
+
+    from .respaldo import backup_state
+
+    s = AppSettings()
+    s.resolve_paths()
+    out = backup_state(s, _date.today(), keep=keep)
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
+    raise typer.Exit(code=0 if out.get("ok") else 1)
+
+
+@app.command("seguimiento")
+def seguimiento_cmd(
+    equity_path: str = typer.Option("data/paper_equity.jsonl", "--equity-path",
+                                    help="Ruta del JSONL de capital de paper."),
+) -> None:
+    """Compara el retorno de paper con el del modelo ideal en los mismos días. Cero órdenes."""
+    import json as _json
+
+    from ..data.service import load_universe_v2
+    from .paper_curve import REAL_BASES, load_equity_points
+    from .seguimiento import compare, model_returns, paper_returns
+
+    s = AppSettings()
+    s.resolve_paths()
+    spec = None
+    if s.data.universe_file:
+        from ..data.universe import load_universe_spec
+
+        spec = load_universe_spec(s.data.universe_file)
+    model = model_returns(s, dict(load_universe_v2(s)), spec)
+    out = compare(paper_returns(load_equity_points(equity_path, bases=REAL_BASES)), model)
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
+
+
 @app.command("heartbeat-check")
 def heartbeat_check(
     max_age_hours: float = typer.Option(30.0, "--max-age-hours", help="Edad máxima del último heartbeat."),
