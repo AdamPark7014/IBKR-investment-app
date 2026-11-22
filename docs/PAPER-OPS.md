@@ -39,6 +39,15 @@ Programación (Windows). El plan corre a las 19:00 de Nueva York porque Tiingo p
 pwsh -File scripts/schedule-run-daily.ps1 -Action Register -PlanTime 19:00 -ExecuteTime 10:05   # horas de Nueva York; conviértelas a tu zona
 ```
 
+**Vigía (desde 22-11-2026).** `ibtrader vigia` cada 15 minutos sustituye a las dos tareas de hora fija: corre el
+plan o la ejecución que falte, de modo que una laptop apagada a la hora exacta ya no pierde el día. Con el Gateway
+cerrado no intenta nada y avisa una vez por sesión. Deja de intentar 45 minutos antes del cierre.
+
+```powershell
+pwsh -File scripts/schedule-vigia.ps1 -Action Register     # desactiva plan y ejecución de hora fija
+pwsh -File scripts/schedule-vigia.ps1 -Action Unregister   # quita el vigía y las reactiva
+```
+
 Archivos nuevos en `data/`: `pending_orders.json` (→ `.done.json` / `.stale.json`), `orders.jsonl`
 (ciclo de vida de cada orden), `alerts.jsonl`, `heartbeat.json`, `ai_usage.jsonl` (coste de Claude).
 Informes por día en `reports/daily/`.

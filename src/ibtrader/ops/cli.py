@@ -1526,6 +1526,49 @@ def run_daily_cmd(
     raise typer.Exit(code=exit_code_for(str(rep.get("status"))))
 
 
+@app.command("vigia")
+def vigia_cmd() -> None:
+    """Recupera la corrida diaria si se perdió su hora: corre el plan o la ejecución que falte."""
+    import json as _json
+
+    from .preflight import _port_open
+    from .run_daily import exit_code_for, fresh_loader, run_execute, run_plan, secondary_loader_for
+    from .vigia import tick
+
+    s = AppSettings()
+    s.resolve_paths()
+    brokers: list[Any] = []
+
+    def gateway_factory(settings: AppSettings) -> Any:
+        from ..broker.ib_gateway import IBGateway, market_data_type_for
+        from ..broker.ibkr import IBKRBroker
+
+        b = IBKRBroker(settings)
+        b.connect()
+        brokers.append(b)
+        return IBGateway(b.ib, market_data_type=market_data_type_for(settings.execution.mode))
+
+    def run_phase(phase: str) -> Any:
+        if phase == "plan":
+            return run_plan(s, loader=fresh_loader, secondary_loader=secondary_loader_for(s),
+                            gateway_factory=gateway_factory)
+        return run_execute(s, gateway_factory=gateway_factory)
+
+    try:
+        out = tick(s, run_phase=run_phase, port_open=lambda: _port_open(s.ib.host, s.ib_port()))
+    except Exception as exc:  # noqa: BLE001 - un fallo inesperado tiene que llegar al operador
+        from .notify import emit_alert
+
+        emit_alert(s.ops, "vigia_crash", "critical", f"{type(exc).__name__}: {exc}")
+        typer.echo(f"vigia falló: {type(exc).__name__}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    finally:
+        for b in brokers:
+            b.disconnect()
+    typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":"), default=str))
+    raise typer.Exit(code=exit_code_for(str(out.get("estado") or "ok")))
+
+
 @app.command("heartbeat-check")
 def heartbeat_check(
     max_age_hours: float = typer.Option(30.0, "--max-age-hours", help="Edad máxima del último heartbeat."),

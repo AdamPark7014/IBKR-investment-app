@@ -1,5 +1,15 @@
 # RELEVO
 
+## Hecho (2026-11-21 22:30 Puebla, claude-code — revisión de todo el sistema y vigía; nada del PC se tocó)
+- Diagnóstico: `docs/research/BRECHAS-SISTEMA-2026-11-22.md`. La señal está en su techo (~0,6); la brecha es la operación.
+- **Vigía** (`ibtrader vigia`, `ops/vigia.py`, `scripts/schedule-vigia.ps1`): cada 15 min corre el plan o la ejecución
+  que falte. Sin campos nuevos de configuración: el freeze no cambia. Estado en `data/vigia_state.json`, candado
+  `data/vigia.lock`. Avisos una vez por sesión: `gateway_cerrado`, `sesion_perdida`, `ejecucion_agotada`.
+- **Sin instalar en el PC**: falta el sí de Adam (tarjeta de decisión). Instalar = `git pull` + `schedule-vigia.ps1
+  -Action Register` (desactiva plan y ejecución de hora fija; `Unregister` las reactiva).
+- Pendientes por impacto: Telegram, IBC, equipo siempre encendido, respaldo de `data/`, paper contra backtest mensual,
+  tope por clase de activo (requiere re-congelar), simulacros de fallo, carry.
+
 ## Hecho (2026-11-21 noche, claude-code — fase 3: momentum relativo; nada de paper se tocó)
 - Informe: `docs/research/FASE-3-MOMENTUM-RELATIVO-2026-11-21.md`. Regla nueva `relmom_1_3_12` (momentum menos la media
   de los pares de su clase; `SystemConfig.peer_groups`), apagada por defecto.
