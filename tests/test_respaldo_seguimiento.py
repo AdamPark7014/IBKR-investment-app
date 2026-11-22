@@ -11,8 +11,9 @@ import pandas as pd
 import pytest
 
 from ibtrader.config import AppSettings
+from ibtrader.ops.paper_curve import REAL_BASES, load_equity_points
 from ibtrader.ops.respaldo import backup_state
-from ibtrader.ops.seguimiento import MIN_DAYS, compare, paper_returns
+from ibtrader.ops.seguimiento import MIN_DAYS, compare, paper_equity
 
 
 @pytest.fixture()
@@ -52,20 +53,38 @@ def test_respaldo_respeta_la_carpeta_elegida(settings: AppSettings, tmp_path: Pa
     assert (tmp_path / "otro_disco" / "estado-20261101.zip").is_file()
 
 
-def test_paper_returns_usa_el_ultimo_punto_del_dia() -> None:
+def test_paper_equity_usa_el_ultimo_punto_del_dia() -> None:
     pts = [{"ts": "2026-11-09T10:00", "equity": 100.0}, {"ts": "2026-11-09T18:00", "equity": 101.0},
            {"ts": "2026-11-10T18:00", "equity": 102.01}]
-    r = paper_returns(pts)
-    assert len(r) == 1 and np.isclose(r.iloc[0], 0.01)
+    eq = paper_equity(pts)
+    assert list(eq) == [101.0, 102.01]
+
+
+def test_los_puntos_del_broker_cuentan_como_capital_real(tmp_path: Path) -> None:
+    p = tmp_path / "eq.jsonl"
+    p.write_text('{"ts": "2026-11-09", "equity": 100.0, "basis": "broker"}\n'
+                 '{"ts": "2026-11-10", "equity": 101.0, "basis": "shadow"}\n', encoding="utf-8")
+    assert [x["basis"] for x in load_equity_points(p, bases=REAL_BASES)] == ["broker"]
 
 
 def test_compare_veredictos() -> None:
-    idx = pd.bdate_range("2026-01-01", periods=60)
+    idx = pd.bdate_range("2026-01-01", periods=61)
     rng = np.random.default_rng(0)
-    model = pd.Series(rng.normal(0.0003, 0.004, 60), index=idx)
-    assert compare(model.iloc[:5], model)["veredicto"] == "insuficiente"
+    model = pd.Series(rng.normal(0.0003, 0.004, 61), index=idx)
+    ideal = (1.0 + model).cumprod() * 100.0
+    assert compare(ideal.iloc[:5], model)["veredicto"] == "insuficiente"
     assert compare(pd.Series(dtype=float), model)["veredicto"] == "insuficiente"
-    ok = compare(model + 0.00001, model)
-    assert ok["veredicto"] == "sigue_al_modelo" and ok["n_dias"] == 60 >= MIN_DAYS
-    lejos = compare(pd.Series(0.0, index=idx), model)  # cartera vacía: no sigue al modelo
+    ok = compare(ideal, model)
+    assert ok["veredicto"] == "sigue_al_modelo" and ok["n_intervalos"] == 60 >= MIN_DAYS
+    assert abs(ok["diferencia"]) < 1e-12
+    lejos = compare(pd.Series(100.0, index=idx), model)  # cartera vacía: no sigue al modelo
     assert lejos["veredicto"] == "revisar" and lejos["retorno_paper"] == 0.0
+
+
+def test_compare_con_huecos_usa_el_retorno_compuesto_del_intervalo() -> None:
+    idx = pd.bdate_range("2026-01-01", periods=10)
+    model = pd.Series(0.01, index=idx)
+    ideal = (1.0 + model).cumprod() * 100.0
+    out = compare(ideal.iloc[[0, 3, 9]], model)  # paper solo tiene 3 puntos: dos intervalos de 3 y 6 días
+    assert out["n_intervalos"] == 2 and out["dias_por_intervalo"] == 4.5
+    assert abs(out["diferencia"]) < 1e-12

@@ -6,8 +6,9 @@ hand (``ibtrader paper-equity --append``). ``data/paper_positions.json`` holds *
 for drift triage and is never valued as equity: ``Σ weight · price`` is not money and turned a
 weight cut from 1.0 to 0.5 into a fake 50 % drawdown.
 
-Each point carries a ``basis``: ``cash+shares`` or ``nav`` are real equity (``REAL_BASES``);
-points without a basis are legacy and never feed the kill alerts.
+Each point carries a ``basis``: ``cash+shares``, ``nav`` or ``broker`` (the book synced with the
+broker account by ``run-daily``) are real equity (``REAL_BASES``); points without a basis are legacy
+and never feed the kill alerts.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 __all__ = [
+    "BASIS_BROKER",
     "BASIS_CASH_SHARES",
     "BASIS_NAV",
     "MIN_POINTS_FOR_KILL",
@@ -35,7 +37,9 @@ __all__ = [
 
 BASIS_CASH_SHARES = "cash+shares"
 BASIS_NAV = "nav"
-REAL_BASES = (BASIS_CASH_SHARES, BASIS_NAV)
+#: Lo que escribe ``run-daily`` en modo órdenes: libro igualado a la cuenta del bróker.
+BASIS_BROKER = "broker"
+REAL_BASES = (BASIS_CASH_SHARES, BASIS_NAV, BASIS_BROKER)
 #: Daily points of real paper equity before a drawdown may recommend killing the system.
 MIN_POINTS_FOR_KILL = 20
 

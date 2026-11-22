@@ -1596,7 +1596,7 @@ def seguimiento_cmd(
 
     from ..data.service import load_universe_v2
     from .paper_curve import REAL_BASES, load_equity_points
-    from .seguimiento import compare, model_returns, paper_returns
+    from .seguimiento import compare, model_returns, paper_equity
 
     s = AppSettings()
     s.resolve_paths()
@@ -1606,7 +1606,7 @@ def seguimiento_cmd(
 
         spec = load_universe_spec(s.data.universe_file)
     model = model_returns(s, dict(load_universe_v2(s)), spec)
-    out = compare(paper_returns(load_equity_points(equity_path, bases=REAL_BASES)), model)
+    out = compare(paper_equity(load_equity_points(equity_path, bases=REAL_BASES)), model)
     typer.echo(_json.dumps(_noneify(out), ensure_ascii=False, separators=(",", ":")))
 
 
