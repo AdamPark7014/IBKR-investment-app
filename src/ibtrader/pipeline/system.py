@@ -124,6 +124,10 @@ class SystemConfig:
     #: riesgo, no una señal: cuando un grupo pasa de su tope se recorta en proporción y lo que sobra va
     #: al ETF de efectivo. ``None`` = sin tope. Se aplica al final, con el núcleo pasivo ya sumado.
     group_caps: Optional[Dict[str, float]] = None
+    #: Tope de peso por símbolo (el efectivo queda fuera). Producción ya lo aplica antes de enviar la
+    #: orden (``PRETRADE__MAX_WEIGHT_PER_SYMBOL``); aquí entra en el objetivo para que el backtest y
+    #: producción pidan lo mismo y lo que sobra vaya al ETF de efectivo en vez de quedarse sin invertir.
+    symbol_cap: Optional[float] = None
     #: Núcleo pasivo: ``core_frac`` del capital se queda siempre en ``core_weights`` (p. ej. 60 % SPY y
     #: 40 % IEF) y el resto lo maneja el sistema de tendencia. ``core_frac = 0`` = sin núcleo. El peso de
     #: un símbolo solo cambia cuando cambia su parte de tendencia, así que el núcleo no añade órdenes.
@@ -168,6 +172,8 @@ class SystemConfig:
             raise ValueError(f"SystemConfig.rules has duplicates: {self.rules}")
         if set(self.rules) & set(CROSS_SECTIONAL_RULES) and not self.peer_groups:
             raise ValueError("SystemConfig.peer_groups is required by cross-sectional rules")
+        if self.symbol_cap is not None and not 0.0 < float(self.symbol_cap) <= 1.0:
+            raise ValueError("SystemConfig.symbol_cap must be in (0, 1]")
         if self.group_caps:
             if not self.peer_groups:
                 raise ValueError("SystemConfig.peer_groups is required by group_caps")
@@ -465,8 +471,8 @@ def run_system(
 
 
 def _with_group_caps(out: SystemOutput, cfg: SystemConfig) -> SystemOutput:
-    """Recorta en proporción cada grupo que pasa de su tope y manda lo que sobra al efectivo."""
-    if not cfg.group_caps:
+    """Recorta cada símbolo y cada grupo que pasa de su tope y manda lo que sobra al efectivo."""
+    if not cfg.group_caps and cfg.symbol_cap is None:
         return out
     groups = cfg.peer_groups or {}
     cash = cfg.cash_symbols([str(c) for c in out.target_weights.columns])
@@ -475,7 +481,12 @@ def _with_group_caps(out: SystemOutput, cfg: SystemConfig) -> SystemOutput:
     def _cap(w: pd.DataFrame) -> pd.DataFrame:
         w = w.copy()
         freed = pd.Series(0.0, index=w.index)
-        for group, limit in cfg.group_caps.items():  # type: ignore[union-attr]
+        if cfg.symbol_cap is not None:
+            for c in [c for c in w.columns if c != sweep and str(c) not in cash]:
+                over = (w[c].abs() - float(cfg.symbol_cap)).clip(lower=0.0).fillna(0.0)
+                freed = freed + over
+                w[c] = w[c].clip(lower=-float(cfg.symbol_cap), upper=float(cfg.symbol_cap))
+        for group, limit in (cfg.group_caps or {}).items():
             members = [c for c in w.columns if groups.get(str(c)) == group and c != sweep]
             if not members:
                 continue

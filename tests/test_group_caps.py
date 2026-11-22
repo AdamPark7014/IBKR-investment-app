@@ -51,3 +51,18 @@ def test_validaciones() -> None:
         SystemConfig(group_caps={"acciones": 0.5})
     with pytest.raises(ValueError, match="group_caps"):
         SystemConfig(peer_groups=GROUPS, group_caps={"acciones": 1.5})
+
+
+def test_tope_por_simbolo_manda_el_exceso_a_efectivo() -> None:
+    px = _prices()
+    base = run_system(px, SystemConfig(boxes=BOXES))
+    capped = run_system(px, SystemConfig(boxes=BOXES, symbol_cap=0.20))
+    assert base.warmup_end is not None
+    w0 = base.target_weights.loc[base.warmup_end:].fillna(0.0)
+    w1 = capped.target_weights.loc[base.warmup_end:].fillna(0.0)
+    assert (w0[["A", "B", "C"]] > 0.20).any().any()
+    assert (w1[["A", "B", "C"]] <= 0.20 + 1e-9).all().all()
+    assert np.allclose(w1.sum(axis=1), w0.sum(axis=1))
+    assert (w1["BIL"] >= w0["BIL"] - 1e-12).all()  # el efectivo no tiene tope
+    with pytest.raises(ValueError, match="symbol_cap"):
+        SystemConfig(symbol_cap=0.0)

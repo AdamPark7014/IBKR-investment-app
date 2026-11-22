@@ -120,6 +120,29 @@ def settled_after(weights: Mapping[str, float], orders: Sequence[ProposedOrder],
     return sorted(s for s in weights if s not in stale and (s not in touched or s in ok))
 
 
+def cap_weights(weights: Mapping[str, float], cap: float, cash_syms: Sequence[str]) -> Dict[str, float]:
+    """Recorta cada peso no-efectivo a ``cap`` y suma lo recortado al primer ETF de efectivo.
+
+    El control previo a la orden rechaza **entera** una compra que deja un ETF por encima de
+    ``PRETRADE__MAX_WEIGHT_PER_SYMBOL``. Sin este recorte, un objetivo de 55 % en SPY no compraba nada
+    de SPY y el capital quedaba sin invertir. Con él se compra hasta el tope y el resto va a letras,
+    igual que en el backtest (``SystemConfig.symbol_cap``).
+    """
+    cash = [c for c in cash_syms if c in weights]
+    out: Dict[str, float] = {}
+    freed = 0.0
+    for s, w in weights.items():
+        if s in cash_syms:
+            out[s] = float(w)
+            continue
+        clipped = max(-cap, min(cap, float(w)))
+        freed += abs(float(w)) - abs(clipped)
+        out[s] = clipped
+    if freed > 0.0 and cash:
+        out[cash[0]] = out.get(cash[0], 0.0) + freed
+    return out
+
+
 def cash_symbols_of(symbols: Sequence[str], spec: Any = None) -> List[str]:
     """Cash-equivalent ETFs among ``symbols``: box ``cash`` in the universe file, else a known T-bill ETF."""
     from ..pipeline.system import KNOWN_CASH_ETFS
@@ -364,6 +387,10 @@ def run_plan(
     stale = list(meta.get("stale_symbols") or [])
     invest_nav = nav * (1.0 - settings.pretrade.cash_buffer_pct / 100.0)
     cash_syms = cash_symbols_of(list(weights), spec)
+    capped = cap_weights(weights, float(settings.pretrade.max_weight_per_symbol), cash_syms)
+    if capped != weights:
+        report["targets"]["recortados_al_tope_por_etf"] = {s: w for s, w in capped.items() if w != weights.get(s)}
+        weights = capped
     orders = build_rebalance_orders(
         weights, dict(book.get("shares") or {}), prices, invest_nav,
         min_notional=settings.pretrade.min_order_notional_usd,
@@ -645,7 +672,7 @@ def secondary_loader_for(settings: AppSettings) -> Optional[Loader]:
 
 
 __all__ = [
-    "Paths", "book_nav", "cash_symbols_of", "credit_corporate_actions", "drawdown_now", "exit_code_for",
+    "Paths", "book_nav", "cap_weights", "cash_symbols_of", "credit_corporate_actions", "drawdown_now", "exit_code_for",
     "fresh_loader", "loss_limit_blocks", "primary_provider", "raw_last_prices", "run_execute", "run_plan",
     "secondary_loader_for",
     "settled_after", "shadow_fill", "unchanged_targets",

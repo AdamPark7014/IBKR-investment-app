@@ -1,5 +1,12 @@
 # RELEVO
 
+## Hecho (2026-11-22 madrugada, claude-code — auditoría del algoritmo)
+- Informe `docs/research/AUDITORIA-ALGORITMO-2026-11-22.md`. Truncamiento en 5 fechas: diferencia 0 (sin fuga).
+  Un día de retraso: Sharpe 0,59 contra 0,60. Costes ×2: 0,56; ×3: 0,52.
+- **Fallo corregido**: `pretrade` rechazaba entera la compra que dejaba un ETF sobre `max_weight_per_symbol` (40 %);
+  ahora `run_daily.cap_weights` recorta el objetivo al 40 % y manda el resto a letras antes de armar órdenes. En
+  investigación, `SystemConfig.symbol_cap` (Sharpe 0,62 contra 0,60). Sin cambio de configuración: el freeze sigue.
+
 ## Hecho (2026-11-21 23:15 Puebla, claude-code — avisos, modos de fallo, tope por clase apagado)
 - `docs/MODOS-DE-FALLO.md`: cada fallo, qué hace el sistema y su prueba. Falta el simulacro con el Gateway real.
 - Avisos: `notify.send_message`, el vigía manda un resumen de cada plan y ejecución si hay Telegram, y

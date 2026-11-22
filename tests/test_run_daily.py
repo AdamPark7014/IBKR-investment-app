@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from ibtrader.config import AppSettings
 from ibtrader.execution.order_manager import BrokerOrderStatus, OrderGateway
@@ -452,3 +453,13 @@ def test_copilot_opinion_is_recorded_and_never_changes_orders(tmp_path: Path, mo
     s2.ops.copilot = True
     rep2 = run_plan(s2, loader=lambda _s: _frames(), now=PLAN_AT)
     assert rep2["status"] == "ok" and rep2["copilot"] == {"status": "sin_opinion"}
+
+
+def test_cap_weights_compra_hasta_el_tope_y_el_resto_va_a_letras() -> None:
+    from ibtrader.ops.run_daily import cap_weights
+
+    out = cap_weights({"SPY": 0.55, "IEF": 0.30, "BIL": 0.15}, 0.40, ["BIL"])
+    assert out == pytest.approx({"SPY": 0.40, "IEF": 0.30, "BIL": 0.30})
+    same = {"SPY": 0.30, "BIL": 0.70}
+    assert cap_weights(same, 0.40, ["BIL"]) == same  # la letra no tiene tope
+    assert cap_weights({"SPY": 0.5}, 0.40, []) == pytest.approx({"SPY": 0.40})  # sin efectivo: queda sin invertir
