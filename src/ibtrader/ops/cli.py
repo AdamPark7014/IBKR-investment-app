@@ -1569,6 +1569,22 @@ def vigia_cmd() -> None:
     raise typer.Exit(code=exit_code_for(str(out.get("estado") or "ok")))
 
 
+@app.command("probar-aviso")
+def probar_aviso_cmd() -> None:
+    """Envía un mensaje de prueba a Telegram para comprobar que los avisos llegan al teléfono."""
+    import json as _json
+
+    from .notify import send_message
+
+    s = AppSettings()
+    res = send_message(s.ops, "prueba de avisos: si lees esto, Telegram está bien configurado.")
+    ok = res == "sent"
+    detalle = ("enviado" if ok else
+               "falta OPS__TELEGRAM_BOT_TOKEN u OPS__TELEGRAM_CHAT_ID en .env" if res is None else str(res))
+    typer.echo(_json.dumps({"ok": ok, "detalle": detalle}, ensure_ascii=False))
+    raise typer.Exit(code=0 if ok else 1)
+
+
 @app.command("respaldo")
 def respaldo_cmd(
     keep: int = typer.Option(30, "--keep", help="Cuántos respaldos diarios conservar."),

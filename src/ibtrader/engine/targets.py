@@ -41,6 +41,10 @@ def _system_config(settings: AppSettings, symbols: list[str], spec: Optional[Uni
         params["rules"] = tuple(params["rules"])
     boxes = {e.symbol: e.box for e in spec.entries if e.symbol in symbols} if spec is not None else None
     params.setdefault("boxes", boxes)
+    if params.get("group_caps") and spec is not None:
+        # Grupos del tope por clase: la clase de activo que declara el archivo de universo.
+        params.setdefault("peer_groups", {e.symbol: e.asset_class.lower() for e in spec.entries
+                                          if e.symbol in symbols})
     params.setdefault("capital", float(settings.pretrade.capital_usd or 100_000.0))
     params.setdefault("long_only", settings.trading.direction == "long_only")
     params.setdefault("short_only", settings.trading.direction == "short_only")

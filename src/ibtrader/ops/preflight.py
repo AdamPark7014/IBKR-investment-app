@@ -20,6 +20,7 @@ from ..config import AppSettings
 
 DEFAULT_PUERTA_TOKEN_FILE = r"C:\dev\secrets\puerta-ia\ibkr.token"
 TASKS = ("ibtrader-run-daily-plan", "ibtrader-run-daily-execute", "ibtrader-heartbeat-check")
+VIGIA_TASK = "ibtrader-vigia"
 
 
 def _check(cid: str, ok: Optional[bool], detalle: str, arreglo: str = "", sombra: bool = True,
@@ -41,16 +42,41 @@ def _port_open(host: str, port: int, timeout: float = 2.0) -> bool:
         return False
 
 
+def _task_state(name: str) -> str:
+    """``ready`` | ``disabled`` | ``missing`` de una tarea programada de Windows."""
+    r = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         f"(Get-ScheduledTask -TaskName '{name}' -ErrorAction SilentlyContinue).State"],
+        capture_output=True, text=True,
+    )
+    state = (r.stdout or "").strip().lower()
+    if not state:
+        return "missing"
+    return "disabled" if state == "disabled" else "ready"
+
+
+def tasks_problems(state_of: Callable[[str], str]) -> List[str]:
+    """Qué falta para que la corrida diaria esté programada.
+
+    Vale cualquiera de los dos esquemas: el vigía activo (cada 15 minutos), o las dos tareas de hora
+    fija activas. La tarea del latido hace falta siempre.
+    """
+    states = {t: state_of(t) for t in (VIGIA_TASK, *TASKS)}
+    problems = []
+    fixed = ("ibtrader-run-daily-plan", "ibtrader-run-daily-execute")
+    if states[VIGIA_TASK] != "ready" and any(states[t] != "ready" for t in fixed):
+        problems.append("ni el vigía ni las tareas de plan y ejecución están activos")
+    if states["ibtrader-heartbeat-check"] != "ready":
+        problems.append("ibtrader-heartbeat-check " + ("desactivada" if states["ibtrader-heartbeat-check"]
+                                                       == "disabled" else "sin registrar"))
+    return problems
+
+
 def _tasks_registered() -> Optional[List[str]]:
-    """Tareas de Windows que faltan; None fuera de Windows (no se puede comprobar)."""
+    """Problemas de las tareas de Windows; None fuera de Windows (no se puede comprobar)."""
     if os.name != "nt":
         return None
-    missing = []
-    for t in TASKS:
-        r = subprocess.run(["schtasks", "/Query", "/TN", t], capture_output=True, text=True)
-        if r.returncode != 0:
-            missing.append(t)
-    return missing
+    return tasks_problems(_task_state)
 
 
 def run_preflight(
@@ -134,8 +160,8 @@ def run_preflight(
         out.append(_check("tareas_programadas", None, "no comprobable fuera de Windows"))
     else:
         out.append(_check("tareas_programadas", not missing,
-                          "las 3 tareas están registradas" if not missing else f"faltan: {', '.join(missing)}",
-                          "pwsh -File scripts/schedule-run-daily.ps1 -Action Register"))
+                          "la corrida diaria está programada y activa" if not missing else "; ".join(missing),
+                          "pwsh -File scripts/schedule-vigia.ps1 -Action Register"))
     hb = Path(settings.ops.heartbeat_file)
     hb_ok: Optional[bool] = None
     hb_txt = "todavía no hay latido (normal antes de la primera corrida)"

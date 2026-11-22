@@ -113,6 +113,13 @@ CARRY_CHALLENGER = Contender(
     extra={"core_weights": dict(CORE_60_40), "core_frac": 0.25},
 )
 
+#: Tope por clase de activo: control de riesgo, no señal. Valores fijados antes de medir su efecto.
+GROUP_CAPS: Dict[str, float] = {"acciones": 0.60, "bonos": 0.70, "reales": 0.40}
+CAPS_CHALLENGER = Contender(
+    "paper_con_tope_por_clase", kind="riesgo",
+    extra={"core_weights": dict(CORE_60_40), "core_frac": 0.25, "group_caps": dict(GROUP_CAPS)},
+)
+
 #: Lista fijada **antes** de mirar resultados. Las tres variantes ya estaban en el registro de pruebas.
 DEFAULT_CHALLENGERS: Tuple[Contender, ...] = (
     Contender("ewmac_hrp", rules=tuple(r for r in DEFAULT_RULES if r.startswith("ewmac")), weighting="hrp"),
@@ -311,7 +318,8 @@ def _run(
 ) -> Tuple[pd.Series, Optional[pd.Timestamp], Dict[str, Any]]:
     capital = INITIAL_EQUITY
     budgets = box_budgets_from_groups(universe, symbols, c.group_budgets) if c.group_budgets else None
-    peers = peer_groups_from_universe(universe, symbols) if set(c.rules) & set(CROSS_SECTIONAL_RULES) else None
+    needs_peers = bool(set(c.rules) & set(CROSS_SECTIONAL_RULES)) or bool(c.extra.get("group_caps"))
+    peers = peer_groups_from_universe(universe, symbols) if needs_peers else None
     cfg = SystemConfig(
         peer_groups=peers, rules=tuple(c.rules), rule_weights=c.rule_weights, instrument_weighting=c.weighting,  # type: ignore[arg-type]
         boxes=boxes, box_budgets=budgets, capital=capital, long_only=True, max_leverage=1.0,
@@ -474,6 +482,7 @@ def run_universe_study(
 
 
 __all__ = [
+    "CAPS_CHALLENGER", "GROUP_CAPS",
     "CARRY_CHALLENGER", "CARRY_RULES", "CARRY_WEIGHTS", "CORE_60_40", "Contender",
     "DEFAULT_CHALLENGERS", "INCUMBENT", "PAPER_MIX", "RELMOM_CHALLENGER",
     "RELMOM_RULES", "RELMOM_WEIGHTS", "RISK_GROUPS", "RISK_PROFILES",

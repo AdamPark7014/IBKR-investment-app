@@ -51,6 +51,11 @@ def _telegram(cfg: OpsConfig, text: str, post: Optional[Callable[..., Any]] = No
         return f"error: {type(exc).__name__}"
 
 
+def send_message(cfg: OpsConfig, text: str, post: Optional[Callable[..., Any]] = None) -> Optional[str]:
+    """Mensaje informativo al teléfono (resumen diario, prueba). ``None`` si Telegram no está configurado."""
+    return _telegram(cfg, f"[ibtrader] {text}", post)
+
+
 def emit_alert(
     cfg: OpsConfig,
     code: str,
@@ -118,4 +123,4 @@ def check_heartbeat(
     return out
 
 
-__all__ = ["SEVERITIES", "check_heartbeat", "emit_alert", "write_heartbeat"]
+__all__ = ["SEVERITIES", "check_heartbeat", "emit_alert", "send_message", "write_heartbeat"]

@@ -28,7 +28,7 @@ from typing import Any, Callable, Dict, Mapping, Optional
 from ..config import AppSettings
 from ..data.crosscheck import last_completed_session
 from ..execution.session import ET, is_rth, is_trading_day, session_close
-from .notify import emit_alert
+from .notify import emit_alert, send_message
 from .run_daily import Paths
 
 #: Espera desde el cierre antes de planear: Tiingo publica el cierre entre 17:30 y 18:00 de Nueva York.
@@ -148,6 +148,28 @@ _ALERTS: Dict[str, tuple] = {
 }
 
 
+def _usd(x: Any) -> str:
+    try:
+        return f"{float(x):,.0f} USD"
+    except (TypeError, ValueError):
+        return "sin dato"
+
+
+def summary_text(phase: str, rep: Mapping[str, Any]) -> str:
+    """Resumen de una corrida en una o dos líneas, para el teléfono."""
+    status = str(rep.get("status"))
+    blocks = [str(b) for b in rep.get("blocks") or []]
+    tail = f" Bloqueos: {', '.join(blocks)}." if blocks else ""
+    if phase == "plan":
+        n = len(((rep.get("pretrade") or {}).get("approved")) or [])
+        return (f"Plan del {rep.get('run_date')}: estado {status}, {n} órdenes para la próxima apertura. "
+                f"Capital {_usd(rep.get('nav_after') or rep.get('nav_before'))}.{tail}")
+    orders = [o for o in rep.get("orders") or [] if isinstance(o, Mapping)]
+    filled = sum(1 for o in orders if str(o.get("state")).lower() == "filled")
+    return (f"Ejecución del {rep.get('run_date')}: estado {status}, {rep.get('orders_sent') or 0} órdenes enviadas, "
+            f"{filled} llenadas de {len(orders)}.{tail}")
+
+
 def acquire_lock(settings: AppSettings, now: datetime) -> bool:
     """Candado de archivo: ``False`` si otra corrida empezó hace menos de ``LOCK_MAX_AGE``."""
     p = lock_path(settings)
@@ -199,6 +221,7 @@ def tick(
             rep = run_phase(d.action)
             out["estado"] = rep.get("status")
             out["ordenes_enviadas"] = rep.get("orders_sent")
+            out["resumen_enviado"] = send_message(settings.ops, summary_text(d.action, rep))
         today = now.astimezone(ET).date().isoformat()
         if state.get("respaldo") != today:
             from .respaldo import backup_state
@@ -222,5 +245,5 @@ def tick(
 
 __all__ = [
     "Decision", "EXECUTE_CUTOFF", "MAX_EXECUTE_ATTEMPTS", "PLAN_AFTER_CLOSE", "PLAN_RETRY",
-    "acquire_lock", "decide", "lock_path", "release_lock", "state_path", "tick",
+    "acquire_lock", "decide", "lock_path", "release_lock", "state_path", "summary_text", "tick",
 ]

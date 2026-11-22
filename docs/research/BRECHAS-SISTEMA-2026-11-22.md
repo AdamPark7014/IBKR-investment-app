@@ -83,3 +83,31 @@ Poder vender en corto y operar futuros de muchos países. Eso da apuestas indepe
 lo que sube el Sharpe de 0,6 hacia 1,0. Pero es otro nivel de riesgo: con futuros se puede perder más
 de lo invertido, y los micro futuros exigen una cuenta con margen y capital mayor. No lo recomiendo
 ahora. Tiene sentido volver a mirarlo después de 6 meses de paper con operación limpia.
+
+## Actualización del 2026-11-22: qué quedó hecho
+
+| # | Qué | Estado |
+|---|---|---|
+| 1 | Vigía | Instalado en la laptop. Cada 15 minutos; sustituye a las tareas de hora fija |
+| 2 | Avisos al teléfono | Código listo: resumen de cada corrida y `ibtrader probar-aviso`. Falta que Adam cree el bot |
+| 3 | Gateway automático (IBC) | Sin hacer: necesita el sí explícito de Adam para guardar su contraseña |
+| 5 | Respaldo diario | Hecho. En la laptop, por decisión de Adam |
+| 6 | Paper contra el modelo | Hecho: `ibtrader seguimiento` |
+| 7 | Tope por clase de activo | Programado y medido, **apagado**. Ver abajo |
+| 8 | Modos de fallo | Lista con la prueba de cada uno en [`docs/MODOS-DE-FALLO.md`](../MODOS-DE-FALLO.md). Falta el simulacro con el Gateway real |
+| 9 | Carry | Probado y descartado |
+
+### Tope por clase de activo: medido
+
+Sin tope, la cartera llegó a tener 83 % en acciones y 82 % en bonos en algún momento de 2004 a 2026.
+Con tope de 60 % en acciones, 70 % en bonos y 40 % en activos reales (lo que sobra va a letras):
+
+| Estrategia | CAGR | Sharpe | Caída máx. | 2008 | 2022 |
+|---|---|---|---|---|---|
+| Paper | 5,61 % | 0,60 | −10,9 % | −1,4 % | −10,8 % |
+| Paper con tope por clase | 5,64 % | 0,61 | −11,0 % | −1,3 % | −10,8 % |
+
+Diferencia de Sharpe +0,01 (−0,01 a +0,03): indistinguible. **No costó nada y tampoco protegió**, porque
+en las crisis de esta historia la cartera no estaba concentrada. Es un seguro contra una concentración
+que todavía no ha hecho daño. Activarlo cambia la configuración congelada (`STRATEGY__PARAMS`,
+`group_caps`) y requiere el sí de Adam.

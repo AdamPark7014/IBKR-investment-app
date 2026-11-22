@@ -129,3 +129,42 @@ def test_candado_impide_dos_corridas(settings: AppSettings) -> None:
     lock_path(settings).write_text(json.dumps({"ts": now.isoformat()}), encoding="utf-8")
     out = tick(settings, run_phase=lambda p: {"status": "ok"}, port_open=lambda: True, now=now)
     assert out["motivo"] == "otra corrida en curso"
+
+
+def test_resumen_para_el_telefono() -> None:
+    from ibtrader.ops.vigia import summary_text
+
+    plan = summary_text("plan", {"run_date": "2026-11-20", "status": "ok", "nav_after": 1_000_000.0,
+                                 "pretrade": {"approved": [{}, {}]}, "blocks": []})
+    assert "2 órdenes" in plan and "1,000,000 USD" in plan and "Bloqueos" not in plan
+    ex = summary_text("execute", {"run_date": "2026-11-20", "status": "ok", "orders_sent": 2, "blocks": ["data"],
+                                  "orders": [{"state": "FILLED"}, {"state": "CANCELLED"}]})
+    assert "2 órdenes enviadas" in ex and "1 llenadas de 2" in ex and "Bloqueos: data" in ex
+
+
+def test_chequeo_acepta_vigia_o_tareas_de_hora_fija() -> None:
+    from ibtrader.ops.preflight import tasks_problems
+
+    vigia = {"ibtrader-vigia": "ready", "ibtrader-run-daily-plan": "disabled",
+             "ibtrader-run-daily-execute": "disabled", "ibtrader-heartbeat-check": "ready"}
+    assert tasks_problems(lambda t: vigia[t]) == []
+    fijas = {**vigia, "ibtrader-vigia": "missing", "ibtrader-run-daily-plan": "ready",
+             "ibtrader-run-daily-execute": "ready"}
+    assert tasks_problems(lambda t: fijas[t]) == []
+    nada = {**vigia, "ibtrader-vigia": "disabled", "ibtrader-heartbeat-check": "missing"}
+    assert len(tasks_problems(lambda t: nada[t])) == 2
+
+
+def test_mensaje_sin_telegram_no_falla(settings: AppSettings) -> None:
+    from ibtrader.ops.notify import send_message
+
+    assert send_message(settings.ops, "hola") is None
+    settings.ops.telegram_bot_token, settings.ops.telegram_chat_id = "t", "1"
+    sent: List[Dict[str, Any]] = []
+
+    def post(url: str, json: Dict[str, Any], timeout: float) -> Any:
+        sent.append(json)
+        return type("R", (), {"status_code": 200})()
+
+    assert send_message(settings.ops, "hola", post) == "sent"
+    assert sent[0]["text"] == "[ibtrader] hola"

@@ -1,5 +1,16 @@
 # RELEVO
 
+## Hecho (2026-11-21 23:15 Puebla, claude-code — avisos, modos de fallo, tope por clase apagado)
+- `docs/MODOS-DE-FALLO.md`: cada fallo, qué hace el sistema y su prueba. Falta el simulacro con el Gateway real.
+- Avisos: `notify.send_message`, el vigía manda un resumen de cada plan y ejecución si hay Telegram, y
+  `ibtrader probar-aviso`. Telegram sigue sin configurar (Adam debe crear el bot; el token va en `.env`, nunca en chat).
+- `chequeo`: `tareas_programadas` acepta el vigía activo o las dos tareas de hora fija activas (mira el estado, no solo
+  si existen).
+- Tope por clase (`SystemConfig.group_caps` + `peer_groups`; en producción los grupos salen de `asset_class` del
+  universo). Medido con 60/70/40: Sharpe 0,61 contra 0,60, caída igual. Apagado; activarlo es cambiar
+  `STRATEGY__PARAMS` y re-congelar, con el sí de Adam. No añade campos a AppSettings: el freeze no cambia.
+- Respaldo: Adam eligió dejarlo solo en la laptop (no OneDrive).
+
 ## Hecho (2026-11-21 23:00 Puebla, claude-code — vigía instalado en el PC, respaldo, seguimiento y carry)
 - **PC**: main `f27f1a1`, freeze vigente `534b520bbe2103ad`. Tarea `ibtrader-vigia` cada 15 min (Interactive: solo con
   sesión iniciada); `ibtrader-run-daily-plan` y `-execute` desactivadas. Vuelta de prueba: `nada` (sábado). 9 órdenes

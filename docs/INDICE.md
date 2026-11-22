@@ -22,6 +22,7 @@
 - [`docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md`](../docs/research/INSTITUTIONAL_SYSTEMATIC_STACK.md) — Institutional systematic stack — research synthesis (V3)
 - [`docs/research/MEJORAS-EVIDENCIA-2026-11-08.md`](../docs/research/MEJORAS-EVIDENCIA-2026-11-08.md) — Mejoras con evidencia (2026-11-08)
 - [`docs/research/MEJORA-ALGORITMO-2026-11-21.md`](../docs/research/MEJORA-ALGORITMO-2026-11-21.md) — Mejora del algoritmo: prueba pareada, núcleo 60/40 + tendencia y estado del paper
+- [`docs/MODOS-DE-FALLO.md`](../docs/MODOS-DE-FALLO.md) — Cada fallo posible, qué hace el sistema y la prueba que lo demuestra
 - [`docs/research/FASE-3B-CARRY-2026-11-22.md`](../docs/research/FASE-3B-CARRY-2026-11-22.md) — Fase 3: el carry con ETF no predice (IC negativo) y no entra a paper
 - [`docs/research/BRECHAS-SISTEMA-2026-11-22.md`](../docs/research/BRECHAS-SISTEMA-2026-11-22.md) — Qué le falta al sistema de punta a punta, por impacto; el vigía que recupera corridas perdidas
 - [`docs/research/FASE-3-MOMENTUM-RELATIVO-2026-11-21.md`](../docs/research/FASE-3-MOMENTUM-RELATIVO-2026-11-21.md) — Fase 3: el momentum relativo predice (IC 0,07–0,10) pero no pasa la prueba pareada; no entra a paper

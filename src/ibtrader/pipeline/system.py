@@ -120,6 +120,10 @@ class SystemConfig:
     #: Símbolo → grupo de pares (clase de activo) para las reglas de corte transversal
     #: (``relmom_1_3_12``). Obligatorio si alguna de ``rules`` es de corte transversal.
     peer_groups: Optional[Dict[str, str]] = None
+    #: Tope de peso por grupo de ``peer_groups`` (p. ej. ``{"acciones": 0.60}``). Es un control de
+    #: riesgo, no una señal: cuando un grupo pasa de su tope se recorta en proporción y lo que sobra va
+    #: al ETF de efectivo. ``None`` = sin tope. Se aplica al final, con el núcleo pasivo ya sumado.
+    group_caps: Optional[Dict[str, float]] = None
     #: Núcleo pasivo: ``core_frac`` del capital se queda siempre en ``core_weights`` (p. ej. 60 % SPY y
     #: 40 % IEF) y el resto lo maneja el sistema de tendencia. ``core_frac = 0`` = sin núcleo. El peso de
     #: un símbolo solo cambia cuando cambia su parte de tendencia, así que el núcleo no añade órdenes.
@@ -164,6 +168,11 @@ class SystemConfig:
             raise ValueError(f"SystemConfig.rules has duplicates: {self.rules}")
         if set(self.rules) & set(CROSS_SECTIONAL_RULES) and not self.peer_groups:
             raise ValueError("SystemConfig.peer_groups is required by cross-sectional rules")
+        if self.group_caps:
+            if not self.peer_groups:
+                raise ValueError("SystemConfig.peer_groups is required by group_caps")
+            if any(not 0.0 < float(v) <= 1.0 for v in self.group_caps.values()):
+                raise ValueError("SystemConfig.group_caps values must be in (0, 1]")
         if self.rule_weights is not None:
             missing = set(self.rules) - set(self.rule_weights)
             extra = set(self.rule_weights) - set(self.rules)
@@ -451,8 +460,37 @@ def run_system(
         missing = sorted(set(cfg.core_weights or {}) - {str(c) for c in prices.columns})
         if missing:
             raise ValueError(f"run_system: core_weights symbols without prices: {missing}")
-        return _with_core(_run_trend(prices, cfg, extra_raw), cfg)
-    return _run_trend(prices, cfg, extra_raw)
+        return _with_group_caps(_with_core(_run_trend(prices, cfg, extra_raw), cfg), cfg)
+    return _with_group_caps(_run_trend(prices, cfg, extra_raw), cfg)
+
+
+def _with_group_caps(out: SystemOutput, cfg: SystemConfig) -> SystemOutput:
+    """Recorta en proporción cada grupo que pasa de su tope y manda lo que sobra al efectivo."""
+    if not cfg.group_caps:
+        return out
+    groups = cfg.peer_groups or {}
+    cash = cfg.cash_symbols([str(c) for c in out.target_weights.columns])
+    sweep = cash[0] if (cash and cfg.cash_sweep and cfg.long_only) else None
+
+    def _cap(w: pd.DataFrame) -> pd.DataFrame:
+        w = w.copy()
+        freed = pd.Series(0.0, index=w.index)
+        for group, limit in cfg.group_caps.items():  # type: ignore[union-attr]
+            members = [c for c in w.columns if groups.get(str(c)) == group and c != sweep]
+            if not members:
+                continue
+            total = w[members].abs().sum(axis=1, min_count=1)
+            factor = (float(limit) / total).clip(upper=1.0).where(total > 0.0, 1.0).fillna(1.0)
+            freed = freed + (total.fillna(0.0) * (1.0 - factor))
+            w[members] = w[members].mul(factor, axis=0)
+        if sweep is not None and sweep in w.columns:
+            has_px = out.prices[sweep].reindex(w.index).notna() if sweep in out.prices.columns else True
+            w[sweep] = (w[sweep].fillna(0.0) + freed).where((freed > 0.0) & has_px, w[sweep])
+        return w
+
+    out.target_weights = _cap(out.target_weights)
+    out.mtm_weights = _cap(out.mtm_weights)
+    return out
 
 
 def _with_core(out: SystemOutput, cfg: SystemConfig) -> SystemOutput:
