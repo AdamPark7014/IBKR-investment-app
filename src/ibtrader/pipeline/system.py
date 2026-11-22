@@ -42,6 +42,7 @@ from .portfolio_stage import average_abs_positions, portfolio_positions, positio
 from .rules import (
     CROSS_SECTIONAL_RULES,
     DEFAULT_RULES,
+    EXTERNAL_RULES,
     FIXED_FORECAST_SCALARS,
     relative_momentum,
     run_rules,
@@ -433,7 +434,9 @@ def _warmup_end(stage_validity: List[pd.DataFrame], idm: pd.Series, min_symbols:
 # --------------------------------------------------------------------------- the system
 
 
-def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
+def run_system(
+    prices: pd.DataFrame, cfg: SystemConfig, extra_raw: Optional[Mapping[str, pd.DataFrame]] = None
+) -> SystemOutput:
     """Run every stage over ``prices`` (dates × symbols, close) and return them all.
 
     See the module docstring for the chain and ``SystemOutput`` for what each field
@@ -448,8 +451,8 @@ def run_system(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
         missing = sorted(set(cfg.core_weights or {}) - {str(c) for c in prices.columns})
         if missing:
             raise ValueError(f"run_system: core_weights symbols without prices: {missing}")
-        return _with_core(_run_trend(prices, cfg), cfg)
-    return _run_trend(prices, cfg)
+        return _with_core(_run_trend(prices, cfg, extra_raw), cfg)
+    return _run_trend(prices, cfg, extra_raw)
 
 
 def _with_core(out: SystemOutput, cfg: SystemConfig) -> SystemOutput:
@@ -475,12 +478,14 @@ def _with_core(out: SystemOutput, cfg: SystemConfig) -> SystemOutput:
     return out
 
 
-def _run_trend(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
+def _run_trend(
+    prices: pd.DataFrame, cfg: SystemConfig, extra_raw: Optional[Mapping[str, pd.DataFrame]] = None
+) -> SystemOutput:
     cash = [c for c in cfg.cash_symbols([str(c) for c in prices.columns]) if prices[c].notna().any()]
     risky = [c for c in prices.columns if c not in cash]
     if not cash or not risky:
-        return _run_core(prices, cfg)
-    out = _run_core(prices[risky], cfg)
+        return _run_core(prices, cfg, extra_raw)
+    out = _run_core(prices[risky], cfg, extra_raw)
     if not (cfg.cash_sweep and cfg.long_only):
         return out
     sweep = cash[0]
@@ -514,7 +519,9 @@ def _run_trend(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
     return out
 
 
-def _run_core(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
+def _run_core(
+    prices: pd.DataFrame, cfg: SystemConfig, extra_raw: Optional[Mapping[str, pd.DataFrame]] = None
+) -> SystemOutput:
     px = _clean_prices(prices)
     index = px.index
     symbols = list(px.columns)
@@ -532,9 +539,16 @@ def _run_core(prices: pd.DataFrame, cfg: SystemConfig) -> SystemOutput:
 
     # 2. Raw forecasts per rule and symbol.
     vols_by_symbol = {sym: vol_price[sym].reindex(s.index) for sym, s in series_px.items()}
-    raw_by_rule = run_rules(series_px, vols_by_symbol, [r for r in cfg.rules if r not in CROSS_SECTIONAL_RULES])
+    per_symbol_rules = [r for r in cfg.rules if r not in CROSS_SECTIONAL_RULES and r not in EXTERNAL_RULES]
+    raw_by_rule = run_rules(series_px, vols_by_symbol, per_symbol_rules)
     raw_forecasts: Dict[str, pd.DataFrame] = {}
     for rule in cfg.rules:
+        if rule in EXTERNAL_RULES:
+            given = (extra_raw or {}).get(rule)
+            if given is None:
+                raise ValueError(f"run_system: la regla {rule!r} necesita su pronóstico bruto en extra_raw")
+            raw_forecasts[rule] = given.reindex(index=index, columns=symbols).astype(float)
+            continue
         if rule in CROSS_SECTIONAL_RULES:
             # relmom_1_3_12: el mismo momentum de la tendencia, menos la media de los pares del grupo.
             base = run_rules(series_px, vols_by_symbol, ["tsmom_1_3_12"])["tsmom_1_3_12"]

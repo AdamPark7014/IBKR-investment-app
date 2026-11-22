@@ -66,6 +66,13 @@ TSMOM_DEFAULT_LOOKBACKS: Tuple[int, ...] = (21, 63, 252)
 #: necesitan todos los símbolos a la vez y no pasan por :func:`run_rule`.
 CROSS_SECTIONAL_RULES: Tuple[str, ...] = ("relmom_1_3_12",)
 
+#: Reglas externas: necesitan datos que no son el precio de cierre (repartos), así que quien llama a
+#: ``run_system`` entrega su pronóstico bruto ya calculado en ``extra_raw``.
+EXTERNAL_RULES: Tuple[str, ...] = ("carry_12m",)
+
+#: Sesiones de la ventana de repartos del carry (12 meses).
+CARRY_WINDOW = 252
+
 _EWMAC_NAME = re.compile(r"^ewmac(\d+)_(\d+)$")
 
 
@@ -136,6 +143,37 @@ def relative_momentum(momentum: pd.DataFrame, groups: Mapping[str, str]) -> pd.D
         enough = block.notna().sum(axis=1) >= 2
         out[members] = block.sub(block.mean(axis=1, skipna=True), axis=0).where(enough, np.nan)
     return out
+
+
+def trailing_yield(div_cash: pd.Series, close_raw: pd.Series, window: int = CARRY_WINDOW) -> pd.Series:
+    """Rendimiento por repartos: suma de los últimos ``window`` días dividida por el precio sin ajustar.
+
+    NaN hasta tener ``window`` barras. Punto en el tiempo: el reparto cuenta desde su fecha ex-dividendo.
+    """
+    paid = div_cash.astype(float).fillna(0.0).rolling(window, min_periods=window).sum()
+    out: pd.Series = (paid / close_raw.astype(float)).replace([np.inf, -np.inf], np.nan)
+    return out
+
+
+def carry_forecast(
+    div_cash: Mapping[str, pd.Series],
+    close_raw: Mapping[str, pd.Series],
+    pct_vol: Mapping[str, pd.Series],
+    cash_symbol: str | None = None,
+    window: int = CARRY_WINDOW,
+) -> pd.DataFrame:
+    """Carry bruto por símbolo: ``(rendimiento − rendimiento del efectivo) / volatilidad anual``.
+
+    ``pct_vol`` es la volatilidad diaria en fracción. Sin ``cash_symbol`` (o antes de que tenga
+    historia) el rendimiento del efectivo cuenta como 0. El símbolo de efectivo no recibe pronóstico.
+    """
+    yields = {s: trailing_yield(div_cash[s], close_raw[s], window) for s in close_raw if s in div_cash}
+    frame = pd.DataFrame(yields).sort_index()
+    cash = frame[cash_symbol].ffill().fillna(0.0) if cash_symbol in frame.columns else 0.0
+    cols = [c for c in frame.columns if c != cash_symbol]
+    vol = pd.DataFrame({c: pct_vol[c] for c in cols}).reindex(frame.index) * float(np.sqrt(256.0))
+    raw = frame[cols].sub(cash, axis=0) / vol
+    return raw.replace([np.inf, -np.inf], np.nan)
 
 
 def run_rule(name: str, price: pd.Series, vol_price: pd.Series) -> pd.Series:

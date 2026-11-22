@@ -105,6 +105,14 @@ RELMOM_CHALLENGER = Contender(
     extra={"core_weights": dict(CORE_60_40), "core_frac": 0.25},
 )
 
+#: Fase 3, carry: mismo reparto por familias que el momentum relativo, fijado antes de correr.
+CARRY_RULES: Tuple[str, ...] = (*DEFAULT_RULES, "carry_12m")
+CARRY_WEIGHTS: Dict[str, float] = {**{r: 0.5 / len(DEFAULT_RULES) for r in DEFAULT_RULES}, "carry_12m": 0.5}
+CARRY_CHALLENGER = Contender(
+    "paper_mas_carry", rules=CARRY_RULES, rule_weights=dict(CARRY_WEIGHTS), kind="familia",
+    extra={"core_weights": dict(CORE_60_40), "core_frac": 0.25},
+)
+
 #: Lista fijada **antes** de mirar resultados. Las tres variantes ya estaban en el registro de pruebas.
 DEFAULT_CHALLENGERS: Tuple[Contender, ...] = (
     Contender("ewmac_hrp", rules=tuple(r for r in DEFAULT_RULES if r.startswith("ewmac")), weighting="hrp"),
@@ -466,7 +474,8 @@ def run_universe_study(
 
 
 __all__ = [
-    "CORE_60_40", "Contender", "DEFAULT_CHALLENGERS", "INCUMBENT", "PAPER_MIX", "RELMOM_CHALLENGER",
+    "CARRY_CHALLENGER", "CARRY_RULES", "CARRY_WEIGHTS", "CORE_60_40", "Contender",
+    "DEFAULT_CHALLENGERS", "INCUMBENT", "PAPER_MIX", "RELMOM_CHALLENGER",
     "RELMOM_RULES", "RELMOM_WEIGHTS", "RISK_GROUPS", "RISK_PROFILES",
     "STRESS_WINDOWS", "box_budgets_from_groups", "paired_comparison", "peer_groups_from_universe",
     "run_challenger_study",

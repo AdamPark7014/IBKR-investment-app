@@ -6,7 +6,9 @@ from typing import Dict, Optional
 
 import pandas as pd
 
+from ..pipeline.rules import carry_forecast
 from ..pipeline.system import SystemConfig, SystemOutput, run_system
+from ..pipeline.vol import pct_vol_daily
 from .base import Strategy
 
 
@@ -37,11 +39,28 @@ class PipelineStrategy(Strategy):
         frame.index = pd.DatetimeIndex(frame.index)
         return frame.sort_index()
 
+    def extra_raw(self, data: Dict[str, pd.DataFrame]) -> Optional[Dict[str, pd.DataFrame]]:
+        """Pronósticos brutos de las reglas externas (carry), calculados con los repartos de ``data``."""
+        if "carry_12m" not in self.cfg.rules:
+            return None
+        missing = [s for s, df in data.items() if "div_cash" not in df.columns or "close_raw" not in df.columns]
+        if missing:
+            raise ValueError(f"carry_12m necesita div_cash y close_raw; faltan en: {sorted(missing)}")
+        cash = self.cfg.cash_symbols(sorted(data))
+        idx = {s: pd.DatetimeIndex(df.index) for s, df in data.items()}
+        return {"carry_12m": carry_forecast(
+            {s: pd.Series(df["div_cash"].to_numpy(dtype=float), index=idx[s]) for s, df in data.items()},
+            {s: pd.Series(df["close_raw"].to_numpy(dtype=float), index=idx[s]) for s, df in data.items()},
+            {s: pct_vol_daily(pd.Series(df["close"].to_numpy(dtype=float), index=idx[s]), span=self.cfg.vol_span)
+             for s, df in data.items()},
+            cash_symbol=cash[0] if cash else None,
+        )}
+
     def generate_signals(self, data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
         if not data:
             return {}
         prices = self.close_frame(data)
-        out = run_system(prices, self.cfg)
+        out = run_system(prices, self.cfg, self.extra_raw(data))
         self.last_output = out
         signals: Dict[str, pd.Series] = {}
         for sym, df in data.items():

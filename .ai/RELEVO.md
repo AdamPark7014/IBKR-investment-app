@@ -1,5 +1,15 @@
 # RELEVO
 
+## Hecho (2026-11-21 23:00 Puebla, claude-code — vigía instalado en el PC, respaldo, seguimiento y carry)
+- **PC**: main `f27f1a1`, freeze vigente `534b520bbe2103ad`. Tarea `ibtrader-vigia` cada 15 min (Interactive: solo con
+  sesión iniciada); `ibtrader-run-daily-plan` y `-execute` desactivadas. Vuelta de prueba: `nada` (sábado). 9 órdenes
+  pendientes del 2026-11-20 para el lunes.
+- `ibtrader respaldo` (zip diario del estado en `data/respaldos` o `IBTRADER_RESPALDO_DIR`; el vigía lo hace una vez al
+  día, conserva 30) e `ibtrader seguimiento` (paper contra el modelo ideal; «insuficiente» con menos de 20 días).
+- **Carry** (`carry_12m`, repartos de Tiingo ya presentes en los datos): IC −0,03/−0,05, Sharpe 0,59 contra 0,64,
+  caída −15,7 %. No entra. Informe `docs/research/FASE-3B-CARRY-2026-11-22.md`. Fase 3 cerrada: la señal no cambia.
+- Pendiente de Adam: Telegram (crear bot), IBC, tope por clase de activo (requiere re-congelar), equipo siempre encendido.
+
 ## Hecho (2026-11-21 22:30 Puebla, claude-code — revisión de todo el sistema y vigía; nada del PC se tocó)
 - Diagnóstico: `docs/research/BRECHAS-SISTEMA-2026-11-22.md`. La señal está en su techo (~0,6); la brecha es la operación.
 - **Vigía** (`ibtrader vigia`, `ops/vigia.py`, `scripts/schedule-vigia.ps1`): cada 15 min corre el plan o la ejecución
