@@ -1,5 +1,15 @@
 # RELEVO
 
+## Hecho (2026-11-26 21:55 Puebla, claude-code — tareas sin ventana)
+- Adam veía ventanas parpadeando: con Windows Terminal como consola, `powershell -WindowStyle Hidden` deja Terminal
+  visible toda la corrida (el vigía, 6-9 s cada 15 min). Las 7 tareas `ibtrader-*` ahora corren con
+  `pythonw -I C:\dev\scripts\ai-os\tools\sin-ventana.py "<powershell>" <args de siempre>`: sin ventana, mismas comillas y
+  mismo código de salida (vigía probado: resultado 0 y su línea en `data\logs\ibtrader-vigia.log`). Respaldo del XML previo
+  en `C:\dev\archivo\tareas-programadas`. `schedule-vigia.ps1` y `schedule-run-daily.ps1` re-envuelven al registrar.
+- **A medias, no tocado:** `pytest -q` tiene 2 fallas que no vienen de esto (solo cambiaron 2 `.ps1`):
+  `test_config_freeze_schema::test_cli_write_refuses_to_rebaseline_a_changed_config` y
+  `test_paper_status::test_build_paper_status_with_artifacts` (slippage `n` 0 contra 1). Ruff y mypy en verde.
+
 ## Hecho (2026-11-22 madrugada, claude-code — auditoría del algoritmo)
 - Informe `docs/research/AUDITORIA-ALGORITMO-2026-11-22.md`. Truncamiento en 5 fechas: diferencia 0 (sin fuga).
   Un día de retraso: Sharpe 0,59 contra 0,60. Costes ×2: 0,56; ×3: 0,52.

@@ -33,6 +33,10 @@ switch ($Action) {
         $Task.Settings.StartWhenAvailable = $true
         $Task.Settings.MultipleInstances = 'IgnoreNew'
         Set-ScheduledTask -InputObject $Task | Out-Null
+        # Sin ventana (26-11-2026): con Windows Terminal como consola, -WindowStyle Hidden igual deja Terminal visible
+        # toda la corrida, cada 15 min. El lanzador de C:\dev conserva comillas y código de salida.
+        $SinVentana = 'C:\dev\scripts\ai-os\tools\tarea-sin-ventana.ps1'
+        if (Test-Path -LiteralPath $SinVentana) { & $SinVentana -Nombre $Name | Out-Null }
         foreach ($f in $Fixed) {
             schtasks /Change /TN $f /DISABLE 2>$null | Out-Null
             if ($LASTEXITCODE -eq 0) { Write-Host "Desactivada '$f' (la sustituye el vigía)." }

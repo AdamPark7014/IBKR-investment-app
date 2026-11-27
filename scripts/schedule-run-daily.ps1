@@ -47,6 +47,9 @@ foreach ($t in $Tasks) {
             $Task.Settings.WakeToRun = $true
             $Task.Settings.StartWhenAvailable = $true
             Set-ScheduledTask -InputObject $Task | Out-Null
+            # Sin ventana (26-11-2026): con Windows Terminal, -WindowStyle Hidden igual deja Terminal visible.
+            $SinVentana = 'C:\dev\scripts\ai-os\tools\tarea-sin-ventana.ps1'
+            if (Test-Path -LiteralPath $SinVentana) { & $SinVentana -Nombre $t.Name | Out-Null }
             Write-Host "Registrada '$($t.Name)' $($t.Days) a las $($t.Time)."
         }
         'Unregister' {
